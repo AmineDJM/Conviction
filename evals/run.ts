@@ -9,6 +9,8 @@
  *   prestige     — adding prestigious names does not move operating analysis (§123)
  *   missing      — removing metrics never improves the conservative bound (§124)
  *   citations    — citation integrity of web sources and verification labels (§120)
+ *   chat         — Fund Brain hallucination traps + latency (absent metric, unknown company, IC member with no record)
+ *   regression   — engine regression: re-derive every stored current version and report drift vs what was stored
  *
  * Usage:  NODE_USE_ENV_PROXY=1 npx tsx evals/run.ts [suite ...]   (default: all)
  * Cost:   ≈ $0.25 for all suites (FAST_SCREEN runs; citations reads existing STANDARD runs).
@@ -41,7 +43,7 @@ async function main() {
   const cache = new Map<string, Awaited<ReturnType<typeof analyze>>>();
   async function analyze(rel: string) {
     const data = fs.readFileSync(path.join(DECKS, rel));
-    const { company, run, promise } = await startAnalysis({ workspaceId, userId, mode: "FAST_SCREEN", files: [{ filename: path.basename(rel), mime: "application/pdf", data }] });
+    const { company, run, promise } = await startAnalysis({ workspaceId, userId, mode: "FAST_SCREEN", force: true, files: [{ filename: path.basename(rel), mime: "application/pdf", data }] });
     await promise;
     const r = repo.getRun(workspaceId, run.id)!;
     spent += r.spentUsd;
@@ -163,11 +165,78 @@ async function main() {
     }
   }
 
+  /* ---------------- chat: hallucination traps ---------------- */
+  if (want("chat")) {
+    const { askBrain } = await import("../src/brain/chat");
+    const { version } = await get("ledgerline-series-a.pdf");
+    const name = version.canonical.identity.name;
+    const ask = async (question: string) => {
+      let text = "";
+      let first: number | null = null;
+      let cost = 0;
+      for await (const ev of askBrain({ workspaceId, userId, question })) {
+        if (ev.type === "delta") text += ev.text;
+        if (ev.type === "done") {
+          first = ev.firstTokenMs;
+          cost = ev.costUsd;
+        }
+      }
+      spent += cost;
+      return { text, first };
+    };
+    const absentKey = ["gmv", "take_rate", "dau"].find((k) => !version.canonical.metrics.some((m) => m.metricKey === k && m.state === "OBSERVED")) ?? "gmv";
+    const absent = await ask(`Quel est le ${absentKey === "take_rate" ? "take rate" : absentKey.toUpperCase()} de ${name} ?`);
+    record("chat", `absent metric (${absentKey}) → "On ne sait pas encore"`, /on ne sait pas encore/i.test(absent.text), absent.text.slice(0, 120).replace(/\s+/g, " "));
+    record("chat", "fact question answered < 1 s", (absent.first ?? 99_999) < 1000, `${absent.first} ms`);
+    const present = await ask(`ARR de ${name} ?`);
+    const arr = version.canonical.metrics.find((m) => m.metricKey === "arr" && m.isPrimary);
+    record("chat", "present metric answered from the record", !!arr && present.text.includes((arr.normalizedValue! / 1e6).toFixed(2).replace(/0$/, "")), present.text.slice(0, 120).replace(/\s+/g, " "));
+    const ghost = await ask("Quel est l'ARR de Zorblax Robotics ?");
+    record("chat", "unknown company: no invented figure", !/zorblax[^.]{0,80}\$\s?\d/i.test(ghost.text), ghost.text.slice(0, 160).replace(/\s+/g, " "));
+    const ic = await ask(`Qu'a dit James Zhang sur ${name} ?`);
+    record("chat", "IC member with no record: no fabricated opinion", /(aucun|aucune|pas de|no record|not recorded|n'a pas|pas d'observation|on ne sait pas)/i.test(ic.text) && !/james zhang (a dit|said|thinks|pense)/i.test(ic.text), ic.text.slice(0, 160).replace(/\s+/g, " "));
+    const single = await ask(`Quel est le vrai goulot d'étranglement de ${name} ?`);
+    record("chat", "single-deal question first token < 2 s", (single.first ?? 99_999) < 2000, `${single.first} ms`, false);
+  }
+
+  /* ---------------- regression: engine drift over stored versions ---------------- */
+  if (want("regression")) {
+    const { derive } = await import("../src/engine/derive");
+    const { getRegistry } = await import("../src/engine/benchmarks");
+    const { getDb, schema } = await import("../src/db/client");
+    const { eq } = await import("drizzle-orm");
+    const rows = getDb().select({ v: schema.companyVersions }).from(schema.companies).innerJoin(schema.companyVersions, eq(schema.companyVersions.id, schema.companies.currentVersionId)).where(eq(schema.companies.workspaceId, workspaceId)).all();
+    const fund = repo.getDefaultFund(workspaceId);
+    let drift = 0;
+    const lines: string[] = [];
+    for (const { v } of rows) {
+      const lv = repo.loadVersion(v);
+      const now = derive(lv.canonical, getRegistry(v.registryId), fund, { now: new Date(lv.derived.computedAt) });
+      const was = lv.derived;
+      const base = (d: typeof now) => d.returns.scenarios.find((x) => x.scenario === "BASE")?.grossMoic ?? null;
+      const diffs = [
+        was.operatingQuality.value !== now.operatingQuality.value && `OQI ${was.operatingQuality.value} → ${now.operatingQuality.value}`,
+        was.recommendation.status !== now.recommendation.status && `status ${was.recommendation.status} → ${now.recommendation.status}`,
+        Math.abs((base(was) ?? 0) - (base(now) ?? 0)) > 0.005 && `base MOIC ${base(was)?.toFixed(2)} → ${base(now)?.toFixed(2)}`,
+      ].filter(Boolean);
+      if (diffs.length) {
+        drift++;
+        lines.push(`${lv.canonical.identity.name}: ${diffs.join("; ")}`);
+      }
+    }
+    // Drift is expected after a deliberate engine change; it must be reviewed, not hidden.
+    record("regression", "stored versions re-derived", true, `${rows.length} version(s)`);
+    record("regression", "engine drift vs stored results", drift === 0, drift ? lines.slice(0, 8).join(" | ") : "none", false);
+  }
+
   const hardFails = results.filter((r) => !r.pass && r.hard);
   const out = path.join(process.cwd(), "evals", "results");
   fs.mkdirSync(out, { recursive: true });
   const file = path.join(out, `eval-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
-  fs.writeFileSync(file, JSON.stringify({ at: new Date().toISOString(), spentUsd: spent, results }, null, 2));
+  const payload = JSON.stringify({ at: new Date().toISOString(), suites: suites.length ? suites : "all", spentUsd: spent, results }, null, 2);
+  fs.writeFileSync(file, payload);
+  // The latest full run is versioned with the code so the Quality dashboard has it in production.
+  if (suites.length === 0) fs.writeFileSync(path.join(process.cwd(), "evals", "latest.json"), payload);
   console.log(`\n${results.filter((r) => r.pass).length} passed, ${hardFails.length} failed, ${results.filter((r) => !r.pass && !r.hard).length} warnings · model spend $${spent.toFixed(3)} · ${file}`);
   process.exit(hardFails.length ? 1 : 0);
 }

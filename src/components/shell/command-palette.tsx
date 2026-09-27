@@ -70,6 +70,7 @@ function Palette() {
           ]
         : []),
       { id: "a-fund", label: "Fund profile & IC memory", group: "Actions", run: go("/fund") },
+      { id: "a-quality", label: "Quality & reliability", group: "Actions", run: go("/quality") },
     ];
     const ql = q.toLowerCase();
     const filteredActions = ql ? actions.filter((a) => a.label.toLowerCase().includes(ql)) : actions;

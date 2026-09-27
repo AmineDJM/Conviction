@@ -12,6 +12,7 @@ const NAV = [
   { href: "/ic", label: "IC", match: (p: string) => p.startsWith("/ic") },
   { href: "/benchmarks", label: "Benchmarks", match: (p: string) => p.startsWith("/benchmarks") },
   { href: "/fund", label: "Fund", match: (p: string) => p.startsWith("/fund") },
+  { href: "/quality", label: "Quality", match: (p: string) => p.startsWith("/quality") },
 ];
 
 export function Sidebar({ workspace, user, logout }: { workspace: string; user: string; logout: () => Promise<void> }) {
