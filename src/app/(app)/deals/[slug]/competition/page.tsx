@@ -88,6 +88,8 @@ function buildMatrix(comp: CompetitionSection, companyName: string) {
 export default async function CompetitionTab({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { company, version } = await loadDeal(slug);
+  // Pages render alongside the layout; while the first analysis is running there is no version yet.
+  if (!version) return null;
   const c = version!.canonical;
   const d = version!.derived;
   const comp = c.competition;

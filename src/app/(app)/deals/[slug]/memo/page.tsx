@@ -28,6 +28,8 @@ export default async function MemoPage({ params, searchParams }: { params: Promi
   const { slug } = await params;
   const { v } = await searchParams;
   const { company, version: current } = await loadDeal(slug);
+  // Pages render alongside the layout; while the first analysis is running there is no version yet.
+  if (!current) return null;
   const version = (v && repo.getVersion(company.id, v)) || current!;
   const historical = version.row.id !== company.currentVersionId;
   const c = version.canonical;

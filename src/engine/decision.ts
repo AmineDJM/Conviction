@@ -155,7 +155,9 @@ export function decide(inp: DecisionInputs): Recommendation {
   const status = accepted ? aiSuggested! : (fallbackOrder.find((s) => admissible.has(s)) ?? "NEEDS_FOUNDER_CALL");
   const rationale = accepted
     ? (deal.aiRecommendation?.rationale ?? "")
-    : `Model suggested ${aiSuggested ?? "nothing"}, which the gates do not admit. Applied ${status}. ${deal.aiRecommendation?.rationale ?? ""}`.trim();
+    : aiSuggested === null
+      ? `No analytical suggestion available; gates applied ${status}.`
+      : `Model suggested ${aiSuggested}, which the gates do not admit. Applied ${status}. ${deal.aiRecommendation?.rationale ?? ""}`.trim();
   return finalize(status, aiSuggested, adm, exceptional, rationale, status === "WATCH" ? watch : null, trace);
 }
 

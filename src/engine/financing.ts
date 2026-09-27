@@ -82,7 +82,7 @@ export function financingMap(deal: CanonicalDeal, registry: BenchmarkRegistry): 
     else if (d6?.cashOutBeforeRaise) risk = "HIGH";
     else if (d12?.cashOutBeforeRaise) risk = "MODERATE";
     else risk = "LOW";
-    explanation = `Runway after the round ≈ ${runwayAfterRoundMonths!.toFixed(0)} months at $${(monthlyBurnUsd! / 1e3).toFixed(0)}k/month (${burnSource.toLowerCase()} burn). Milestone at ${milestoneMonths} months + ${lead} months to raise = ${requiredMonths} months required → buffer ${bufferMonths.toFixed(0)} months.`;
+    explanation = `Runway after the round ≈ ${runwayAfterRoundMonths!.toFixed(0)} months at $${(monthlyBurnUsd! / 1e3).toFixed(0)}k/month (${burnSource.toLowerCase()} burn). Milestone at ${milestoneMonths} months + ${lead} months to raise = ${requiredMonths} months required → buffer ${bufferMonths.toFixed(1)} months.`;
   } else if (runwayAfterRoundMonths !== null) {
     explanation = `Runway after the round ≈ ${runwayAfterRoundMonths.toFixed(0)} months; milestone timing unknown.`;
   }

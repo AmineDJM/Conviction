@@ -23,6 +23,8 @@ export function ShellProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     try {
+      // Restored after hydration so server and client markup match.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (localStorage.getItem("cv.brain") === "1") setBrainOpenState(true);
     } catch {}
   }, []);

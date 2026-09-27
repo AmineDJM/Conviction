@@ -15,6 +15,8 @@ const GAP_STATUS_TEXT: Record<string, string> = { OPEN: "Open", NEEDS_FOUNDER: "
 export default async function QuestionsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { session, company, version, run } = await loadDeal(slug);
+  // Pages render alongside the layout; while the first analysis is running there is no version yet.
+  if (!version) return null;
   const c = version!.canonical;
   const d = version!.derived;
   const writable = canWrite(session);

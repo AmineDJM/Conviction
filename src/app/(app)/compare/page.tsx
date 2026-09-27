@@ -12,17 +12,10 @@ export const metadata = { title: "Compare" };
 
 const KEY_METRICS = ["arr", "revenue_ttm", "gmv", "arr_growth_yoy", "revenue_growth_yoy", "mom_growth", "nrr", "gross_margin", "cac_payback_months", "burn_multiple", "runway_months", "paying_customers"];
 
-export default async function ComparePage({ searchParams }: { searchParams: Promise<{ ids?: string }> }) {
-  const s = await requireSession();
-  const { ids } = await searchParams;
-  const all = listCompanies(s.workspaceId).filter((c) => c.currentVersionId);
-  const selectedSlugs = (ids ?? "").split(",").filter(Boolean).slice(0, 10);
-  const selected = selectedSlugs.map((slug) => all.find((c) => c.slug === slug)).filter((c): c is NonNullable<typeof c> => !!c);
-  const rows = selected.map((c) => ({ c, v: getCurrentVersion(c)! }));
-  const peerGroups = new Set(rows.map((r) => r.v.derived.peerGroup.id));
-  const registries = new Set(rows.map((r) => r.v.derived.registryId));
+type Loaded = { c: ReturnType<typeof listCompanies>[number]; v: NonNullable<ReturnType<typeof getCurrentVersion>> };
 
-  const Row = ({ label, children, hint }: { label: string; hint?: string; children: (r: (typeof rows)[number]) => ReactNode }) => (
+function Row({ rows, label, children, hint }: { rows: Loaded[]; label: string; hint?: string; children: (r: Loaded) => ReactNode }) {
+  return (
     <tr className="border-t border-line align-top">
       <th className="sticky left-0 z-10 w-[190px] bg-bg py-2.5 pr-4 text-left text-[12.5px] font-normal text-ink-3">
         {label}
@@ -35,13 +28,27 @@ export default async function ComparePage({ searchParams }: { searchParams: Prom
       ))}
     </tr>
   );
-  const Group = ({ title }: { title: string }) => (
+}
+
+function Group({ span, title }: { span: number; title: string }) {
+  return (
     <tr>
-      <td colSpan={rows.length + 1} className="t-eyebrow pb-1 pt-6">
+      <td colSpan={span} className="t-eyebrow pb-1 pt-6">
         {title}
       </td>
     </tr>
   );
+}
+
+export default async function ComparePage({ searchParams }: { searchParams: Promise<{ ids?: string }> }) {
+  const s = await requireSession();
+  const { ids } = await searchParams;
+  const all = listCompanies(s.workspaceId).filter((c) => c.currentVersionId);
+  const selectedSlugs = (ids ?? "").split(",").filter(Boolean).slice(0, 10);
+  const selected = selectedSlugs.map((slug) => all.find((c) => c.slug === slug)).filter((c): c is NonNullable<typeof c> => !!c);
+  const rows: Loaded[] = selected.map((c) => ({ c, v: getCurrentVersion(c)! }));
+  const peerGroups = new Set(rows.map((r) => r.v.derived.peerGroup.id));
+  const registries = new Set(rows.map((r) => r.v.derived.registryId));
 
   return (
     <main className="pb-16">
@@ -78,18 +85,18 @@ export default async function ComparePage({ searchParams }: { searchParams: Prom
                   </tr>
                 </thead>
                 <tbody>
-                  <Group title="Decision" />
-                  <Row label="Current view">
+                  <Group span={rows.length + 1} title="Decision" />
+                  <Row rows={rows} label="Current view">
                     {(r) => (
                       <Badge tone={decisionTone(r.v.derived.recommendation.status)} dot>
                         {DECISION_LABEL[r.v.derived.recommendation.status]}
                       </Badge>
                     )}
                   </Row>
-                  <Row label="Analysis">{(r) => `${titleCase(r.v.canonical.analysis.mode)} · ${titleCase(r.v.canonical.analysis.depth)}`}</Row>
+                  <Row rows={rows} label="Analysis">{(r) => `${titleCase(r.v.canonical.analysis.mode)} · ${titleCase(r.v.canonical.analysis.depth)}`}</Row>
 
-                  <Group title="Quality (peer-relative)" />
-                  <Row label="Operating quality" hint="value · bounds · coverage">
+                  <Group span={rows.length + 1} title="Quality (peer-relative)" />
+                  <Row rows={rows} label="Operating quality" hint="value · bounds · coverage">
                     {(r) => {
                       const o = r.v.derived.operatingQuality;
                       return (
@@ -102,7 +109,7 @@ export default async function ComparePage({ searchParams }: { searchParams: Prom
                     }}
                   </Row>
                   {rows[0]!.v.derived.dimensions.map((d) => (
-                    <Row key={d.id} label={d.name}>
+                    <Row rows={rows} key={d.id} label={d.name}>
                       {(r) => {
                         const x = r.v.derived.dimensions.find((y) => y.id === d.id)!;
                         return (
@@ -113,16 +120,16 @@ export default async function ComparePage({ searchParams }: { searchParams: Prom
                       }}
                     </Row>
                   ))}
-                  <Row label="Evidence">{(r) => <Badge tone={evidenceTone(r.v.derived.evidence.category)}>{titleCase(r.v.derived.evidence.category)}</Badge>}</Row>
+                  <Row rows={rows} label="Evidence">{(r) => <Badge tone={evidenceTone(r.v.derived.evidence.category)}>{titleCase(r.v.derived.evidence.category)}</Badge>}</Row>
 
-                  <Group title="Exceptionality" />
-                  <Row label="Exceptional strength">{(r) => <span className="line-clamp-4 text-ink-2">{r.v.canonical.exceptionalStrengths[0]?.claim ?? "None identified"}</span>}</Row>
-                  <Row label="Power-law potential" hint="anchored index">{(r) => <span className="num">{r.v.derived.powerLaw.value !== null ? Math.round(r.v.derived.powerLaw.value) : "—"}</span>}</Row>
+                  <Group span={rows.length + 1} title="Exceptionality" />
+                  <Row rows={rows} label="Exceptional strength">{(r) => <span className="line-clamp-4 text-ink-2">{r.v.canonical.exceptionalStrengths[0]?.claim ?? "None identified"}</span>}</Row>
+                  <Row rows={rows} label="Power-law potential" hint="anchored index">{(r) => <span className="num">{r.v.derived.powerLaw.value !== null ? Math.round(r.v.derived.powerLaw.value) : "—"}</span>}</Row>
 
-                  <Group title="Fund economics (common denominator)" />
-                  <Row label="Entry">{(r) => `${usd(r.v.derived.returns.inputs.entry.raiseUsd)} at ${usd(r.v.derived.returns.inputs.entry.postMoneyUsd)} ${r.v.derived.returns.inputs.entry.instrument === "SAFE" ? "cap" : "post"}`}</Row>
+                  <Group span={rows.length + 1} title="Fund economics (common denominator)" />
+                  <Row rows={rows} label="Entry">{(r) => `${usd(r.v.derived.returns.inputs.entry.raiseUsd)} at ${usd(r.v.derived.returns.inputs.entry.postMoneyUsd)} ${r.v.derived.returns.inputs.entry.instrument === "SAFE" ? "cap" : "post"}`}</Row>
                   {(["LOW", "BASE", "BULL", "OUTLIER"] as const).map((sc) => (
-                    <Row key={sc} label={`${titleCase(sc)} case`} hint="gross MOIC · exit ownership">
+                    <Row rows={rows} key={sc} label={`${titleCase(sc)} case`} hint="gross MOIC · exit ownership">
                       {(r) => {
                         const x = r.v.derived.returns.scenarios.find((y) => y.scenario === sc);
                         return x ? (
@@ -135,19 +142,19 @@ export default async function ComparePage({ searchParams }: { searchParams: Prom
                       }}
                     </Row>
                   ))}
-                  <Row label="To return the target" hint="backwards analysis">
+                  <Row rows={rows} label="To return the target" hint="backwards analysis">
                     {(r) => (r.v.derived.backwards ? `${usd(r.v.derived.backwards.requiredExitEquityUsd)} exit · ${titleCase(r.v.derived.backwards.plausibility)}` : "—")}
                   </Row>
-                  <Row label="Fund fit">{(r) => `${r.v.derived.fundFit.index ?? "—"} · mandate ${titleCase(r.v.derived.fundFit.mandate)}`}</Row>
+                  <Row rows={rows} label="Fund fit">{(r) => `${r.v.derived.fundFit.index ?? "—"} · mandate ${titleCase(r.v.derived.fundFit.mandate)}`}</Row>
 
-                  <Group title="Risk" />
-                  <Row label="Headline risk">{(r) => (r.v.derived.risk.headline ? <Badge tone={levelTone(r.v.derived.risk.headline)}>{titleCase(r.v.derived.risk.headline)}</Badge> : "—")}</Row>
-                  <Row label="Thesis killers">{(r) => <span className="text-ink-2">{r.v.derived.risk.thesisKillers.map((k) => k.title).join("; ") || "None"}</span>}</Row>
-                  <Row label="Financing path">{(r) => titleCase(r.v.derived.financing.risk)}</Row>
+                  <Group span={rows.length + 1} title="Risk" />
+                  <Row rows={rows} label="Headline risk">{(r) => (r.v.derived.risk.headline ? <Badge tone={levelTone(r.v.derived.risk.headline)}>{titleCase(r.v.derived.risk.headline)}</Badge> : "—")}</Row>
+                  <Row rows={rows} label="Thesis killers">{(r) => <span className="text-ink-2">{r.v.derived.risk.thesisKillers.map((k) => k.title).join("; ") || "None"}</span>}</Row>
+                  <Row rows={rows} label="Financing path">{(r) => titleCase(r.v.derived.financing.risk)}</Row>
 
-                  <Group title="Key metrics (raw, as reported)" />
+                  <Group span={rows.length + 1} title="Key metrics (raw, as reported)" />
                   {KEY_METRICS.filter((k) => rows.some((r) => r.v.canonical.metrics.some((m) => m.metricKey === k && m.isPrimary && m.normalizedValue !== null))).map((k) => (
-                    <Row key={k} label={metricDef(k)?.shortName ?? k}>
+                    <Row rows={rows} key={k} label={metricDef(k)?.shortName ?? k}>
                       {(r) => {
                         const m = r.v.canonical.metrics.find((x) => x.metricKey === k && x.isPrimary);
                         return m && m.normalizedValue !== null ? (

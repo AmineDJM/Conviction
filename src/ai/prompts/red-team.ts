@@ -1,4 +1,4 @@
-/** red_team_v1 — steps 17–22 + 134: exceptional strength, nonlinear outcome, thesis, falsification, symmetric red team, questions, next best action. */
+/** red_team_v2 — steps 17–22 + 134: exceptional strength, nonlinear outcome, thesis, falsification, symmetric red team, questions, next best action. */
 import { z } from "zod";
 import {
   ExceptionalStrength,
@@ -13,10 +13,12 @@ import {
 import { RubricRating } from "@/domain/enums";
 import { ANALYST_STANDARD, today } from "./common";
 
-export const RED_TEAM = { id: "red_team", version: "red_team_v1" } as const;
+export const RED_TEAM = { id: "red_team", version: "red_team_v2" } as const;
 
 export const RedTeamOutput = z.object({
-  executiveSummary: z.string().describe("4–6 sentences: what it is, the bet, the evidence, the main risk, the view"),
+  executiveSummary: z
+    .string()
+    .describe("4–6 sentences: what it is, the bet, the evidence, the main risk. Do NOT state a recommendation or status — deterministic gates decide and the system states it."),
   exceptionalStrengths: z.array(ExceptionalStrength),
   nonlinear: NonlinearSection,
   thesis: ThesisSection,

@@ -19,6 +19,12 @@ interface SearchResult {
 }
 
 export function CommandPalette() {
+  const { paletteOpen } = useShell();
+  // Mounting on open gives a fresh query and selection each time.
+  return paletteOpen ? <Palette /> : null;
+}
+
+function Palette() {
   const { paletteOpen, setPaletteOpen, ask } = useShell();
   const router = useRouter();
   const path = usePathname();
@@ -29,12 +35,9 @@ export function CommandPalette() {
   const slug = /^\/deals\/([^/?#]+)/.exec(path)?.[1] ?? null;
 
   useEffect(() => {
-    if (paletteOpen) {
-      setQ("");
-      setSel(0);
-      setTimeout(() => inputRef.current?.focus(), 10);
-    }
-  }, [paletteOpen]);
+    const t = setTimeout(() => inputRef.current?.focus(), 10);
+    return () => clearTimeout(t);
+  }, []);
 
   useEffect(() => {
     if (!paletteOpen) return;
@@ -77,9 +80,6 @@ export function CommandPalette() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, results, slug]);
 
-  useEffect(() => setSel(0), [q]);
-
-  if (!paletteOpen) return null;
   let lastGroup = "";
   return (
     <div className="no-print fixed inset-0 z-50 flex items-start justify-center bg-black/20 pt-[14vh]" onMouseDown={() => setPaletteOpen(false)}>
@@ -87,7 +87,10 @@ export function CommandPalette() {
         <input
           ref={inputRef}
           value={q}
-          onChange={(e) => setQ(e.target.value)}
+          onChange={(e) => {
+            setQ(e.target.value);
+            setSel(0);
+          }}
           onKeyDown={(e) => {
             if (e.key === "Escape") setPaletteOpen(false);
             else if (e.key === "ArrowDown") (e.preventDefault(), setSel((s) => Math.min(items.length - 1, s + 1)));

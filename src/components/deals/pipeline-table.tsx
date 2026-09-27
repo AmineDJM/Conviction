@@ -55,6 +55,21 @@ const EVIDENCE_ORDER = ["LOW", "MODERATE", "HIGH", "VERY_HIGH"];
 const COLUMNS = ["Stage", "Sector", "Current view", "Exceptional strength", "Quality", "Evidence", "Power-law", "Risk", "Round", "Base MOIC", "Updated"] as const;
 type Col = (typeof COLUMNS)[number];
 
+function H({ label, k, right, sort, setSort }: { label: string; k?: SortKey; right?: boolean; sort: { key: SortKey; dir: 1 | -1 }; setSort: (f: (s: { key: SortKey; dir: 1 | -1 }) => { key: SortKey; dir: 1 | -1 }) => void }) {
+  return (
+    <th className={cx("sticky top-0 z-10 bg-bg px-3 py-2 text-[11.5px] font-medium text-ink-3", right ? "text-right" : "text-left")}>
+      {k ? (
+        <button onClick={() => setSort((s) => ({ key: k, dir: s.key === k ? ((-s.dir) as 1 | -1) : k === "name" ? 1 : -1 }))} className="inline-flex items-center gap-1 hover:text-ink">
+          {label}
+          {sort.key === k && <span aria-hidden>{sort.dir === 1 ? "↑" : "↓"}</span>}
+        </button>
+      ) : (
+        label
+      )}
+    </th>
+  );
+}
+
 export function PipelineTable({ rows }: { rows: PipelineRow[] }) {
   const router = useRouter();
   const [view, setView] = useState("all");
@@ -73,7 +88,9 @@ export function PipelineTable({ rows }: { rows: PipelineRow[] }) {
 
   useEffect(() => {
     try {
+      // Per-viewer preferences are restored after hydration so server and client markup match.
       const saved = JSON.parse(localStorage.getItem("cv.pipeline") ?? "{}");
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (saved.hidden) setHidden(new Set(saved.hidden));
       if (saved.compact) setCompact(true);
       if (saved.view) setView(saved.view);
@@ -117,19 +134,6 @@ export function PipelineTable({ rows }: { rows: PipelineRow[] }) {
   }, [rows, view, q, sort]);
 
   const show = (c: Col) => !hidden.has(c);
-  const H = ({ label, k, right }: { label: string; k?: SortKey; right?: boolean }) => (
-    <th className={cx("sticky top-0 z-10 bg-bg px-3 py-2 text-[11.5px] font-medium text-ink-3", right ? "text-right" : "text-left")}>
-      {k ? (
-        <button onClick={() => setSort((s) => ({ key: k, dir: s.key === k ? ((-s.dir) as 1 | -1) : k === "name" ? 1 : -1 }))} className="inline-flex items-center gap-1 hover:text-ink">
-          {label}
-          {sort.key === k && <span aria-hidden>{sort.dir === 1 ? "↑" : "↓"}</span>}
-        </button>
-      ) : (
-        label
-      )}
-    </th>
-  );
-
   if (rows.length === 0)
     return (
       <div className="px-8 pb-10">
@@ -189,18 +193,18 @@ export function PipelineTable({ rows }: { rows: PipelineRow[] }) {
         <table className="w-full min-w-[1100px] border-separate border-spacing-0 text-[13px]">
           <thead>
             <tr>
-              <H label="Company" k="name" />
-              {show("Stage") && <H label="Stage" k="stage" />}
-              {show("Sector") && <H label="Sector" />}
-              {show("Current view") && <H label="Current view" />}
-              {show("Exceptional strength") && <H label="Exceptional strength" />}
-              {show("Quality") && <H label="Quality" k="oqi" />}
-              {show("Evidence") && <H label="Evidence" k="evidence" />}
-              {show("Power-law") && <H label="Power-law" k="powerLaw" right />}
-              {show("Risk") && <H label="Risk" k="risk" />}
-              {show("Round") && <H label="Round" k="round" right />}
-              {show("Base MOIC") && <H label="Base MOIC" k="moic" right />}
-              {show("Updated") && <H label="Updated" k="updated" right />}
+              <H sort={sort} setSort={setSort} label="Company" k="name" />
+              {show("Stage") && <H sort={sort} setSort={setSort} label="Stage" k="stage" />}
+              {show("Sector") && <H sort={sort} setSort={setSort} label="Sector" />}
+              {show("Current view") && <H sort={sort} setSort={setSort} label="Current view" />}
+              {show("Exceptional strength") && <H sort={sort} setSort={setSort} label="Exceptional strength" />}
+              {show("Quality") && <H sort={sort} setSort={setSort} label="Quality" k="oqi" />}
+              {show("Evidence") && <H sort={sort} setSort={setSort} label="Evidence" k="evidence" />}
+              {show("Power-law") && <H sort={sort} setSort={setSort} label="Power-law" k="powerLaw" right />}
+              {show("Risk") && <H sort={sort} setSort={setSort} label="Risk" k="risk" />}
+              {show("Round") && <H sort={sort} setSort={setSort} label="Round" k="round" right />}
+              {show("Base MOIC") && <H sort={sort} setSort={setSort} label="Base MOIC" k="moic" right />}
+              {show("Updated") && <H sort={sort} setSort={setSort} label="Updated" k="updated" right />}
             </tr>
           </thead>
           <tbody>
