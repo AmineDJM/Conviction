@@ -7,4 +7,10 @@ export async function register() {
   } catch (e) {
     console.error("startup recovery failed", e);
   }
+  try {
+    const { startBackupScheduler } = await import("./server/backup");
+    startBackupScheduler();
+  } catch (e) {
+    console.error("backup scheduler failed to start", e);
+  }
 }

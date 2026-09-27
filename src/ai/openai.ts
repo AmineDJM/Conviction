@@ -9,6 +9,8 @@
  * Every call is authorized by the CostController before it runs and recorded after.
  */
 import type { z } from "zod";
+import { createHash } from "node:crypto";
+import { eq, sql } from "drizzle-orm";
 import { toStrictJsonSchema } from "./json-schema";
 import type { CostController, Reservation } from "./cost";
 import type { Usage } from "./pricing";
@@ -48,6 +50,8 @@ export interface StructuredCall<T extends z.ZodType> {
   reservation?: Reservation | null;
   maxAttempts?: number;
   signal?: AbortSignal;
+  /** Cache the result for identical inputs (never for web research). */
+  cache?: boolean;
 }
 
 export interface StructuredResult<T> {
@@ -57,6 +61,7 @@ export interface StructuredResult<T> {
   searchQueries: string[];
   latencyMs: number;
   attempts: number;
+  cached: boolean;
 }
 
 export class ModelOutputError extends Error {}
@@ -118,8 +123,30 @@ function inputChars(instructions: string, input: InputMessage[]): number {
  * bytes flowing during long reasoning, which avoids idle timeouts on proxies and
  * load balancers; the complete response arrives in the `response.completed` event.
  */
+const RETRYABLE = new Set([408, 409, 429, 500, 502, 503, 504]);
+
+/** Transport-level retries: rate limits and transient server errors, honoring retry-after. */
+export async function fetchWithRetry(url: string, init: RequestInit, retries = 4): Promise<Response> {
+  let delay = 1000;
+  for (let attempt = 0; ; attempt++) {
+    let res: Response | null = null;
+    try {
+      res = await fetch(url, init);
+    } catch (e) {
+      if ((e as Error).name === "AbortError" || attempt >= retries) throw e;
+    }
+    if (res && (!RETRYABLE.has(res.status) || attempt >= retries)) return res;
+    const retryAfter = res ? Number(res.headers.get("retry-after")) : NaN;
+    const wait = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(30_000, retryAfter * 1000) : delay + Math.floor(Math.random() * 400);
+    await res?.body?.cancel().catch(() => {});
+    if (init.signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    await new Promise((r) => setTimeout(r, wait));
+    delay = Math.min(delay * 2, 16_000);
+  }
+}
+
 async function post(body: Record<string, unknown>, signal?: AbortSignal): Promise<RawResponse> {
-  const res = await fetch(`${BASE_URL}/responses`, { method: "POST", headers: headers(), body: JSON.stringify({ ...body, stream: true }), signal });
+  const res = await fetchWithRetry(`${BASE_URL}/responses`, { method: "POST", headers: headers(), body: JSON.stringify({ ...body, stream: true }), signal });
   if (!res.ok || !res.body) {
     const json = (await res.json().catch(() => ({}))) as RawResponse;
     throw new Error(`OpenAI ${res.status}: ${json.error?.message ?? res.statusText}`);
@@ -158,6 +185,20 @@ export async function structured<T extends z.ZodType>(call: StructuredCall<T>): 
   const maxAttempts = call.maxAttempts ?? 2;
   const chars = inputChars(call.instructions, call.input);
   const jsonSchema = toStrictJsonSchema(call.schema);
+  let cacheKey: string | null = null;
+  if (call.cache) {
+    cacheKey = createHash("sha256")
+      .update(JSON.stringify({ model, v: call.promptVersion, s: call.schemaName, i: call.instructions, input: call.input, e: call.effort ?? "low", m: call.maxOutputTokens }))
+      .digest("hex");
+    const hit = await cacheGet(cacheKey);
+    if (hit) {
+      const parsed = call.schema.safeParse(hit);
+      if (parsed.success) {
+        await call.cost.record({ step: `${call.step}:cache`, model, promptVersion: call.promptVersion, usage: { inputTokens: 0, cachedTokens: 0, outputTokens: 0, reasoningTokens: 0, webSearches: 0 }, estimatedUsd: 0, actualUsd: 0, latencyMs: 0, toolCalls: 0 });
+        return { data: parsed.data, usage: { inputTokens: 0, cachedTokens: 0, outputTokens: 0, reasoningTokens: 0, webSearches: 0 }, searchSources: [], searchQueries: [], latencyMs: 0, attempts: 0, cached: true };
+      }
+    }
+  }
   let lastErr: unknown;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -205,7 +246,8 @@ export async function structured<T extends z.ZodType>(call: StructuredCall<T>): 
         if (o.type === "message")
           for (const c of o.content ?? []) for (const a of c.annotations ?? []) if (a.type === "url_citation" && a.url) searchSources.push({ url: a.url, title: a.title });
       }
-      return { data: result.data, usage, searchSources, searchQueries, latencyMs, attempts: attempt };
+      if (cacheKey) await cacheSet(cacheKey, call.step, model, call.promptVersion, result.data, usage);
+      return { data: result.data, usage, searchSources, searchQueries, latencyMs, attempts: attempt, cached: false };
     } catch (e) {
       lastErr = e;
     }
@@ -247,7 +289,7 @@ export async function* stream(call: StreamCall): AsyncGenerator<{ type: "delta";
     body.tools = [{ type: "web_search" }];
     body.max_tool_calls = call.webSearch.maxCalls;
   }
-  const res = await fetch(`${BASE_URL}/responses`, { method: "POST", headers: headers(), body: JSON.stringify(body), signal: call.signal });
+  const res = await fetchWithRetry(`${BASE_URL}/responses`, { method: "POST", headers: headers(), body: JSON.stringify(body), signal: call.signal }, 2);
   if (!res.ok || !res.body) {
     const txt = await res.text().catch(() => "");
     throw new Error(`OpenAI ${res.status}: ${txt.slice(0, 300)}`);
@@ -297,7 +339,7 @@ export async function embed(texts: string[], cost: CostController, step = "embed
     const chars = batch.reduce((a, t) => a + t.length, 0);
     const estimated = cost.authorize(step, EMBEDDING_MODEL, chars, 0);
     const t0 = Date.now();
-    const res = await fetch(`${BASE_URL}/embeddings`, {
+    const res = await fetchWithRetry(`${BASE_URL}/embeddings`, {
       method: "POST",
       headers: headers(),
       body: JSON.stringify({ model: EMBEDDING_MODEL, input: batch, dimensions: EMBEDDING_DIM }),
@@ -316,4 +358,34 @@ export async function embed(texts: string[], cost: CostController, step = "embed
     for (const d of [...json.data].sort((a, b) => a.index - b.index)) out.push(Float32Array.from(d.embedding));
   }
   return out;
+}
+
+/* ---------------------------------------------------------------- */
+/* Reproducibility cache (llm_cache)                                  */
+/* ---------------------------------------------------------------- */
+
+async function cacheGet(key: string): Promise<unknown | null> {
+  try {
+    const { getDb, schema } = await import("@/db/client");
+    const db = getDb();
+    const row = db.select().from(schema.llmCache).where(eq(schema.llmCache.key, key)).get();
+    if (!row) return null;
+    db.update(schema.llmCache).set({ hits: sql`${schema.llmCache.hits} + 1` }).where(eq(schema.llmCache.key, key)).run();
+    return row.output;
+  } catch {
+    return null;
+  }
+}
+
+async function cacheSet(key: string, step: string, model: string, promptVersion: string, output: unknown, usage: Usage) {
+  try {
+    const { getDb, schema } = await import("@/db/client");
+    getDb()
+      .insert(schema.llmCache)
+      .values({ key, step, model, promptVersion, output: output as never, usage: usage as never, hits: 0, createdAt: new Date().toISOString() })
+      .onConflictDoNothing()
+      .run();
+  } catch {
+    /* cache is best-effort */
+  }
 }

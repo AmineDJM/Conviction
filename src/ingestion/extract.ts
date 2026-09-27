@@ -24,6 +24,8 @@ export interface ExtractedDocument {
   needsVisual: boolean;
   /** Base64 payload for the model when visual understanding is needed. */
   visualPayload: { type: "file"; filename: string; dataUrl: string } | { type: "images"; dataUrls: string[] } | null;
+  /** Always-on visual input for deck forensics (charts, tables, logo walls, screenshots). */
+  forensicsPayload: { type: "file"; filename: string; dataUrl: string } | { type: "images"; dataUrls: string[] } | null;
 }
 
 export function detectKind(filename: string, mime: string): DocKind {
@@ -63,6 +65,20 @@ function slideText(xml: string): string {
     if (runs.length) lines.push(runs.join(""));
   }
   return lines.join("\n");
+}
+
+const MEDIA_MIME: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp" };
+
+/** Embedded slide images (charts pasted as images, logo walls, screenshots), largest first. */
+async function extractPptxMedia(buf: Buffer, max = 10): Promise<string[]> {
+  const zip = await JSZip.loadAsync(buf);
+  const media = Object.values(zip.files).filter((f) => /^ppt\/media\/.+\.(png|jpe?g|gif|webp)$/i.test(f.name));
+  const withSize = await Promise.all(media.map(async (f) => ({ f, data: await f.async("nodebuffer") })));
+  return withSize
+    .filter((x) => x.data.length > 8_000 && x.data.length < 4_000_000)
+    .sort((a, b) => b.data.length - a.data.length)
+    .slice(0, max)
+    .map((x) => `data:${MEDIA_MIME[x.f.name.split(".").pop()!.toLowerCase()] ?? "image/png"};base64,${x.data.toString("base64")}`);
 }
 
 async function extractPptx(buf: Buffer): Promise<ExtractedPage[]> {
@@ -112,7 +128,13 @@ export async function extractDocument(filename: string, mime: string, buf: Buffe
         ? { type: "file", filename, dataUrl: `data:application/pdf;base64,${b64}` }
         : { type: "images", dataUrls: [`data:${mime || "image/png"};base64,${b64}`] };
   }
-  return { filename, mime, kind, sha256, sizeBytes: buf.length, pages, needsVisual, visualPayload };
+  let forensicsPayload: ExtractedDocument["forensicsPayload"] = null;
+  if (kind === "PDF" && buf.length <= 25 * 1024 * 1024) forensicsPayload = { type: "file", filename, dataUrl: `data:application/pdf;base64,${buf.toString("base64")}` };
+  else if (kind === "PPTX") {
+    const imgs = await extractPptxMedia(buf).catch(() => []);
+    forensicsPayload = imgs.length ? { type: "images", dataUrls: imgs } : null;
+  } else if (kind === "IMAGE") forensicsPayload = visualPayload;
+  return { filename, mime, kind, sha256, sizeBytes: buf.length, pages, needsVisual, visualPayload, forensicsPayload };
 }
 
 /** Render pages for the model with stable page markers used in citations. */

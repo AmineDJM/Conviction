@@ -231,7 +231,7 @@ export const analysisRuns = sqliteTable(
     companyId: text("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
     mode: text("mode", { enum: ["FAST_SCREEN", "STANDARD", "DEEP_DD"] }).notNull(),
     kind: text("kind", { enum: ["DECK", "FOUNDER_CALL", "RESEARCH", "RECALC"] }).notNull().default("DECK"),
-    status: text("status", { enum: ["QUEUED", "RUNNING", "COMPLETED", "PARTIAL", "FAILED"] }).notNull(),
+    status: text("status", { enum: ["QUEUED", "RUNNING", "COMPLETED", "PARTIAL", "FAILED", "CANCELLED"] }).notNull(),
     depth: text("depth"),
     model: text("model").notNull(),
     promptVersions: text("prompt_versions", { mode: "json" }).$type<Record<string, string>>().notNull(),
@@ -436,3 +436,21 @@ export const chatMessages = sqliteTable(
   },
   (t) => [index("chat_thread_idx").on(t.threadId, t.createdAt)],
 );
+
+/* ------------------------------ Reproducibility ------------------------------ */
+
+/**
+ * Cache of deterministic-input model calls (same model + prompt version +
+ * schema + input ⇒ same output). Makes identical re-ingestion reproducible and
+ * free. Research (web) calls are never cached.
+ */
+export const llmCache = sqliteTable("llm_cache", {
+  key: text("key").primaryKey(),
+  step: text("step").notNull(),
+  model: text("model").notNull(),
+  promptVersion: text("prompt_version").notNull(),
+  output: text("output", { mode: "json" }).notNull(),
+  usage: text("usage", { mode: "json" }).notNull(),
+  hits: integer("hits").notNull().default(0),
+  createdAt: ts("created_at"),
+});

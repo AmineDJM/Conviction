@@ -1,7 +1,7 @@
 /**
  * Repository layer. Every query is scoped by workspaceId (§116 isolation).
  */
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { getDb, schema, type DB } from "@/db/client";
 import { CanonicalDeal, upgradeCanonical } from "@/domain/canonical";
 import { DEFAULT_FUND_PROFILE, FundProfile } from "@/domain/fund";
@@ -329,6 +329,12 @@ export function saveDocument(
 
 export function listDocuments(companyId: string, db: DB = getDb()) {
   return db.select().from(s.documents).where(eq(s.documents.companyId, companyId)).all();
+}
+
+/** Documents already ingested in this workspace with the given content hashes (re-upload detection). */
+export function findDocumentsBySha(workspaceId: string, sha256s: string[], db: DB = getDb()) {
+  if (!sha256s.length) return [];
+  return db.select().from(s.documents).where(and(eq(s.documents.workspaceId, workspaceId), inArray(s.documents.sha256, sha256s))).orderBy(desc(s.documents.createdAt)).all();
 }
 
 export function getDocumentPages(documentId: string, db: DB = getDb()) {

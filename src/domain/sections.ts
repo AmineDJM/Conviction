@@ -812,3 +812,135 @@ export const PerfectSlide = z.object({
   slide: z.string().describe("Exactly what the ideal slide would show (rows, columns, periods, cohorts)"),
 });
 export type PerfectSlide = z.infer<typeof PerfectSlide>;
+
+/* ---------------------------------------------------------------- */
+/* Latent signals — what the deck reveals beyond what it claims.       */
+/* Observable signals only: no psychology, no personality inference.   */
+/* ---------------------------------------------------------------- */
+
+export const OPERATING_MATURITY_SIGNALS = [
+  "ICP_PRECISION",
+  "USER_BUYER_DISTINCTION",
+  "MODEL_APPROPRIATE_METRICS",
+  "COHORTS_OVER_VANITY",
+  "CHURN_REASONS_KNOWN",
+  "WIN_LOSS_UNDERSTANDING",
+  "UNIT_ECONOMICS_UNDERSTANDING",
+  "ACTUAL_FORECAST_SEPARATION",
+] as const;
+
+export const LatentSignalsDraft = z.object({
+  operatingMaturity: z.array(
+    z.object({
+      signal: z.enum(OPERATING_MATURITY_SIGNALS),
+      status: z.enum(["DEMONSTRATED", "PARTIAL", "NOT_SHOWN", "CONTRADICTED"]).describe("Judge only what the deck shows"),
+      evidence: z.string().describe("Quote or describe the observable evidence, with page"),
+      page: z.number().int().nullable(),
+    }),
+  ),
+  reasoningChains: z
+    .array(
+      z.object({
+        conclusion: z.string().describe("A conclusion the deck asks the reader to accept (e.g. 'the market is $50B')"),
+        support: z.enum(["EVIDENCE_AND_CAUSAL_REASONING", "EVIDENCE_ONLY", "ASSERTION_ONLY"]),
+        chain: z.string().describe("claim → evidence → reasoning → conclusion as presented, or what is missing"),
+        page: z.number().int().nullable(),
+      }),
+    )
+    .describe("The 5–12 most important conclusions of the deck"),
+  vanityMetricsShown: z.array(z.object({ metric: z.string(), page: z.number().int().nullable(), decisionMetricItDisplaces: z.string().nullable() })),
+  presentationTechniques: z
+    .array(
+      z.object({
+        technique: z.enum([
+          "CUMULATIVE_INSTEAD_OF_PERIOD",
+          "GMV_INSTEAD_OF_NET_REVENUE",
+          "PIPELINE_AS_BOOKED",
+          "PILOTS_MIXED_WITH_CUSTOMERS",
+          "LOIS_MIXED_WITH_CONTRACTS",
+          "FORECAST_DRAWN_AS_ACTUAL",
+          "FREE_USERS_AS_CUSTOMERS",
+          "CAGR_FROM_TINY_BASE",
+          "LOGOS_WITHOUT_STATUS",
+          "ADJACENT_TAM_AS_ADDRESSABLE",
+          "OTHER",
+        ]),
+        detail: z.string(),
+        page: z.number().int().nullable(),
+      }),
+    )
+    .describe("Presentation choices that raise the impression of performance — not accusations of lying"),
+  disclosures: z
+    .array(
+      z.object({
+        kind: z.enum(["LIMITATION", "RISK", "UNFLATTERING_METRIC", "PRECISE_DEFINITION", "OBJECTION_ADDRESSED", "FAILED_EXPERIMENT"]),
+        detail: z.string(),
+        page: z.number().int().nullable(),
+      }),
+    )
+    .describe("What the founder voluntarily discloses that a purely promotional deck would hide"),
+  ambition: z.object({
+    headline: z.string().describe("The ambition the deck claims (e.g. $30B TAM, category leader)"),
+    operationalRoadmap: z.string().describe("What the round actually funds: geography, product scope, team, milestones"),
+    bridge: z.string().describe("How the deck explains going from the wedge to the headline — or that it does not"),
+    consistency: z.enum(["CONSISTENT", "STRETCHED", "DISCONNECTED", "UNCLEAR"]),
+  }),
+  causalExplanations: z
+    .array(z.object({ metric: z.string(), explanationGiven: z.string().nullable(), page: z.number().int().nullable() }))
+    .describe("For key metric movements (growth, churn, margin), does the deck explain WHY? null when no explanation is given"),
+});
+export type LatentSignalsDraft = z.infer<typeof LatentSignalsDraft>;
+
+export const RevealedInsight = z.object({
+  insight: z.string().describe("e.g. 'Sales scalability is probably the real bottleneck.'"),
+  evidence: z.string().describe("The observable signals behind it (metrics chosen, omissions, definitions, inconsistencies), with pages"),
+  basis: z.enum(["OBSERVED_IN_DECK", "COMPUTED", "INFERRED"]),
+  direction: z.enum(["POSITIVE", "NEGATIVE", "NEUTRAL"]),
+});
+export type RevealedInsight = z.infer<typeof RevealedInsight>;
+
+/* ---------------------------------------------------------------- */
+/* Decision core — out of 100 facts, the few that decide.             */
+/* ---------------------------------------------------------------- */
+
+export const DecisionCore = z.object({
+  compression: z.object({
+    bet: z.string(),
+    exceptionalStrength: z.string(),
+    breakingPoint: z.string().describe("The single condition under which the investment fails"),
+    returnPath: z.string().describe("How this returns the fund, in numbers"),
+  }),
+  determinants: z
+    .array(
+      z.object({
+        fact: z.string().describe("A fact or unknown that actually determines the investment outcome"),
+        whyDecisive: z.string(),
+        status: z.enum(["VERIFIED", "COMPANY_REPORTED", "INFERRED", "UNKNOWN", "CONTRADICTED"]),
+        refs: z.array(z.string()).describe("Claim/metric/source ids"),
+      }),
+    )
+    .describe("Exactly 5: the facts that determine the investment — out of everything in the deck"),
+  outlierSignals: z
+    .array(
+      z.object({
+        signal: z.string().describe("A rare variable: exceptional founder, unique distribution, technology far ahead, 20× cost reduction, new behaviour, exploding market"),
+        rarity: z.string().describe("Why it is rare and hard to reproduce"),
+        whatWouldConfirm: z.string(),
+      }),
+    )
+    .describe("Up to 2 signals that could reveal an outlier; empty if none"),
+  reversingQuestion: z.object({
+    question: z.string().describe("The single question whose answer could reverse the decision"),
+    ifFavorable: z.string(),
+    ifUnfavorable: z.string(),
+  }),
+  asymmetricConviction: z.object({
+    whatTheMarketSees: z.string().describe("Why most investors would find this company average"),
+    repairableWeaknesses: z.string(),
+    exceptionalAndHardToCopy: z.string().describe("Or 'nothing identified' — never manufactured"),
+  }),
+  secondOrder: z
+    .array(z.object({ question: z.string(), answer: z.string() }))
+    .describe("What do incumbents do if it works? If AI gets 10× cheaper? Does the moat grow or vanish with scale? Does the company get stronger as it grows?"),
+});
+export type DecisionCore = z.infer<typeof DecisionCore>;

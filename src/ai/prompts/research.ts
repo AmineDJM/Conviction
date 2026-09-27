@@ -3,7 +3,7 @@ import { z } from "zod";
 import { Competitor, ResearchFinding } from "@/domain/sections";
 import { ANALYST_STANDARD, today } from "./common";
 
-export const RESEARCH = { id: "research", version: "research_v1" } as const;
+export const RESEARCH = { id: "research", version: "research_v2" } as const;
 
 export const ResearchOutput = z.object({
   findings: z.array(ResearchFinding),
@@ -38,10 +38,11 @@ export const ResearchOutput = z.object({
 });
 export type ResearchOutput = z.infer<typeof ResearchOutput>;
 
-export function researchInstructions(maxSearches: number) {
+export function researchInstructions(maxSearches: number, focus?: string) {
   return `${ANALYST_STANDARD}
 
-TASK: Conduct targeted external research on a startup. Today is ${today()}. You have at most ${maxSearches} web search calls — spend them on the open questions with the highest decision value, in priority order. Do not run generic checklists.
+TASK: Conduct targeted external research on a startup. Today is ${today()}. You have at most ${maxSearches} web search calls — spend them on the open questions with the highest decision value, in priority order. Do not run generic checklists.${focus ? `\n\nTHIS ROUND COVERS ONLY: ${focus}. Parallel rounds cover the rest — leave other sections empty.` : ""}
+Be terse: each finding one or two factual sentences; no narrative.
 
 Adapt to the company and founders:
 - Technical founder → public code, open source, technical publications, talks, prior products.

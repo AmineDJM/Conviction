@@ -83,6 +83,8 @@ function companyChunks(slug: string, c: CanonicalDeal, db: DB): ChunkDraft[] {
   return out;
 }
 
+const pendingEmbeds = new Map<string, Promise<Buffer | null>>();
+
 async function writeChunks(workspaceId: string, companyId: string | null, versionId: string | null, drafts: ChunkDraft[], cost: CostController, db: DB, scopeKinds?: ChunkKind[]) {
   // Existing embeddings by text hash (workspace-wide) so unchanged text is never re-embedded.
   const hashes = drafts.map((d) => sha(`${d.title}\n${d.text}`));
@@ -96,17 +98,27 @@ async function writeChunks(workspaceId: string, companyId: string | null, versio
       .all())
       if (r.e) existing.set(r.h, r.e as Buffer);
   }
-  const toEmbed = drafts.map((d, i) => ({ d, h: hashes[i]! })).filter((x) => !existing.has(x.h));
-  let vectors: Float32Array[] = [];
+  // Texts another concurrent run is already embedding are awaited, not embedded twice.
+  const seen = new Set<string>();
+  const missing = drafts.map((d, i) => ({ d, h: hashes[i]! })).filter((x) => !existing.has(x.h) && !seen.has(x.h) && seen.add(x.h));
+  const waitFor = missing.filter((x) => pendingEmbeds.has(x.h));
+  const toEmbed = missing.filter((x) => !pendingEmbeds.has(x.h));
   let embedError: string | null = null;
-  try {
-    vectors = await embed(toEmbed.map((x) => `${x.d.title}\n${x.d.text}`), cost, "EMBED");
-  } catch (e) {
+  const batch = embed(toEmbed.map((x) => `${x.d.title}\n${x.d.text}`), cost, "EMBED").catch((e: Error) => {
     // Retrieval degrades to lexical + structured; never blocks the analysis.
-    embedError = (e as Error).message;
-  }
+    embedError = e.message;
+    return [] as Float32Array[];
+  });
+  toEmbed.forEach((x, i) => pendingEmbeds.set(x.h, batch.then((vs) => (vs[i] ? toBlob(vs[i]!) : null))));
   const fresh = new Map<string, Buffer>();
-  toEmbed.forEach((x, i) => vectors[i] && fresh.set(x.h, toBlob(vectors[i]!)));
+  try {
+    for (const x of [...toEmbed, ...waitFor]) {
+      const b = await pendingEmbeds.get(x.h);
+      if (b) fresh.set(x.h, b);
+    }
+  } finally {
+    for (const x of toEmbed) pendingEmbeds.delete(x.h);
+  }
 
   db.transaction((tx) => {
     if (companyId) tx.delete(s.chunks).where(and(eq(s.chunks.workspaceId, workspaceId), eq(s.chunks.companyId, companyId))).run();

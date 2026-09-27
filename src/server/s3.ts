@@ -17,7 +17,7 @@ export interface S3Config {
   prefix: string;
 }
 
-export function s3ConfigFromEnv(env: NodeJS.ProcessEnv = process.env): S3Config | null {
+export function s3ConfigFromEnv(env: Record<string, string | undefined> = process.env): S3Config | null {
   const bucket = env.S3_BUCKET?.trim();
   const accessKeyId = env.S3_ACCESS_KEY_ID?.trim();
   const secretAccessKey = env.S3_SECRET_ACCESS_KEY?.trim();

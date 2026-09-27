@@ -41,7 +41,7 @@ export function UploadForm() {
       const res = await fetch("/api/analyze", { method: "POST", body: fd });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Upload failed");
-      router.push(`/deals/${json.slug}?run=${json.runId}`);
+      router.push(json.outcome === "ALREADY_ANALYZED" ? `/deals/${json.slug}?dedup=1` : `/deals/${json.slug}?run=${json.runId}`);
     } catch (e) {
       setError((e as Error).message);
       setBusy(false);

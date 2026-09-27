@@ -112,9 +112,14 @@ export function storageDescription(): string {
   return getStorage().description;
 }
 
-export async function storeFile(workspaceId: string, sha256: string, filename: string, buf: Buffer): Promise<string> {
+/** Deterministic, content-addressed key (lets callers persist the document row before the async write). */
+export function storageKeyFor(workspaceId: string, sha256: string, filename: string): string {
   const ext = path.extname(filename).slice(0, 10);
-  const key = `${safeSegment(workspaceId)}/${safeSegment(sha256)}${safeSegment(ext)}`;
+  return `${safeSegment(workspaceId)}/${safeSegment(sha256)}${safeSegment(ext)}`;
+}
+
+export async function storeFile(workspaceId: string, sha256: string, filename: string, buf: Buffer): Promise<string> {
+  const key = storageKeyFor(workspaceId, sha256, filename);
   await getStorage().put(key, encrypt(buf));
   return key;
 }

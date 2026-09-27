@@ -28,6 +28,7 @@ import { decide, type Recommendation } from "./decision";
 import { metricDef } from "./metrics/dictionary";
 import { integrityReport, type IntegrityReport } from "./integrity";
 import { economicsReport, type EconomicsReport } from "./economics";
+import { latentReport, type LatentReport } from "./latent";
 
 export interface ResearchPriority {
   gapId: string;
@@ -66,6 +67,8 @@ export interface DerivedAnalysis {
   integrity: IntegrityReport;
   /** Institutional economics: cap-table returns, trajectory, sensitivity map, counterfactuals. */
   economics: EconomicsReport;
+  /** Latent signals: what the deck reveals beyond what it claims. */
+  latent: LatentReport;
 }
 
 export function researchPriorityIndex(g: Pick<InformationGap, "decisionImportance" | "uncertainty" | "researchability">): number {
@@ -149,5 +152,6 @@ export function derive(deal: CanonicalDeal, registry: BenchmarkRegistry, fund: F
     smallSampleWarnings,
     integrity: integrityReport(deal, registry, peerGroup),
     economics: economicsReport({ deal, registry, fund, returns, backwards, market }),
+    latent: latentReport(deal, registry, peerGroup),
   };
 }

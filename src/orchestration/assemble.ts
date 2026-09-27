@@ -4,10 +4,12 @@
  * and freshness.
  */
 import type { CanonicalDeal, Claim, InformationGap, Source } from "@/domain/canonical";
-import type { DeckUnderstandingOutput } from "@/ai/prompts/deck-understanding";
+import type { TriageOutput } from "@/ai/prompts/triage";
+import type { ClaimsExtractionOutput, MetricsExtractionOutput } from "@/ai/prompts/extract";
+import type { DeckForensics, LatentSignalsDraft } from "@/domain/sections";
+import type { ThesisOutput, ActionsOutput } from "@/ai/prompts/decision";
 import type { ResearchOutput } from "@/ai/prompts/research";
 import type { InvestmentAnalysisOutput } from "@/ai/prompts/investment-analysis";
-import type { RedTeamOutput } from "@/ai/prompts/red-team";
 import type { FounderCallOutput } from "@/ai/prompts/founder-call";
 import { normalizeObservation, parsePeriodDate } from "@/engine/metrics/normalize";
 import { deriveMetrics } from "@/engine/metrics/derive";
@@ -29,38 +31,23 @@ function freshnessFor(dateStr: string | null | undefined, asOf: Date): Claim["fr
 }
 
 /* ---------------------------------------------------------------- */
-/* Deck understanding                                                 */
+/* v3 passes: triage, claims, metrics, forensics, latent               */
 /* ---------------------------------------------------------------- */
 
-export function applyDeckUnderstanding(c: CanonicalDeal, out: DeckUnderstandingOutput, docs: IngestedDoc[], asOf = new Date()): CanonicalDeal {
+/** Documents become company-origin sources; the primary deck is SRC-001. */
+export function applyDocuments(c: CanonicalDeal, docs: IngestedDoc[], asOf = new Date()): CanonicalDeal {
   const next = structuredClone(c);
   const srcId = seqIdFactory("SRC", next.sources.map((x) => x.id));
-  const clmId = seqIdFactory("CLM", next.claims.map((x) => x.id));
-  const metId = seqIdFactory("MET", next.metrics.map((x) => x.id));
-  const gapId = seqIdFactory("GAP", next.informationGaps.map((x) => x.id), 2);
-
-  next.identity = out.identity;
-  next.classification = out.classification;
-  next.product = out.product;
-  next.businessModel = out.businessModel;
-  next.customers = out.customers;
-  next.foundersFromDeck = out.founders;
-  next.financing = out.financing;
-  next.deckMarket = out.deckMarket;
   next.documents = docs.map((d) => ({ id: d.documentId, filename: d.filename, kind: d.kind, pages: d.pages.length }));
-
-  // One source per document; the primary deck is SRC-001.
-  const docSource = new Map<string, string>();
   for (const d of docs) {
-    const id = srcId();
-    docSource.set(d.documentId, id);
+    if (next.sources.some((s) => s.documentId === d.documentId)) continue;
     next.sources.push({
-      id,
+      id: srcId(),
       kind: "DOCUMENT",
       title: d.filename,
       url: null,
       documentId: d.documentId,
-      publisher: out.identity.name,
+      publisher: null,
       publishedDate: null,
       retrievedAt: asOf.toISOString(),
       origin: "COMPANY",
@@ -68,22 +55,42 @@ export function applyDeckUnderstanding(c: CanonicalDeal, out: DeckUnderstandingO
       citationVerified: true,
     });
   }
-  const primarySource = docSource.get(docs[0]?.documentId ?? "") ?? null;
+  // Deterministic injection detector over every raw page.
+  const flags = docs.flatMap((d) => d.pages.flatMap((p) => detectInjection(p.text, `${d.filename} p. ${p.pageNo}`)));
+  next.analysis.securityFlags = dedupeFlags([...next.analysis.securityFlags, ...flags]);
+  return next;
+}
 
-  // Claims.
-  const refToClaim = new Map<string, string>();
+function primaryDocSource(c: CanonicalDeal): string | null {
+  return c.sources.find((s) => s.kind === "DOCUMENT")?.id ?? null;
+}
+
+export function applyTriage(c: CanonicalDeal, out: TriageOutput): CanonicalDeal {
+  const next = structuredClone(c);
+  const gapId = seqIdFactory("GAP", next.informationGaps.map((x) => x.id), 2);
+  next.identity = out.identity;
+  next.classification = out.classification;
+  next.foundersFromDeck = out.founders;
+  next.informationGaps = out.informationGaps.map((g) => ({ ...g, id: gapId(), status: g.researchability === "FOUNDER_ONLY" ? "NEEDS_FOUNDER" : "OPEN", resolutionNote: null }));
+  const doc = next.sources.find((s) => s.kind === "DOCUMENT");
+  if (doc && !doc.publisher) doc.publisher = out.identity.name;
+  return next;
+}
+
+export function applyClaimsExtraction(c: CanonicalDeal, out: ClaimsExtractionOutput, asOf = new Date()): CanonicalDeal {
+  const next = structuredClone(c);
+  const clmId = seqIdFactory("CLM", next.claims.map((x) => x.id));
+  const src = primaryDocSource(next);
   for (const cl of out.claims) {
-    const id = clmId();
-    refToClaim.set(cl.ref, id);
     next.claims.push({
-      id,
+      id: clmId(),
       category: cl.category,
       statement: cl.statement,
       valueText: cl.valueText,
       entity: cl.entity,
       period: cl.period,
       material: cl.material,
-      unusualness: cl.unusualness,
+      unusualness: Math.min(5, Math.max(1, cl.unusualness)),
       proposition: cl.proposition,
       evidenceNeeded: cl.evidenceNeeded,
       origin: "COMPANY",
@@ -93,33 +100,74 @@ export function applyDeckUnderstanding(c: CanonicalDeal, out: DeckUnderstandingO
       verificationMethod: "Stated in company materials",
       limitations: null,
       contradictions: [],
-      evidence: primarySource ? [{ sourceId: primarySource, effect: "ORIGIN", excerpt: cl.excerpt, location: cl.page ? `p. ${cl.page}` : null, note: null }] : [],
+      evidence: src ? [{ sourceId: src, effect: "ORIGIN", excerpt: cl.excerpt, location: cl.page ? `p. ${cl.page}` : null, note: null }] : [],
       history: [{ at: asOf.toISOString(), change: "CREATED", note: "Extracted from deck" }],
     });
   }
+  next.product = out.product;
+  next.businessModel = out.businessModel;
+  next.customers = out.customers;
+  const flags = out.suspectedInstructions.map((s) => ({ location: s.page ? `p. ${s.page}` : "document", excerpt: s.excerpt }));
+  next.analysis.securityFlags = dedupeFlags([...next.analysis.securityFlags, ...flags]);
+  return next;
+}
 
-  // Metrics: normalize deterministically, then derive.
+export function applyMetricsExtraction(c: CanonicalDeal, out: MetricsExtractionOutput, asOf = new Date()): CanonicalDeal {
+  const next = structuredClone(c);
+  const metId = seqIdFactory("MET", next.metrics.map((x) => x.id));
+  const src = primaryDocSource(next);
   next.metricObservations = out.metrics;
+  next.financing = out.financing;
+  next.deckMarket = out.deckMarket;
   const findClaimByExcerpt = (excerpt: string) => {
     const e = excerpt.trim().slice(0, 40).toLowerCase();
     if (!e) return null;
     return next.claims.find((x) => x.evidence.some((ev) => ev.excerpt.toLowerCase().includes(e)))?.id ?? null;
   };
   const instances = out.metrics
-    .map((o) => normalizeObservation(o, { asOf, nextId: metId, sourceIdForPage: () => primarySource, claimIdForExcerpt: findClaimByExcerpt }))
+    .map((o) => normalizeObservation(o, { asOf, nextId: metId, sourceIdForPage: () => src, claimIdForExcerpt: findClaimByExcerpt }))
     .filter((m): m is NonNullable<typeof m> => m !== null);
-  next.metrics = deriveMetrics([...next.metrics, ...instances], metId);
-
-  // Information gaps.
-  next.informationGaps = out.informationGaps.map((g) => ({ ...g, id: gapId(), status: g.researchability === "FOUNDER_ONLY" ? "NEEDS_FOUNDER" : "OPEN", resolutionNote: null }));
-
-  // Security flags: model-reported + deterministic detector over raw pages.
-  const flags = [
-    ...out.suspectedInstructions.map((s) => ({ location: s.page ? `p. ${s.page}` : "document", excerpt: s.excerpt })),
-    ...docs.flatMap((d) => d.pages.flatMap((p) => detectInjection(p.text, `${d.filename} p. ${p.pageNo}`))),
-  ];
-  next.analysis.securityFlags = dedupeFlags([...next.analysis.securityFlags, ...flags]);
+  next.metrics = deriveMetrics([...next.metrics.filter((m) => m.calculationMethod === "USER_CORRECTED"), ...instances], metId);
   return next;
+}
+
+export function applyForensics(c: CanonicalDeal, out: DeckForensics): CanonicalDeal {
+  const next = structuredClone(c);
+  next.forensics = out;
+  const flags = out.suspectedInstructions.map((s) => ({ location: s.page ? `p. ${s.page}` : "document (visual)", excerpt: s.excerpt }));
+  next.analysis.securityFlags = dedupeFlags([...next.analysis.securityFlags, ...flags]);
+  // The model's customer evidence levels from visuals do not upgrade extraction; logos stay logos.
+  return next;
+}
+
+export function applyLatent(c: CanonicalDeal, out: LatentSignalsDraft): CanonicalDeal {
+  const next = structuredClone(c);
+  next.latentSignals = out;
+  return next;
+}
+
+const words = (s: string) => new Set(s.toLowerCase().replace(/[^a-z0-9$%. ]/g, " ").split(/\s+/).filter((w) => w.length > 2));
+export function jaccard(a: string, b: string) {
+  const A = words(a);
+  const B = words(b);
+  if (!A.size || !B.size) return 0;
+  let inter = 0;
+  for (const w of A) if (B.has(w)) inter++;
+  return inter / (A.size + B.size - inter);
+}
+
+/** Map triage key-claim refs (k1…) to extracted claim ids by statement similarity. */
+export function linkKeyClaims(keyClaims: { ref: string; statement: string }[], claims: Claim[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const k of keyClaims) {
+    let best: { id: string; score: number } | null = null;
+    for (const cl of claims) {
+      const score = jaccard(k.statement, cl.statement);
+      if (!best || score > best.score) best = { id: cl.id, score };
+    }
+    if (best && best.score >= 0.25) map.set(k.ref, best.id);
+  }
+  return map;
 }
 
 function dedupeFlags(flags: { location: string; excerpt: string }[]) {
@@ -418,16 +466,29 @@ export function passesDecisionTest(q: { ifAnswerA: string; ifAnswerB: string; af
   return q.affects.length > 0 && a.length > 8 && b.length > 8 && a !== b;
 }
 
-export function applyRedTeam(c: CanonicalDeal, out: RedTeamOutput): CanonicalDeal {
+export function applyThesis(c: CanonicalDeal, out: ThesisOutput): CanonicalDeal {
   const next = structuredClone(c);
+  next.realityCheck = out.realityCheck;
+  next.revealedBeyondPitch = out.revealedBeyondPitch;
+  next.decisionCore = { ...out.decisionCore, determinants: out.decisionCore.determinants.slice(0, 5), outlierSignals: out.decisionCore.outlierSignals.slice(0, 2) };
   next.executiveSummary = out.executiveSummary;
   next.exceptionalStrengths = out.exceptionalStrengths.map((x, i) => ({ ...x, id: `EXC-${i + 1}` }));
   next.nonlinear = out.nonlinear;
   next.thesis = { ...out.thesis, thesisPoints: out.thesis.thesisPoints.slice(0, 3), whatCouldBreak: out.thesis.whatCouldBreak.slice(0, 3) };
   next.falsification = out.falsification;
   next.redTeam = out.redTeam;
+  next.alternativeExplanations = out.alternativeExplanations;
   next.whatILike = out.whatILike.slice(0, 3);
   next.whatWorriesMe = out.whatWorriesMe.slice(0, 3);
+  next.powerLawRatings = out.powerLawRatings;
+  return next;
+}
+
+export function applyActions(c: CanonicalDeal, out: ActionsOutput): CanonicalDeal {
+  const next = structuredClone(c);
+  next.causalModel = out.causalModel;
+  next.sensitivityDrivers = out.sensitivityDrivers.slice(0, 6);
+  next.perfectSlides = out.perfectSlides;
   const tierOrder = { MUST_ASK: 0, IMPORTANT: 1, OPTIONAL: 2 } as const;
   next.questions = out.questions
     .filter(passesDecisionTest)
@@ -436,7 +497,6 @@ export function applyRedTeam(c: CanonicalDeal, out: RedTeamOutput): CanonicalDea
     .map((q, i) => ({ ...q, id: `Q-${String(i + 1).padStart(2, "0")}`, status: "OPEN", answer: null, answeredAt: null, resolutionNote: null }));
   next.nextBestAction = out.nextBestAction;
   next.aiRecommendation = out.recommendation;
-  next.powerLawRatings = out.powerLawRatings;
   return next;
 }
 

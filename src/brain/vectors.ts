@@ -4,7 +4,7 @@
  * ~50k × 512-d vectors takes a few milliseconds; swap for sqlite-vec or
  * pgvector when the corpus outgrows memory.
  */
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { getDb, schema } from "@/db/client";
 
 interface Entry {
@@ -14,7 +14,17 @@ interface Entry {
   vec: Float32Array;
 }
 
-const cache = new Map<string, { entries: Entry[]; dirty: boolean }>();
+const cache = new Map<string, { entries: Entry[]; dirty: boolean; signature: string }>();
+
+/** Cheap change detector so writes from another process (CLI, second instance) are seen too. */
+function signatureOf(workspaceId: string) {
+  const r = getDb()
+    .select({ n: sql<number>`count(*)`, m: sql<number>`coalesce(max(rowid), 0)` })
+    .from(schema.chunks)
+    .where(eq(schema.chunks.workspaceId, workspaceId))
+    .get();
+  return `${r?.n ?? 0}:${r?.m ?? 0}`;
+}
 
 export function invalidateVectors(workspaceId: string) {
   const c = cache.get(workspaceId);
@@ -42,14 +52,15 @@ function normalize(v: Float32Array): Float32Array {
 
 function load(workspaceId: string): Entry[] {
   const c = cache.get(workspaceId);
-  if (c && !c.dirty) return c.entries;
+  const signature = signatureOf(workspaceId);
+  if (c && !c.dirty && c.signature === signature) return c.entries;
   const rows = getDb()
     .select({ id: schema.chunks.id, companyId: schema.chunks.companyId, kind: schema.chunks.kind, embedding: schema.chunks.embedding })
     .from(schema.chunks)
     .where(and(eq(schema.chunks.workspaceId, workspaceId), isNotNull(schema.chunks.embedding)))
     .all();
   const entries = rows.map((r) => ({ id: r.id, companyId: r.companyId, kind: r.kind, vec: normalize(fromBlob(r.embedding as Buffer)) }));
-  cache.set(workspaceId, { entries, dirty: false });
+  cache.set(workspaceId, { entries, dirty: false, signature });
   return entries;
 }
 

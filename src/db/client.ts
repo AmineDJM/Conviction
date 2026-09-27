@@ -8,6 +8,7 @@ import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import fs from "node:fs";
 import path from "node:path";
 import * as schema from "./schema";
+import { backupBeforeMigrations } from "./backup-core";
 
 export type DB = BetterSQLite3Database<typeof schema> & { $client: Database.Database };
 
@@ -24,7 +25,14 @@ export function openDb(file = databasePath()): DB {
   sqlite.pragma("foreign_keys = ON");
   sqlite.pragma("busy_timeout = 5000");
   const db = drizzle(sqlite, { schema }) as DB;
-  migrate(db, { migrationsFolder: path.join(process.cwd(), "drizzle") });
+  // Transactions here all write: take the write lock at BEGIN (IMMEDIATE) so a concurrent writer in
+  // another process (CLI, second instance) makes us wait busy_timeout instead of failing at once with
+  // SQLITE_BUSY when a deferred transaction's read snapshot cannot be upgraded (WAL).
+  const deferred = db.transaction.bind(db);
+  db.transaction = ((fn, config) => deferred(fn, { behavior: "immediate", ...config })) as DB["transaction"];
+  const migrationsFolder = path.join(process.cwd(), "drizzle");
+  backupBeforeMigrations(sqlite, file, migrationsFolder); // snapshot only when an existing DB has pending migrations
+  migrate(db, { migrationsFolder });
   return db;
 }
 

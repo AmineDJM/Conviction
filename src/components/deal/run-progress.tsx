@@ -12,6 +12,14 @@ export function RunProgress({ runId, initial, hasVersion }: { runId: string; ini
   const [steps, setSteps] = useState<Step[]>(initial);
   const [spent, setSpent] = useState<number | null>(null);
   const [versionSeen, setVersionSeen] = useState(hasVersion);
+  const [status, setStatus] = useState<string>("RUNNING");
+  const [cancelling, setCancelling] = useState(false);
+
+  async function cancel() {
+    setCancelling(true);
+    const r = await fetch(`/api/runs/${runId}/cancel`, { method: "POST" }).catch(() => null);
+    if (!r?.ok) setCancelling(false);
+  }
 
   useEffect(() => {
     let alive = true;
@@ -20,6 +28,7 @@ export function RunProgress({ runId, initial, hasVersion }: { runId: string; ini
       if (!alive || !r) return;
       setSteps(r.progress);
       setSpent(r.spentUsd);
+      setStatus(r.status);
       if (r.hasVersion && !versionSeen) {
         setVersionSeen(true);
         router.refresh(); // preliminary understanding is available
@@ -44,8 +53,20 @@ export function RunProgress({ runId, initial, hasVersion }: { runId: string; ini
         <div className="text-[13px] font-medium">
           {hasVersion ? "Analysis in progress — showing preliminary understanding" : "Analyzing"}
         </div>
-        <div className="num text-[12px] text-ink-3">
-          {done}/{steps.length} steps{spent !== null ? ` · $${spent.toFixed(3)} spent` : ""}
+        <div className="flex items-baseline gap-4">
+          <div className="num text-[12px] text-ink-3">
+            {status === "QUEUED" ? "Queued — waiting for a free analysis slot" : `${done}/${steps.length} steps`}
+            {spent !== null ? ` · $${spent.toFixed(3)} spent` : ""}
+          </div>
+          <button
+            type="button"
+            onClick={cancel}
+            disabled={cancelling}
+            className="text-[12px] text-ink-3 underline-offset-2 hover:text-risk hover:underline disabled:opacity-50"
+            title="Stop the analysis. Work already done is kept as a partial version."
+          >
+            {cancelling ? "Stopping…" : "Stop"}
+          </button>
         </div>
       </div>
       <ol className="grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-3">

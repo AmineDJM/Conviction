@@ -28,6 +28,10 @@ services:
         sync: false
       - key: SESSION_SECRET
         generateValue: true
+      # Encrypts uploaded documents at rest (AES-256-GCM) and off-site backups.
+      # Generated once by Render; keep it (losing it makes stored documents unreadable).
+      - key: DATA_ENCRYPTION_KEY
+        generateValue: true
       - key: DATABASE_PATH
         value: /var/data/conviction.db
       - key: STORAGE_DIR
@@ -40,3 +44,8 @@ services:
         value: production
       - key: NEXT_TELEMETRY_DISABLED
         value: "1"
+      # Backups: daily + before migrations, written to /var/data/backups (BACKUP_DIR
+      # defaults to <dirname(DATABASE_PATH)>/backups). Optional off-site copies and
+      # object storage for documents: add S3_BUCKET, S3_ACCESS_KEY_ID,
+      # S3_SECRET_ACCESS_KEY (+ S3_ENDPOINT, S3_REGION) in the dashboard — see README
+      # "Operations". Nothing here needs to be filled in.

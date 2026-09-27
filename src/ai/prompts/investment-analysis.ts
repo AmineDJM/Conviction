@@ -18,7 +18,7 @@ import {
 } from "@/domain/sections";
 import { ANALYST_STANDARD, today } from "./common";
 
-export const INVESTMENT_ANALYSIS = { id: "investment_analysis", version: "investment_analysis_v2" } as const;
+export const INVESTMENT_ANALYSIS = { id: "investment_analysis", version: "investment_analysis_v3" } as const;
 
 export const InvestmentAnalysisOutput = z.object({
   founders: z.array(FounderAnalysis),
@@ -70,32 +70,51 @@ EXIT ASSUMPTIONS — one per scenario (FAILURE, LOW, BASE, BULL, OUTLIER): exit 
 }
 
 /**
- * v2: the analysis runs as two parallel parts to halve wall-clock latency.
- * Part A — people, product, customers, traction, GTM. Part B — market, competition,
- * moat, financing, risks, exits. Rubric criteria are split accordingly.
+ * v3: the analysis runs as five parallel parts so no single call is the latency
+ * bottleneck (output tokens are the wall-clock driver). Each part owns its
+ * sections and exactly its rubric criteria; code merges them.
  */
-export const RUBRIC_PART_A = [
-  "FOUNDER_MARKET_FIT",
-  "EXECUTION_EVIDENCE",
-  "TEAM_COMPLETENESS",
-  "PAIN_SEVERITY",
-  "VALUE_QUANTIFIED",
-  "PRODUCT_DIFFERENTIATION",
-  "PMF_SIGNAL_QUALITY",
-  "ICP_CLARITY",
-  "SALES_MOTION_FIT",
-  "CHANNEL_SCALABILITY",
-  "PRICING_POWER",
-] as const;
-export const RUBRIC_PART_B = RUBRIC_CRITERIA.filter((c) => !(RUBRIC_PART_A as readonly string[]).includes(c));
+export const ANALYSIS_PARTS = {
+  A1: {
+    sections: ["founders", "pain", "pmf"],
+    rubric: ["FOUNDER_MARKET_FIT", "EXECUTION_EVIDENCE", "TEAM_COMPLETENESS", "PAIN_SEVERITY", "PMF_SIGNAL_QUALITY"],
+    others: "product, customers, GTM, market, competition, moat, financing, risks and exits",
+  },
+  A2: {
+    sections: ["product", "customers", "gtm", "economicsNotes"],
+    rubric: ["VALUE_QUANTIFIED", "PRODUCT_DIFFERENTIATION", "ICP_CLARITY", "SALES_MOTION_FIT", "CHANNEL_SCALABILITY", "PRICING_POWER"],
+    others: "founders, pain, PMF, market, competition, moat, financing, risks and exits",
+  },
+  B1: {
+    sections: ["market"],
+    rubric: ["VALUE_CAPTURE", "MARKET_GROWTH"],
+    others: "founders, product, customers, PMF, GTM, competition, moat, financing, risks and exits",
+  },
+  B3: {
+    sections: ["competition", "moat"],
+    rubric: ["WEDGE_QUALITY", "MOAT_CURRENT", "MOAT_TRAJECTORY"],
+    others: "founders, product, customers, PMF, GTM, market, financing, risks and exits",
+  },
+  B2: {
+    sections: ["financingPath", "risks", "exitAssumptions", "arpaAssumptionUsd"],
+    rubric: ["TIMING_CATALYST", "INFLECTION_EVIDENCE"],
+    others: "founders, product, customers, PMF, GTM, market, competition and moat",
+  },
+} as const satisfies Record<string, { sections: readonly (keyof InvestmentAnalysisOutput)[]; rubric: readonly (typeof RUBRIC_CRITERIA)[number][]; others: string }>;
+export type AnalysisPartId = keyof typeof ANALYSIS_PARTS;
 
-export const AnalysisPartA = InvestmentAnalysisOutput.pick({ founders: true, product: true, pain: true, customers: true, pmf: true, gtm: true, economicsNotes: true, rubric: true });
-export const AnalysisPartB = InvestmentAnalysisOutput.pick({ market: true, competition: true, moat: true, financingPath: true, risks: true, rubric: true, exitAssumptions: true, arpaAssumptionUsd: true });
+export const AnalysisPartSchemas = {
+  A1: InvestmentAnalysisOutput.pick({ founders: true, pain: true, pmf: true, rubric: true }),
+  A2: InvestmentAnalysisOutput.pick({ product: true, customers: true, gtm: true, economicsNotes: true, rubric: true }),
+  B1: InvestmentAnalysisOutput.pick({ market: true, rubric: true }),
+  B3: InvestmentAnalysisOutput.pick({ competition: true, moat: true, rubric: true }),
+  B2: InvestmentAnalysisOutput.pick({ financingPath: true, risks: true, exitAssumptions: true, arpaAssumptionUsd: true, rubric: true }),
+};
 
-export function analysisPartInstructions(part: "A" | "B") {
-  const scope =
-    part === "A"
-      ? `THIS CALL — PART A ONLY: founders, product, pain, customers, PMF, GTM, economics notes, and the rubric for exactly these criteria: ${RUBRIC_PART_A.join(", ")}. Another analyst covers market, competition, moat, financing, risks and exits in parallel.`
-      : `THIS CALL — PART B ONLY: market reconstruction, competition, moat, financing path, risks (covering ALL risk categories including team, product and GTM risks visible in the record), exit assumptions, ARPA assumption, and the rubric for exactly these criteria: ${RUBRIC_PART_B.join(", ")}. Another analyst covers founders, product, customers, PMF and GTM in parallel.`;
-  return `${investmentAnalysisInstructions()}\n\n${scope}`;
+export function analysisPartInstructions(part: AnalysisPartId) {
+  const p = ANALYSIS_PARTS[part];
+  const extra = part === "B2" ? " Risks must cover ALL risk categories visible in the record (team, product, GTM, market, competition, financing, regulatory), not only this part's sections." : "";
+  return `${investmentAnalysisInstructions()}
+
+THIS CALL — PART ${part} ONLY: ${p.sections.join(", ")}, and the rubric for exactly these criteria: ${p.rubric.join(", ")}.${extra} Other analysts cover ${p.others} in parallel — do not produce them.`;
 }

@@ -57,6 +57,9 @@ import {
   AlternativeExplanation,
   SensitivityDriver,
   PerfectSlide,
+  LatentSignalsDraft,
+  RevealedInsight,
+  DecisionCore,
 } from "./sections";
 import { Money } from "./money";
 
@@ -305,6 +308,12 @@ export const CanonicalDeal = z.object({
   perfectSlides: z.array(PerfectSlide).default([]),
   /** "Ignoring the founder's narrative, what company is actually in front of us?" */
   realityCheck: z.string().nullable().default(null),
+  /** Observable latent signals from the deck (model-extracted, code-aggregated in derived.latent). */
+  latentSignals: LatentSignalsDraft.nullable().default(null),
+  /** "What the deck reveals beyond the pitch". */
+  revealedBeyondPitch: z.array(RevealedInsight).default([]),
+  /** Compression: the bet, the 5 determinants, 2 outlier signals, the reversing question. */
+  decisionCore: DecisionCore.nullable().default(null),
   /** Human overrides. Raw data is never overwritten: every override records what it replaced. */
   overrides: z
     .array(
@@ -397,6 +406,9 @@ export function emptyCanonical(mode: z.infer<typeof AnalysisMode>): CanonicalDea
     sensitivityDrivers: [],
     perfectSlides: [],
     realityCheck: null,
+    latentSignals: null,
+    revealedBeyondPitch: [],
+    decisionCore: null,
     overrides: [],
   };
 }
