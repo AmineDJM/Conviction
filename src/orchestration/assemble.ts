@@ -492,6 +492,13 @@ export function applyFounderCall(c: CanonicalDeal, out: FounderCallOutput, trans
       history: [{ at: asOf.toISOString(), change: "CREATED", note: "Founder call" }],
     });
   }
+  for (const u of out.gapUpdates ?? []) {
+    const g = next.informationGaps.find((x) => x.id === u.gapId);
+    if (!g) continue;
+    g.status = u.status;
+    g.resolutionNote = `Founder call: ${u.note}`;
+  }
+  if (out.recommendation) next.aiRecommendation = out.recommendation;
   const newInstances = out.newMetrics
     .map((o) => normalizeObservation(o, { asOf, nextId: metId, sourceIdForPage: () => src.id }))
     .filter((m): m is NonNullable<typeof m> => m !== null);

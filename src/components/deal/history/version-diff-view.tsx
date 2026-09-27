@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { NumChange, VersionDiff } from "@/reports/version-diff";
 import { Badge, cx } from "@/components/ui";
 import { DECISION_LABEL, metricValue, titleCase } from "@/lib/format";
+import { metricDef } from "@/engine/metrics/dictionary";
 import { VERIFICATION_TEXT, verificationTone } from "@/components/deal/evidence/labels";
 import { QUESTION_STATUS_TEXT, questionStatusTone } from "@/components/deal/questions/labels";
 
@@ -150,7 +151,7 @@ export function VersionDiffView({ diff, slug }: { diff: VersionDiff; slug: strin
                 {diff.metrics.map((m) => (
                   <tr key={m.metricKey} className="align-top">
                     <td className="border-t border-line px-3 py-2">
-                      <span className="text-ink">{m.label}</span> <span className="font-mono text-[10.5px] text-ink-3">{m.metricKey}</span>
+                      <span className="text-ink">{metricDef(m.metricKey)?.shortName ?? m.label}</span> <span className="font-mono text-[10.5px] text-ink-3">{m.metricKey}</span>
                     </td>
                     <td className="num border-t border-line px-3 py-2 text-ink-2">
                       {m.from ? (

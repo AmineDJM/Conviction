@@ -9,6 +9,7 @@ import { apiSession, canWrite } from "@/server/session";
 import * as repo from "@/server/repo";
 import { commitCanonicalUpdate } from "@/server/versioning";
 import { applyMetricCorrection, CorrectionError } from "@/orchestration/corrections";
+import { metricValue } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -45,10 +46,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       previous: current,
       canonical: deal,
       reason: "METRIC_CORRECTION",
-      summary: `${label}: ${previous.rawValue} → ${corrected.rawValue.replace(" (analyst correction)", "")}`,
+      summary: `${label}: ${previous.rawValue} → ${metricValue(corrected.unit, body.value)} (analyst correction)`,
       history: {
         type: "METRIC_CORRECTED",
-        summary: `${label} (${previous.id}) corrected: ${previous.rawValue} → ${body.value} ${corrected.unit}`,
+        summary: `${label} (${previous.id}) corrected: ${previous.rawValue} → ${metricValue(corrected.unit, body.value)}`,
         payload: { metricId: previous.id, correctedId: corrected.id, metricKey: corrected.metricKey, from: previous.normalizedValue, to: body.value, unit: corrected.unit, note: body.note },
       },
       audit: { action: "METRIC_CORRECTED", detail: `${previous.id} → ${corrected.id}` },

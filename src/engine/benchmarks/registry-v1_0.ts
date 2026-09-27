@@ -377,6 +377,7 @@ export const VC_BENCHMARK_V1_0: BenchmarkRegistry = {
       { id: "THESIS_KILLER", description: "A thesis-killing weakness with HIGH/CRITICAL likelihood → ANALYTICAL_RECOMMEND_PASS unless the exceptional override applies." },
       { id: "DEPTH_LIMIT", description: "FAST_SCREEN may only produce SCREEN_OUT, NEEDS_FOUNDER_CALL or WATCH. PARTIAL analyses cannot be IC_READY or recommend invest." },
       { id: "MUST_ASK_OPEN", description: "Open MUST_ASK questions with evidence below HIGH → NEEDS_FOUNDER_CALL at most." },
+      { id: "FOUNDER_CALL_HELD", description: "After a recorded founder call with no must-ask question left open, NEEDS_FOUNDER_CALL is no longer admissible." },
       { id: "IC_READY", description: "Requires FULL analysis, evidence ≥ threshold, no open MUST_ASK questions, mandate pass." },
       { id: "INVEST", description: "IC_READY conditions + OQI lower bound ≥ threshold + base-case gross MOIC ≥ threshold." },
       { id: "WATCH", description: "WATCH requires a trigger, expected date and awaited information." },

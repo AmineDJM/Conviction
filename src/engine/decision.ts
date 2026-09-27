@@ -113,6 +113,13 @@ export function decide(inp: DecisionInputs): Recommendation {
     trace.push({ gate: "MUST_ASK_OPEN", outcome: "BLOCK", detail: `${openMust.length} must-ask questions open; evidence ${evidence.category}` });
   } else trace.push({ gate: "MUST_ASK_OPEN", outcome: "PASS", detail: `${openMust.length} must-ask open; evidence ${evidence.category}` });
 
+  // FOUNDER_CALL_HELD: once a call happened and every must-ask question was addressed, another call is not the default.
+  const callHeld = deal.sources.some((x) => x.kind === "TRANSCRIPT");
+  if (callHeld && openMust.length === 0) {
+    remove(["NEEDS_FOUNDER_CALL"]);
+    trace.push({ gate: "FOUNDER_CALL_HELD", outcome: "APPLIED", detail: "Founder call recorded and no must-ask question left open" });
+  } else trace.push({ gate: "FOUNDER_CALL_HELD", outcome: "N/A", detail: callHeld ? `${openMust.length} must-ask question(s) still open after the call` : "No founder call recorded" });
+
   // IC_READY
   const icOk =
     deal.analysis.depth === "FULL" && evidenceAtLeast(evidence.category, d.icReadyMinEvidence) && openMust.length === 0 && fund.mandate === "PASS";

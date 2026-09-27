@@ -62,6 +62,18 @@ function Excerpt({ children }: { children: ReactNode }) {
   return <blockquote className="my-1.5 border-l-2 border-line-strong pl-3 text-[13px] leading-relaxed text-ink">“{children}”</blockquote>;
 }
 
+/** Locate a verbatim excerpt (e.g. from a call transcript) in a stored document's pages. */
+function findExcerptPage(doc: DocLite | undefined, excerpt: string): number | null {
+  if (!doc) return null;
+  const norm = (t: string) => t.toLowerCase().replace(/[“”"]/g, "").replace(/\s+/g, " ");
+  const probes = excerpt.split(/\.\.\.|…/).map((x) => norm(x).trim()).filter((x) => x.length >= 12);
+  for (const probe of probes) {
+    const hit = doc.pages.find((p) => norm(p.text).includes(probe.slice(0, 60)));
+    if (hit) return hit.pageNo;
+  }
+  return null;
+}
+
 function CitationBadge({ s }: { s: Source }) {
   return s.citationVerified ? (
     <Badge tone="neutral" title={s.kind === "WEB" ? "URL was returned by the search tool" : "Material uploaded to the platform"}>
@@ -106,8 +118,8 @@ export function ClaimDetail({ id, idx, open }: { id: string; idx: EvidenceIndex;
         <ol className="space-y-3">
           {c.evidence.map((e, i) => {
             const s = idx.sources.find((x) => x.id === e.sourceId);
-            const page = pageFromLocation(e.location);
             const docId = s?.documentId ?? null;
+            const page = pageFromLocation(e.location) ?? (docId ? findExcerptPage(idx.documents.find((d) => d.id === docId), e.excerpt) : null);
             const hasDoc = docId && idx.documents.some((d) => d.id === docId && d.pages.some((p) => p.pageNo === page));
             return (
               <li key={i} className="rounded-md border border-line px-3 py-2.5">
@@ -135,7 +147,7 @@ export function ClaimDetail({ id, idx, open }: { id: string; idx: EvidenceIndex;
                   <span>Location:</span>
                   {hasDoc && page ? (
                     <button type="button" className="text-accent-text hover:underline" onClick={() => open({ kind: "doc", id: docId!, page })}>
-                      {e.location} — open page
+                      {e.location && pageFromLocation(e.location) ? e.location : `${e.location ?? "Transcript"}, p. ${page}`} — open page
                     </button>
                   ) : isUrl(e.location) ? (
                     <a href={e.location} target="_blank" rel="noopener noreferrer nofollow" className="truncate text-accent-text hover:underline">
@@ -145,7 +157,7 @@ export function ClaimDetail({ id, idx, open }: { id: string; idx: EvidenceIndex;
                     <span className="text-ink-2">{e.location ?? "not recorded"}</span>
                   )}
                 </div>
-                {e.note && <p className="mt-1 text-[12px] text-warn">{e.note}</p>}
+                {e.note && <p className={cx("mt-1 text-[12px]", /unverified/i.test(e.note) ? "text-warn" : "text-ink-2")}>{e.note}</p>}
               </li>
             );
           })}

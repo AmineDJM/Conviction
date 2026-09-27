@@ -149,6 +149,8 @@ export async function runFounderCall(inp: RunFounderCallInput): Promise<void> {
     const record = {
       company: { name: c0.identity.name, oneLiner: c0.identity.oneLiner },
       openQuestions: c0.questions.filter((q) => q.status !== "RESOLVED").map((q) => ({ id: q.id, question: q.question })),
+      openInformationGaps: c0.informationGaps.filter((g) => g.status !== "RESOLVED").map((g) => ({ id: g.id, question: g.question, status: g.status })),
+      currentRecommendation: c0.aiRecommendation,
       claimLedger: claimsDigest(c0),
     };
     const out = await structured({

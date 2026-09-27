@@ -13,7 +13,7 @@ import type { DerivedAnalysis } from "@/engine/derive";
 import { metricDef } from "@/engine/metrics/dictionary";
 import { metricEvidence } from "@/components/deal/metric";
 import { DECISION_LABEL, STAGE_LABEL, metricValue, multiple, pct, usd } from "@/lib/format";
-import { NOT_DISCLOSED, enumLabel as label, humanList } from "./text";
+import { NOT_DISCLOSED, clip, enumLabel as label, humanList } from "./text";
 
 export type MemoBlock =
   | { kind: "lead"; text: string }
@@ -130,13 +130,16 @@ export function buildInvestmentMemo(c: CanonicalDeal, d: DerivedAnalysis): Inves
   const isSafe = entry.instrument === "SAFE" || entry.instrument === "CONVERTIBLE_NOTE";
   const base = d.returns.scenarios.find((s) => s.scenario === "BASE");
   const primary = c.metrics.filter((m) => m.isPrimary && m.normalizedValue !== null);
+  // The gate outcome is rendered from derived.recommendation; the AI's own suggestion is shown only in the gate trace.
+  const rationale = rec.rationale.replace(/^Model suggested [A-Z_]+, which the gates do not admit\. Applied [A-Z_]+\.\s*/, "");
+  const summary = c.executiveSummary?.replace(/\s*Recommendation:[^.]*(\.[^.]*)?\.?\s*$/, "").trim() ?? null;
 
   /* 1. Executive recommendation */
   {
     const b: MemoBlock[] = [
-      { kind: "decision", status: rec.status, label: DECISION_LABEL[rec.status] ?? label(rec.status), detail: rec.rationale },
+      { kind: "decision", status: rec.status, label: DECISION_LABEL[rec.status] ?? label(rec.status), detail: rationale },
     ];
-    if (c.executiveSummary) b.push({ kind: "lead", text: c.executiveSummary });
+    if (summary) b.push({ kind: "lead", text: summary });
     b.push({
       kind: "kv",
       rows: [
@@ -166,13 +169,17 @@ export function buildInvestmentMemo(c: CanonicalDeal, d: DerivedAnalysis): Inves
         {
           kind: "kv",
           rows: [
-            { k: "Legal name", v: c.identity.legalName ?? NOT_DISCLOSED },
-            { k: "Headquarters", v: c.identity.hqCountry ?? NOT_DISCLOSED },
-            { k: "Founded", v: c.identity.foundedYear ? String(c.identity.foundedYear) : NOT_DISCLOSED },
-            { k: "Website", v: c.identity.website ?? NOT_DISCLOSED },
-            { k: "Industry", v: cl.industry.map(label).join(", ") || "—" },
-            { k: "Product type", v: cl.productType.map(label).join(", ") || "—" },
-            { k: "Revenue model", v: cl.revenueModel.map(label).join(", ") || "—" },
+            ...(() => {
+              const known: { k: string; v: string }[] = [];
+              const missing: string[] = [];
+              const add = (k: string, v: string | null) => (v ? known.push({ k, v }) : missing.push(k.toLowerCase()));
+              add("Legal name", c.identity.legalName);
+              add("Headquarters", c.identity.hqCountry);
+              add("Founded", c.identity.foundedYear ? String(c.identity.foundedYear) : null);
+              add("Website", c.identity.website);
+              return missing.length ? [...known, { k: "Not disclosed", v: missing.join(", ") }] : known;
+            })(),
+            { k: "Classification", v: [cl.industry.map(label).join(", "), cl.productType.map(label).join(", "), cl.revenueModel.map(label).join(", ")].filter(Boolean).join(" · ") || "—" },
             { k: "Go-to-market", v: cl.gtm.map(label).join(", ") || "—" },
             { k: "Maturity · stage", v: `${label(cl.operationalMaturity)} · ${STAGE_LABEL[cl.financingStage] ?? label(cl.financingStage)}${cl.declaredStage ? ` (declared “${cl.declaredStage}”)` : ""}` },
           ],
@@ -240,10 +247,11 @@ export function buildInvestmentMemo(c: CanonicalDeal, d: DerivedAnalysis): Inves
               ...(p.before.length || p.after.length
                 ? [
                     {
-                      kind: "table",
-                      head: ["Before", "With the product"],
-                      rows: Array.from({ length: Math.max(p.before.length, p.after.length) }, (_, i) => [p.before[i] ?? "", p.after[i] ?? ""]),
-                      widths: ["50%", "50%"],
+                      kind: "kv",
+                      rows: [
+                        { k: "Before", v: p.before.join(" → ") || "—" },
+                        { k: "With the product", v: p.after.join(" → ") || "—" },
+                      ],
                     } as MemoBlock,
                   ]
                 : []),
@@ -286,7 +294,7 @@ export function buildInvestmentMemo(c: CanonicalDeal, d: DerivedAnalysis): Inves
       b.push({ kind: "h3", text: "Customers" });
       b.push({ kind: "kv", rows: [{ k: "ICP", v: c.customers.icp }, { k: "Segments", v: c.customers.segments.join("; ") || "—" }, { k: "Concentration", v: c.customers.concentrationNote ?? NOT_DISCLOSED }, { k: "References", v: c.customers.referencesNote }] });
       if (c.customers.namedCustomers.length)
-        b.push({ kind: "table", head: ["Named customer", "Relationship", "Note"], rows: c.customers.namedCustomers.map((n) => [n.name, label(n.relationship), n.note ?? ""]), widths: ["28%", "120px", null] });
+        b.push({ kind: "kv", rows: [{ k: "Named customers", v: c.customers.namedCustomers.map((n) => `${n.name} (${label(n.relationship).toLowerCase()})`).join(", ") }] });
     }
     S.push(b.length ? { id: "customer", title: "Customer and pain", blocks: b } : { id: "customer", title: "Customer and pain", blocks: [MISSING], missing: true });
   }
@@ -298,9 +306,18 @@ export function buildInvestmentMemo(c: CanonicalDeal, d: DerivedAnalysis): Inves
       b.push({ kind: "h3", text: `${f.name} — ${f.role}` });
       b.push({ kind: "p", text: f.summary });
       b.push({ kind: "kv", rows: [{ k: "Founder–market fit", v: f.founderMarketFit }] });
-      if (f.timeline.length) b.push({ kind: "table", head: ["Period", "Organization · role", "Relevance"], rows: f.timeline.map((t) => [t.period, `${t.organization} · ${t.role}`, t.relevance]), widths: ["22%", "30%", null] });
+      if (f.timeline.length) b.push({ kind: "kv", rows: [{ k: "Track record", v: f.timeline.map((t) => `${t.organization} — ${t.role} (${t.period})`).join("; ") }] });
       const caps = f.capabilities.filter((x) => x.relevant);
-      if (caps.length) b.push({ kind: "table", head: ["Capability", "Rating", "Observability", "Evidence"], rows: caps.map((x) => [label(x.dimension), label(x.rating), label(x.observability), x.evidence]), widths: ["22%", "110px", "110px", null] });
+      if (caps.length)
+        b.push({
+          kind: "kv",
+          rows: [
+            {
+              k: "Capabilities",
+              v: caps.map((x) => `${label(x.dimension)}: ${label(x.rating).toLowerCase()}${x.observability !== "OBSERVABLE" ? ` (${label(x.observability).toLowerCase()})` : ""}`).join(" · "),
+            },
+          ],
+        });
       if (f.notObservableWithoutInterview.length) b.push({ kind: "p", text: `Not observable without interview: ${f.notObservableWithoutInterview.join("; ")}.` });
     }
     if (!c.founders.length && c.foundersFromDeck.length)
@@ -323,11 +340,11 @@ export function buildInvestmentMemo(c: CanonicalDeal, d: DerivedAnalysis): Inves
       });
     const flags: string[] = [];
     if (d.market.deckTamUsd) flags.push(`Deck TAM ${usd(d.market.deckTamUsd)}${d.market.deckInflation ? ` = ${d.market.deckInflation.toFixed(1)}× the reconstructed upper bound` : ""}.`);
-    if (d.market.methodDivergence && d.market.methodDivergence > 10) flags.push(`Methods diverge materially (${d.market.methodDivergence.toFixed(0)}× spread).`);
+    if (d.market.methodDivergence && d.market.methodDivergence > 10) flags.push(`Methods diverge materially (${d.market.methodDivergence > 1000 ? "over 1,000" : d.market.methodDivergence.toFixed(0)}× spread between the lowest and highest bound).`);
     if (flags.length) b.push({ kind: "p", text: flags.join(" ") });
     if (c.market) {
       b.push({ kind: "kv", rows: [{ k: "Deck TAM assessment", v: c.market.deckTamAssessment }, { k: "Value capture", v: c.market.valueCaptureAnalysis.conclusion }, { k: "Pricing power", v: c.market.valueCaptureAnalysis.pricingPower }, { k: "Commoditization", v: c.market.valueCaptureAnalysis.commoditizationRisk }] });
-      if (c.market.expansion.length) b.push({ kind: "table", head: ["Expansion market", "Adjacency", "Timeline", "Capital"], rows: c.market.expansion.map((e) => [e.market, `${e.customerAdjacency}; ${e.productAdjacency}`, e.timeline, e.capitalRequired]), widths: ["22%", null, "110px", "110px"] });
+      if (c.market.expansion.length) b.push({ kind: "kv", rows: [{ k: "Expansion paths", v: c.market.expansion.map((e) => e.market).join("; ") }] });
     }
     S.push(b.length ? { id: "market", title: "Market", blocks: b } : { id: "market", title: "Market", blocks: [MISSING], missing: true });
   }
@@ -349,7 +366,10 @@ export function buildInvestmentMemo(c: CanonicalDeal, d: DerivedAnalysis): Inves
           title: "Product–market fit",
           blocks: [
             { kind: "p", text: c.pmf.assessment },
-            { kind: "table", head: ["Signal", "Direction", "Evidence"], rows: c.pmf.signals.map((s) => [label(s.signal), label(s.direction), s.evidence]), widths: ["150px", "100px", null] },
+            { kind: "table", head: ["Signal", "Direction", "Evidence"], rows: c.pmf.signals.filter((s) => s.direction !== "UNKNOWN").map((s) => [label(s.signal), label(s.direction), s.evidence]), widths: ["150px", "100px", null] },
+            ...(c.pmf.signals.some((s) => s.direction === "UNKNOWN")
+              ? [{ kind: "kv", rows: [{ k: "No evidence yet", v: c.pmf.signals.filter((s) => s.direction === "UNKNOWN").map((s) => label(s.signal)).join(", ") }] } as MemoBlock]
+              : []),
             { kind: "kv", rows: [{ k: "Cohorts older than 12 months", v: c.pmf.olderCohortEvidence ?? "No evidence from customers older than 12 months." }] },
           ],
         }
@@ -408,11 +428,11 @@ export function buildInvestmentMemo(c: CanonicalDeal, d: DerivedAnalysis): Inves
           id: "competition",
           title: "Competition",
           blocks: [
-            { kind: "table", head: ["Competitor", "Type", "Description", "Scale"], rows: c.competition.competitors.map((x) => [x.name, label(x.type), x.description, x.scale ?? "—"]), widths: ["130px", "100px", null, "22%"] },
+            { kind: "table", head: ["Competitor", "Type", "Description", "Scale"], rows: c.competition.competitors.map((x) => [x.name, label(x.type), clip(x.description, 150), x.scale ? clip(x.scale, 110) : "—"]), widths: ["130px", "100px", null, "24%"] },
             ...(c.competition.adversarialTests.length
               ? [
                   { kind: "h3", text: "Adversarial tests" } as MemoBlock,
-                  { kind: "table", head: ["Test", "Scenario → outcome", "Verdict"], rows: c.competition.adversarialTests.map((t) => [label(t.test), `${t.scenario} → ${t.outcome}`, label(t.verdict)]), widths: ["150px", null, "100px"] } as MemoBlock,
+                  { kind: "table", head: ["Test", "Outcome", "Verdict"], rows: c.competition.adversarialTests.map((t) => [label(t.test), clip(t.outcome, 230), label(t.verdict)]), widths: ["150px", null, "100px"] } as MemoBlock,
                 ]
               : []),
           ],
@@ -426,7 +446,17 @@ export function buildInvestmentMemo(c: CanonicalDeal, d: DerivedAnalysis): Inves
       ? {
           id: "moat",
           title: "Moat",
-          blocks: [{ kind: "table", head: ["Dimension", "Today", "In 3 years", "What must happen"], rows: c.moat.map((m) => [label(m.dimension), label(m.current), label(m.in3Years), m.whatMustHappen]), widths: ["150px", "90px", "90px", null] }],
+          blocks: [
+            {
+              kind: "table",
+              head: ["Dimension", "Today", "In 3 years", "What must happen"],
+              rows: c.moat.filter((m) => m.current !== "NONE" || m.in3Years !== "NONE").map((m) => [label(m.dimension), label(m.current), label(m.in3Years), m.whatMustHappen]),
+              widths: ["150px", "90px", "90px", null],
+            },
+            ...(c.moat.some((m) => m.current === "NONE" && m.in3Years === "NONE")
+              ? [{ kind: "kv", rows: [{ k: "No moat expected", v: c.moat.filter((m) => m.current === "NONE" && m.in3Years === "NONE").map((m) => label(m.dimension)).join(", ") }] } as MemoBlock]
+              : []),
+          ],
         }
       : { id: "moat", title: "Moat", blocks: [MISSING], missing: true },
   );
@@ -478,21 +508,27 @@ export function buildInvestmentMemo(c: CanonicalDeal, d: DerivedAnalysis): Inves
             blocks: [
               {
                 kind: "kv",
-                rows: [
-                  { k: "Instrument", v: label(fin.instrument) },
-                  { k: "Raise", v: money(fin.raiseAmount) },
-                  { k: isSafe ? "Valuation cap" : "Pre-money", v: isSafe ? money(fin.valuationCap) : money(fin.preMoney) },
-                  { k: "Entry valuation used", v: entry.postMoneyUsd ? `${usd(entry.postMoneyUsd)} ${isSafe ? "cap" : "post-money"} (${entry.source.toLowerCase()})` : "Unknown" },
-                  { k: "Discount", v: fin.discountPct !== null ? `${fin.discountPct}%` : NOT_DISCLOSED },
-                  { k: "Lead investor", v: fin.leadInvestor ?? NOT_DISCLOSED },
-                  { k: "Existing investors", v: fin.existingInvestors.join(", ") || NOT_DISCLOSED },
-                  { k: "Use of funds", v: fin.useOfFunds.join("; ") || NOT_DISCLOSED },
-                  { k: "Liquidation preference", v: t?.liquidationPreferenceMultiple != null ? `${t.liquidationPreferenceMultiple}× ${t.participating ? "participating" : t.participating === false ? "non-participating" : ""}`.trim() : NOT_DISCLOSED },
-                  { k: "Anti-dilution", v: t?.antiDilution ?? NOT_DISCLOSED },
-                  { k: "Board", v: t?.boardRights ?? NOT_DISCLOSED },
-                  { k: "Pro rata", v: t?.proRata ?? NOT_DISCLOSED },
-                  { k: "Protective provisions", v: t?.protectiveProvisions ?? NOT_DISCLOSED },
-                ],
+                rows: (() => {
+                  const rows: { k: string; v: string | null }[] = [
+                    { k: "Instrument", v: label(fin.instrument) },
+                    { k: "Raise", v: fin.raiseAmount?.amount ? money(fin.raiseAmount) : null },
+                    { k: isSafe ? "Valuation cap" : "Pre-money", v: (isSafe ? fin.valuationCap : fin.preMoney)?.amount ? money(isSafe ? fin.valuationCap : fin.preMoney) : null },
+                    { k: "Entry valuation used", v: entry.postMoneyUsd ? `${usd(entry.postMoneyUsd)} ${isSafe ? "cap" : "post-money"} (${entry.source.toLowerCase()})` : null },
+                    { k: "Discount", v: fin.discountPct !== null ? `${fin.discountPct}%` : null },
+                    { k: "Lead investor", v: fin.leadInvestor },
+                    { k: "Existing investors", v: fin.existingInvestors.join(", ") || null },
+                    { k: "Use of funds", v: fin.useOfFunds.join("; ") || null },
+                    { k: "Liquidation preference", v: t?.liquidationPreferenceMultiple != null ? `${t.liquidationPreferenceMultiple}× ${t.participating ? "participating" : t.participating === false ? "non-participating" : ""}`.trim() : null },
+                    { k: "Anti-dilution", v: t?.antiDilution ?? null },
+                    { k: "Board", v: t?.boardRights ?? null },
+                    { k: "Information rights", v: t?.informationRights ?? null },
+                    { k: "Pro rata", v: t?.proRata ?? null },
+                    { k: "Protective provisions", v: t?.protectiveProvisions ?? null },
+                  ];
+                  const known = rows.filter((r): r is { k: string; v: string } => r.v !== null);
+                  const missing = rows.filter((r) => r.v === null).map((r) => r.k.toLowerCase());
+                  return missing.length ? [...known, { k: NOT_DISCLOSED, v: `${missing.join(", ")}. Undisclosed preference terms are modelled as 1× non-participating.` }] : known;
+                })(),
               },
             ],
           }
@@ -522,7 +558,7 @@ export function buildInvestmentMemo(c: CanonicalDeal, d: DerivedAnalysis): Inves
         caption: `Gross, before fees and carry; not probability-weighted. Check ${usd(r.inputs.checkUsd, 2)} at ${usd(entry.postMoneyUsd)} ${isSafe ? "cap" : "post"}${r.inputs.followOn ? `, pro-rata follow-on from ${usd(r.inputs.reserveUsd, 2)} reserves` : ""}. † liquidation preference binding.`,
       });
       b.push({ kind: "h3", text: "Exit basis" });
-      b.push({ kind: "bullets", items: r.scenarios.map((s) => `${SCEN[s.scenario]}: ${s.basis}`) });
+      b.push({ kind: "bullets", items: r.scenarios.map((s) => `${SCEN[s.scenario]}: ${clip(s.basis, 170)}`) });
     } else b.push({ kind: "note", tone: "warn", text: r.warnings.join(" ") || "Returns could not be modelled." });
     if (d.backwards) {
       b.push({ kind: "h3", text: "Backwards return analysis" });
@@ -588,9 +624,10 @@ export function buildInvestmentMemo(c: CanonicalDeal, d: DerivedAnalysis): Inves
     if (c.risks.length)
       b.push({
         kind: "table",
-        head: ["ID", "Risk", "Category", "Severity · likelihood", "Class", "Mitigation"],
-        rows: c.risks.map((r) => [r.id, r.title, label(r.category), `${label(r.severity)} · ${label(r.likelihood)}`, label(r.weaknessClass), r.mitigation]),
-        widths: ["60px", "22%", "100px", "120px", "100px", null],
+        head: ["ID", "Risk", "Category", "Severity · likelihood", "Class"],
+        rows: c.risks.map((r) => [r.id, r.title, label(r.category), `${label(r.severity)} · ${label(r.likelihood)}`, label(r.weaknessClass)]),
+        widths: ["60px", null, "110px", "140px", "110px"],
+        caption: "Mitigations, evidence and repair plans: Risks tab.",
       });
     else b.push({ kind: "p", text: "No risks were recorded in this version." });
     const fals = c.falsification.flatMap((f) => f.falsifiers);
@@ -608,19 +645,19 @@ export function buildInvestmentMemo(c: CanonicalDeal, d: DerivedAnalysis): Inves
   {
     const open = c.questions.filter((q) => q.status !== "RESOLVED");
     const b: MemoBlock[] = [];
-    if (open.length) b.push({ kind: "table", head: ["ID", "Tier", "Question", "Affects"], rows: open.map((q) => [q.id, label(q.tier), q.question, q.affects.map(label).join(", ")]), widths: ["50px", "90px", null, "130px"] });
-    const gaps = d.researchPriority.slice(0, 6);
-    if (gaps.length) {
-      b.push({ kind: "h3", text: "Highest-priority information gaps" });
-      b.push({ kind: "table", head: ["Gap", "Question", "Channel", "Priority index"], rows: gaps.map((g) => [g.gapId, g.question, label(g.channel), String(g.index)]), align: ["left", "left", "left", "right"], widths: ["60px", null, "100px", "100px"], caption: "Research priority index = importance × uncertainty × researchability; a ranking aid, not a probability." });
-    }
-    if (c.analysis.unresolved.length) b.push({ kind: "bullets", items: c.analysis.unresolved });
+    if (open.length) b.push({ kind: "table", head: ["ID", "Tier", "Question", "Affects"], rows: open.map((q) => [q.id, label(q.tier), clip(q.question, 200), q.affects.map(label).join(", ")]), widths: ["50px", "80px", null, "130px"] });
+    const gaps = d.researchPriority.slice(0, 4);
+    if (gaps.length)
+      b.push({
+        kind: "p",
+        text: `Research priority (index = importance × uncertainty × researchability; a ranking aid, not a probability): ${gaps.map((g) => `${g.gapId} (${g.index}, ${label(g.channel).toLowerCase()})`).join(", ")}.`,
+      });
     S.push(b.length ? { id: "questions", title: "Open questions", blocks: b } : { id: "questions", title: "Open questions", blocks: [{ kind: "p", text: "No open questions." }] });
   }
 
   /* 23. Recommendation */
   {
-    const b: MemoBlock[] = [{ kind: "decision", status: rec.status, label: DECISION_LABEL[rec.status] ?? label(rec.status), detail: rec.rationale }];
+    const b: MemoBlock[] = [{ kind: "decision", status: rec.status, label: DECISION_LABEL[rec.status] ?? label(rec.status), detail: rationale }];
     if (rec.watch) b.push({ kind: "kv", rows: [{ k: "Watch trigger", v: rec.watch.trigger }, { k: "Expected", v: rec.watch.expectedDate ?? "—" }, { k: "Information awaited", v: rec.watch.informationAwaited }] });
     if (c.nextBestAction) b.push({ kind: "kv", rows: [{ k: "Next best action", v: c.nextBestAction.action }, { k: "Why", v: c.nextBestAction.rationale }] });
     b.push({ kind: "table", head: ["Gate", "Outcome", "Detail"], rows: rec.trace.map((t) => [t.gate, t.outcome, t.detail]), widths: ["130px", "80px", null], caption: `Admissible statuses: ${humanList(rec.admissible.map((s) => DECISION_LABEL[s] ?? s))}.${rec.aiSuggested && !rec.aiAccepted ? ` The analysis suggested “${DECISION_LABEL[rec.aiSuggested] ?? rec.aiSuggested}”, which the gates did not admit.` : ""}` });

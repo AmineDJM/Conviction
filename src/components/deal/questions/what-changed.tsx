@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { FounderCallChanges } from "@/reports/version-diff";
 import { Badge } from "@/components/ui";
 import { date, metricValue, type Tone } from "@/lib/format";
+import { metricDef } from "@/engine/metrics/dictionary";
 import { QUESTION_STATUS_TEXT, questionStatusTone } from "./labels";
 
 function Group({ title, tone, items, slug, empty }: { title: string; tone: Tone; items: { id: string; text: string; note?: string }[]; slug: string; empty?: string }) {
@@ -59,7 +60,7 @@ export function WhatChanged({ changes, slug, versionNo, prevVersionNo, createdAt
             <span key={m.to!.id}>
               {i > 0 && " · "}
               <Link href={`/deals/${slug}/evidence?metric=${m.to!.id}`} className="text-ink hover:text-accent-text">
-                {m.label} {metricValue(m.unit, m.to!.value)}
+                {metricDef(m.metricKey)?.shortName ?? m.label} {metricValue(m.unit, m.to!.value)}
               </Link>
             </span>
           ))}

@@ -258,3 +258,13 @@ describe("market plausibility", () => {
     expect(m.rejected[0]).toMatch(/VALUE_CAPTURE rejected/);
   });
 });
+
+describe("founder call gate", () => {
+  it("does not recommend another founder call once one was held and must-ask questions are addressed", () => {
+    const d = makeDeal({ aiRecommendation: { suggestedStatus: "NEEDS_FOUNDER_CALL", rationale: "stale", watch: null } });
+    d.questions = [{ id: "Q-01", question: "?", tier: "MUST_ASK", whyItMatters: "", knownContext: "", ifAnswerA: "a", ifAnswerB: "b", affects: ["RECOMMENDATION"], status: "NOT_FULLY_RESOLVED", answer: "partial", answeredAt: null, resolutionNote: null }];
+    d.sources.push({ id: "SRC-900", kind: "TRANSCRIPT", title: "Call", url: null, documentId: null, publisher: null, publishedDate: null, retrievedAt: now.toISOString(), origin: "COMPANY", independenceGroup: "COMPANY", citationVerified: true });
+    const r = derive(d, reg, DEFAULT_FUND_PROFILE, { now });
+    expect(r.recommendation.status).not.toBe("NEEDS_FOUNDER_CALL");
+  });
+});
