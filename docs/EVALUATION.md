@@ -37,3 +37,14 @@ Hard invariants fail the run; variance-sensitive checks are reported against exp
 - **Historical** (§127): use lesser-known, timestamped decks (failed and successful companies). Label hindsight-contamination risk: the model may know famous outcomes.
 - **Prospective** (§128): `npx tsx evals/snapshot.ts` records every company's view at time T (recommendation, indices, evidence, base case). Fill outcomes at 6 / 12 / 24 months (new round, revenue progress, shutdown, acquisition) with sources. Later valuation alone is not proof of investment quality.
 - **Human utility** (§129): ask experienced investors whether the tool surfaced better questions, important risks, missing evidence and useful market insight; measure preparation time saved.
+
+## Latest run (2026-09-27, `evals/results/eval-2026-09-27T22-28-03-620Z.json`)
+
+28 passed, 1 failed · model spend $0.173.
+
+- Extraction: 12/12 and 7/7 metrics exact; projections never used as current metrics; names, stage, founders, round and instrument correct.
+- Adversarial: injection flagged (2 flags), clean control unflagged, no invest recommendation, ΔOQI −1.1 vs the clean control.
+- Stability: ΔOQI 4.0 (pass). **Traction/PMF Δ 7.1 (fail, tolerance 5).** All metric components scored identically; the whole difference is one anchored rubric step on `PMF_SIGNAL_QUALITY` (Adequate → Below bar). The marketing-inflated deck was rated *lower*, so this is sampling variance on model-judged criteria, not susceptibility to hype. Planned mitigation: rate model-judged rubric criteria twice and keep the more conservative rating, or move PMF quality onto measured signals (cohorts, pilot conversion) as they become available. The tolerance was deliberately not loosened.
+- Prestige: ΔTeam +5.1, ΔOQI +2.2 (within tolerance).
+- Missing data: coverage 1.0 → 0.86; conservative bounds fall (Traction 75 → 54, OQI 56 → 45).
+- Citations: 52/53 web sources actually retrieved by the search tool; 15/15 VERIFIED claims backed by a retrieved non-company source.

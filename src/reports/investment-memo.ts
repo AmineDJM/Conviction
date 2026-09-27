@@ -13,7 +13,7 @@ import type { DerivedAnalysis } from "@/engine/derive";
 import { metricDef } from "@/engine/metrics/dictionary";
 import { metricEvidence } from "@/components/deal/metric";
 import { DECISION_LABEL, STAGE_LABEL, metricValue, multiple, pct, usd } from "@/lib/format";
-import { NOT_DISCLOSED, clip, enumLabel as label, humanList } from "./text";
+import { NOT_DISCLOSED, clip, enumLabel as label, gateRationale, humanList } from "./text";
 
 export type MemoBlock =
   | { kind: "lead"; text: string }
@@ -131,7 +131,7 @@ export function buildInvestmentMemo(c: CanonicalDeal, d: DerivedAnalysis): Inves
   const base = d.returns.scenarios.find((s) => s.scenario === "BASE");
   const primary = c.metrics.filter((m) => m.isPrimary && m.normalizedValue !== null);
   // The gate outcome is rendered from derived.recommendation; the AI's own suggestion is shown only in the gate trace.
-  const rationale = rec.rationale.replace(/^Model suggested [A-Z_]+, which the gates do not admit\. Applied [A-Z_]+\.\s*/, "");
+  const rationale = gateRationale(rec);
   const summary = c.executiveSummary?.replace(/\s*Recommendation:[^.]*(\.[^.]*)?\.?\s*$/, "").trim() ?? null;
 
   /* 1. Executive recommendation */

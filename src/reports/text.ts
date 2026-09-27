@@ -49,6 +49,19 @@ export const NOT_DISCLOSED = "Not disclosed";
 export function enumLabel(s: string | null | undefined): string {
   if (!s) return "—";
   const w = s.toLowerCase().split("_");
-  const ACR: Record<string, string> = { ai: "AI", pmf: "PMF", gtm: "GTM", saas: "SaaS", api: "API", ip: "IP", smb: "SMB", plg: "PLG", ic: "IC", dd: "DD", erp: "ERP" };
+  const ACR: Record<string, string> = { ai: "AI", pmf: "PMF", gtm: "GTM", saas: "SaaS", api: "API", ip: "IP", smb: "SMB", plg: "PLG", ic: "IC", dd: "DD", erp: "ERP", safe: "SAFE" };
   return w.map((x, i) => ACR[x] ?? (i === 0 ? x.charAt(0).toUpperCase() + x.slice(1) : x)).join(" ");
+}
+
+/**
+ * The gate-admitted recommendation rationale without the engine's
+ * "Model suggested X, which the gates do not admit. Applied Y." preamble
+ * (the AI suggestion is shown separately in the gate trace). Falls back to
+ * the blocking gates when no analysed rationale exists.
+ */
+export function gateRationale(rec: { rationale: string; trace: { outcome: string; detail: string }[] }): string {
+  const body = rec.rationale.replace(/^Model suggested [A-Za-z_]+, which the gates do not admit\. Applied [A-Z_]+\.\s*/, "").trim();
+  if (body) return body;
+  const blocks = rec.trace.filter((t) => t.outcome === "BLOCK").map((t) => t.detail);
+  return blocks.length ? `Set by the recommendation gates: ${blocks.join("; ")}.` : "Set by the recommendation gates.";
 }

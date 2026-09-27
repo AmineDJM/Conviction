@@ -5,6 +5,7 @@ import type { Money } from "@/domain/money";
 import { Badge, Section, Td, Th, cx } from "@/components/ui";
 import { RichText } from "@/components/deal/rich-text";
 import { levelTone, titleCase, usd } from "@/lib/format";
+import { enumLabel } from "@/reports/text";
 
 const nd = <span className="text-ink-3">Not disclosed</span>;
 
@@ -171,7 +172,7 @@ export function FinancingPath({ c, f, slug, leadMonths }: { c: CanonicalDeal; f:
         {fin ? (
           <div className="grid gap-x-12 md:grid-cols-2">
             <dl className="divide-y divide-line border-y border-line text-[13px]">
-              <Row k="Instrument" v={titleCase(fin.instrument)} />
+              <Row k="Instrument" v={enumLabel(fin.instrument)} />
               <Row k="Raise" v={money(fin.raiseAmount)} />
               <Row k="Pre-money" v={money(fin.preMoney)} />
               <Row k="Post-money" v={money(fin.postMoney)} />
@@ -241,16 +242,6 @@ function Timeline({ f, leadMonths }: { f: FinancingMap; leadMonths: number }) {
   const ticks = Array.from({ length: Math.floor(span / 6) + 1 }, (_, i) => i * 6);
   const milestone = f.milestoneMonths;
 
-  const Lane = ({ label, children, sub }: { label: string; sub?: string; children: ReactNode }) => (
-    <div className="grid grid-cols-[112px_1fr] items-center gap-3 sm:grid-cols-[150px_1fr]">
-      <div className="leading-tight">
-        <div className="text-[12px] text-ink-2">{label}</div>
-        {sub && <div className="num text-[11px] text-ink-3">{sub}</div>}
-      </div>
-      <div className="relative h-5">{children}</div>
-    </div>
-  );
-
   return (
     <figure className="mt-6" aria-label="Capital-to-milestone timeline">
       <div className="relative space-y-3">
@@ -271,11 +262,11 @@ function Timeline({ f, leadMonths }: { f: FinancingMap; leadMonths: number }) {
             </div>
           ))}
         </Lane>
-        <Lane label="Cash runway" sub={`${usd((f.cashUsd ?? 0) + (f.raiseUsd ?? 0))} ÷ ${usd(f.monthlyBurnUsd)}/mo`}>
+        <Lane label="Cash runway" sub={`${usd((f.cashUsd ?? 0) + (f.raiseUsd ?? 0))} ÷ ${usd(f.monthlyBurnUsd)}/mo = ${runway.toFixed(1)} mo`}>
           <div className="absolute inset-y-[5px] rounded-[3px] bg-ink/75" style={{ left: 0, width: w(0, runway) }} />
-          <span className="num absolute top-0 ml-1.5 whitespace-nowrap text-[11px] leading-5 text-ink-2" style={{ left: x(runway) }}>
+          <EndLabel at={runway} span={span}>
             cash out · {runway.toFixed(1)} mo
-          </span>
+          </EndLabel>
         </Lane>
         {milestone !== null && req !== null && (
           <Lane label="Plan" sub={`${milestone} mo build + ${leadMonths} mo raise`}>
@@ -285,9 +276,9 @@ function Timeline({ f, leadMonths }: { f: FinancingMap; leadMonths: number }) {
               style={{ left: `calc(${x(milestone)} + 2px)`, width: `calc(${w(milestone, req)} - 2px)` }}
               title="Fundraising window"
             />
-            <span className="num absolute top-0 ml-1.5 whitespace-nowrap text-[11px] leading-5 text-ink-2" style={{ left: x(req) }}>
+            <EndLabel at={req} span={span}>
               closes · {req} mo
-            </span>
+            </EndLabel>
           </Lane>
         )}
         {milestone !== null &&
@@ -295,7 +286,12 @@ function Timeline({ f, leadMonths }: { f: FinancingMap; leadMonths: number }) {
           f.delays.map((d) => {
             const end = req + d.delayMonths;
             return (
-              <Lane key={d.delayMonths} label={`Slips ${d.delayMonths} months`} sub={d.cashOutBeforeRaise ? `bridge ${usd(d.bridgeNeededUsd)}` : "still funded"}>
+              <Lane
+                key={d.delayMonths}
+                label={`Slips ${d.delayMonths} months`}
+                sub={d.cashOutBeforeRaise ? `${d.shortfallMonths.toFixed(1)} mo unfunded · bridge ${usd(d.bridgeNeededUsd)}` : "still funded"}
+                subTone={d.cashOutBeforeRaise ? "risk" : undefined}
+              >
                 <div className="absolute inset-y-[5px] rounded-l-[3px] bg-line-strong" style={{ left: 0, width: w(0, Math.min(end, runway)) }} />
                 {end > runway && (
                   <div
@@ -304,21 +300,19 @@ function Timeline({ f, leadMonths }: { f: FinancingMap; leadMonths: number }) {
                     title={`Unfunded: ${d.shortfallMonths.toFixed(1)} months`}
                   />
                 )}
-                <span className={cx("num absolute top-0 ml-1.5 whitespace-nowrap text-[11px] leading-5", end > runway ? "text-risk" : "text-ink-2")} style={{ left: x(end) }}>
-                  {end > runway ? `${d.shortfallMonths.toFixed(1)} mo unfunded` : "funded"}
-                </span>
+
               </Lane>
             );
           })}
 
         {/* Cash-out rule */}
-        <div className="pointer-events-none absolute inset-y-0 left-[124px] right-0 sm:left-[162px]">
+        <div className="pointer-events-none absolute inset-y-0 left-[124px] right-0 sm:left-[202px]">
           <div className="absolute inset-y-0 border-l border-dashed border-risk/60" style={{ left: x(runway) }} />
         </div>
       </div>
 
       {/* Axis */}
-      <div className="mt-2 grid grid-cols-[112px_1fr] gap-3 sm:grid-cols-[150px_1fr]">
+      <div className="mt-2 grid grid-cols-[112px_1fr] gap-3 sm:grid-cols-[190px_1fr]">
         <span className="text-[11px] text-ink-3">Months from today</span>
         <div className="relative h-4 border-t border-line">
           {ticks.map((m) => (
@@ -339,6 +333,36 @@ function Timeline({ f, leadMonths }: { f: FinancingMap; leadMonths: number }) {
         </span>
       </figcaption>
     </figure>
+  );
+}
+
+function Lane({ label, children, sub, subTone }: { label: string; sub?: string; subTone?: "risk"; children: ReactNode }) {
+  return (
+    <div className="grid grid-cols-[112px_1fr] items-center gap-3 sm:grid-cols-[190px_1fr]">
+      <div className="leading-tight">
+        <div className="text-[12px] text-ink-2">{label}</div>
+        {sub && <div className={cx("num text-[11px]", subTone === "risk" ? "text-risk" : "text-ink-3")}>{sub}</div>}
+      </div>
+      <div className="relative h-5">{children}</div>
+    </div>
+  );
+}
+
+/** Label at the end of a bar; flips inside (right-anchored) near the right edge so it never overflows. */
+function EndLabel({ at, span, tone, children }: { at: number; span: number; tone?: "risk"; children: ReactNode }) {
+  const p = (Math.max(0, Math.min(span, at)) / span) * 100;
+  const flip = p > 80;
+  return (
+    <span
+      className={cx(
+        "num absolute top-0 hidden whitespace-nowrap text-[11px] leading-5 sm:inline",
+        flip ? "mr-1 rounded bg-bg/90 px-1" : "ml-1.5",
+        tone === "risk" ? "text-risk" : "text-ink-2",
+      )}
+      style={flip ? { right: `${100 - p}%` } : { left: `${p}%` }}
+    >
+      {children}
+    </span>
   );
 }
 

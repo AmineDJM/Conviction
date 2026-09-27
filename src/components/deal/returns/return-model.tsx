@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { CanonicalDeal } from "@/domain/canonical";
 import type { FundProfile } from "@/domain/fund";
 import { RETURN_SCENARIOS, type ReturnScenarioName } from "@/domain/enums";
@@ -493,7 +493,7 @@ function PriceBars({ rows, current, isSafe }: { rows: ReturnType<typeof priceSen
   const vals = rows.flatMap((r) => r.maxPostMoneyByTarget.map((m) => m.maxPostMoneyUsd)).concat(current).filter((v) => v > 0);
   const lo = Math.log10(Math.min(...vals) / 1.5);
   const hi = Math.log10(Math.max(...vals) * 1.5);
-  const x = (v: number) => `${((Math.log10(Math.max(v, 1)) - lo) / (hi - lo)) * 100}%`;
+  const x = (v: number) => `${Math.min(96, Math.max(4, ((Math.log10(Math.max(v, 1)) - lo) / (hi - lo)) * 100))}%`;
   return (
     <div className="mt-4" aria-label="Price sensitivity chart">
       <div className="relative space-y-2.5 py-1">
@@ -602,11 +602,13 @@ function NumField({
 }) {
   const fmt = (v: number | null) => (v === null ? "" : String(Math.round((v / scale) * 100) / 100));
   const [text, setText] = useState(fmt(value));
-  useEffect(() => {
+  const [seen, setSeen] = useState(value);
+  // Adopt external changes (reset, mode switch) during render — not in an effect.
+  if (seen !== value) {
+    setSeen(value);
     const parsed = parseFloat(text);
     if (value === null ? text !== "" : !(Number.isFinite(parsed) && Math.abs(parsed * scale - value) < scale * 0.005)) setText(fmt(value));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
+  }
   return (
     <div className="flex h-7 items-center rounded-md border border-line bg-surface px-2 text-[13px] focus-within:border-accent/60 focus-within:ring-2 focus-within:ring-accent/15">
       {prefix && <span className="mr-0.5 text-ink-3">{prefix}</span>}

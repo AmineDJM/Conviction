@@ -7,7 +7,7 @@ import type { CanonicalDeal } from "@/domain/canonical";
 import type { DerivedAnalysis } from "@/engine/derive";
 import type { QuestionTier } from "@/domain/enums";
 import { DECISION_LABEL, STAGE_LABEL, usd } from "@/lib/format";
-import { brief, clip, enumLabel as titleCase, stripRefs } from "./text";
+import { brief, clip, enumLabel as titleCase, gateRationale, stripRefs } from "./text";
 
 export interface QuickMemo {
   name: string;
@@ -107,7 +107,7 @@ export function buildQuickMemo(c: CanonicalDeal, d: DerivedAnalysis, company?: {
     view: {
       status: rec.status,
       label: DECISION_LABEL[rec.status] ?? titleCase(rec.status),
-      rationale: brief(rec.rationale.replace(/^Model suggested [A-Z_]+, which the gates do not admit\. Applied [A-Z_]+\.\s*/, ""), 170),
+      rationale: brief(gateRationale(rec), 170),
       exceptionalOverride: rec.exceptionalOverride,
       nextAction: c.nextBestAction ? brief(c.nextBestAction.action, 150) : null,
     },
