@@ -32,6 +32,9 @@ export function metric(key: string, value: number | null, extra: Partial<MetricI
     isPrimary: true,
     qualityFlags: [],
     notes: null,
+    basis: "CURRENT",
+    lineage: [],
+    inputs: [],
     ...extra,
   };
 }

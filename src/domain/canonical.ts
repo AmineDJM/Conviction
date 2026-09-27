@@ -52,10 +52,17 @@ import {
   RubricAssessment,
   ThesisSection,
   WatchTrigger,
+  DeckForensics,
+  CausalModel,
+  AlternativeExplanation,
+  SensitivityDriver,
+  PerfectSlide,
 } from "./sections";
 import { Money } from "./money";
 
-export const CANONICAL_SCHEMA_VERSION = "1.0";
+export const CANONICAL_SCHEMA_VERSION = "1.1";
+/** Version of the orchestration + deterministic engine. Bump on any behavioural change; stored with every analysis. */
+export const ANALYSIS_ENGINE_VERSION = "3.0";
 
 /* ---------------------------------------------------------------- */
 /* Sources                                                            */
@@ -99,6 +106,9 @@ export const Claim = z.object({
   entity: z.string(),
   period: z.string().nullable(),
   material: z.boolean(),
+  unusualness: z.number().int().default(2),
+  proposition: z.string().nullable().default(null),
+  evidenceNeeded: z.string().nullable().default(null),
   origin: EvidenceOrigin,
   verification: VerificationStatus,
   freshness: Freshness,
@@ -150,6 +160,12 @@ export const MetricInstance = z.object({
   isPrimary: z.boolean(),
   qualityFlags: z.array(z.string()),
   notes: z.string().nullable(),
+  /** Chronology basis of the underlying observation (ACTUAL / CURRENT / LTM / SIGNED …). */
+  basis: z.string().default("CURRENT"),
+  /** Every transformation from raw text to this number, in order (metric lineage). */
+  lineage: z.array(z.object({ step: z.string(), detail: z.string() })).default([]),
+  /** Metric ids this value was derived from (DERIVED only). */
+  inputs: z.array(z.string()).default([]),
 });
 export type MetricInstance = z.infer<typeof MetricInstance>;
 
@@ -202,6 +218,21 @@ export const AnalysisState = z.object({
   securityFlags: z.array(z.object({ location: z.string(), excerpt: z.string() })),
   completedSteps: z.array(z.string()),
   skippedSteps: z.array(z.object({ step: z.string(), reason: z.string() })),
+  /** Full reproducibility record (§ versioning). */
+  provenance: z
+    .object({
+      model: z.string(),
+      promptVersions: z.record(z.string(), z.string()),
+      engineVersion: z.string(),
+      dictionaryVersion: z.string(),
+      schemaVersion: z.string(),
+      inputHash: z.string().nullable(),
+      startedAt: z.string(),
+      durationMs: z.number().nullable(),
+    })
+    .nullable()
+    .default(null),
+  cancelled: z.boolean().default(false),
 });
 export type AnalysisState = z.infer<typeof AnalysisState>;
 
@@ -267,6 +298,29 @@ export const CanonicalDeal = z.object({
   icDecision: IcDecision,
   executionStatus: ExecutionStatus,
   analysis: AnalysisState,
+  forensics: DeckForensics.nullable().default(null),
+  causalModel: CausalModel.nullable().default(null),
+  alternativeExplanations: z.array(AlternativeExplanation).default([]),
+  sensitivityDrivers: z.array(SensitivityDriver).default([]),
+  perfectSlides: z.array(PerfectSlide).default([]),
+  /** "Ignoring the founder's narrative, what company is actually in front of us?" */
+  realityCheck: z.string().nullable().default(null),
+  /** Human overrides. Raw data is never overwritten: every override records what it replaced. */
+  overrides: z
+    .array(
+      z.object({
+        id: z.string(),
+        target: z.enum(["METRIC", "CLASSIFICATION", "ENTITY", "CLAIM"]),
+        ref: z.string(),
+        field: z.string(),
+        from: z.unknown(),
+        to: z.unknown(),
+        reason: z.string(),
+        by: z.string().nullable(),
+        at: z.string(),
+      }),
+    )
+    .default([]),
 });
 export type CanonicalDeal = z.infer<typeof CanonicalDeal>;
 
@@ -334,6 +388,35 @@ export function emptyCanonical(mode: z.infer<typeof AnalysisMode>): CanonicalDea
       securityFlags: [],
       completedSteps: [],
       skippedSteps: [],
+      provenance: null,
+      cancelled: false,
     },
+    forensics: null,
+    causalModel: null,
+    alternativeExplanations: [],
+    sensitivityDrivers: [],
+    perfectSlides: [],
+    realityCheck: null,
+    overrides: [],
   };
+}
+
+/**
+ * Upgrade a stored canonical object to the current schema version. New fields
+ * get explicit defaults via zod; nested items gain their new fields here. Never
+ * invents data: new analytical fields stay empty until re-analysis.
+ */
+export function upgradeCanonical(raw: unknown): CanonicalDeal {
+  const r = structuredClone(raw) as Record<string, unknown> & { schemaVersion?: string };
+  if (r && r.schemaVersion === "1.0") {
+    const customers = r.customers as { namedCustomers?: { evidenceLevel?: string }[] } | null;
+    for (const nc of customers?.namedCustomers ?? []) nc.evidenceLevel ??= "UNKNOWN";
+    for (const o of (r.metricObservations as { basis?: string; sourceKind?: string; isProjection?: boolean }[]) ?? []) {
+      o.basis ??= o.isProjection ? "FORECAST" : "CURRENT";
+      o.sourceKind ??= "TEXT";
+      delete o.isProjection;
+    }
+    r.schemaVersion = CANONICAL_SCHEMA_VERSION;
+  }
+  return CanonicalDeal.parse(r);
 }

@@ -5,6 +5,8 @@
 export const METRIC_KEYS = [
   // Revenue & growth
   "arr",
+  "contracted_arr",
+  "services_revenue_share",
   "mrr",
   "revenue_ttm",
   "revenue_growth_yoy",

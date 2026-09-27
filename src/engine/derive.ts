@@ -26,6 +26,8 @@ import { fundFit, type FundFitResult } from "./fund";
 import { riskProfile, type RiskProfile } from "./risk";
 import { decide, type Recommendation } from "./decision";
 import { metricDef } from "./metrics/dictionary";
+import { integrityReport, type IntegrityReport } from "./integrity";
+import { economicsReport, type EconomicsReport } from "./economics";
 
 export interface ResearchPriority {
   gapId: string;
@@ -60,6 +62,10 @@ export interface DerivedAnalysis {
   recommendation: Recommendation;
   researchPriority: ResearchPriority[];
   smallSampleWarnings: SmallSampleWarning[];
+  /** Deck integrity: manipulative metrics, implied metrics, contradictions, expected evidence, evidence debt. */
+  integrity: IntegrityReport;
+  /** Institutional economics: cap-table returns, trajectory, sensitivity map, counterfactuals. */
+  economics: EconomicsReport;
 }
 
 export function researchPriorityIndex(g: Pick<InformationGap, "decisionImportance" | "uncertainty" | "researchability">): number {
@@ -141,5 +147,7 @@ export function derive(deal: CanonicalDeal, registry: BenchmarkRegistry, fund: F
     recommendation,
     researchPriority,
     smallSampleWarnings,
+    integrity: integrityReport(deal, registry, peerGroup),
+    economics: economicsReport({ deal, registry, fund, returns, backwards, market }),
   };
 }

@@ -3,7 +3,7 @@
  * canonical MetricInstances. The model extracts; code decides the number.
  */
 import type { MetricInstance } from "@/domain/canonical";
-import type { MetricObservation } from "@/domain/sections";
+import { FORWARD_BASES, type MetricObservation } from "@/domain/sections";
 import type { DataState } from "@/domain/enums";
 import { metricDef, type MetricUnit } from "./dictionary";
 import { FX_TABLE } from "../config/fx";
@@ -91,14 +91,26 @@ export interface NormalizeContext {
 /** Normalize one observation. Returns null for OTHER metrics (kept only in the raw audit trail). */
 export function normalizeObservation(obs: MetricObservation, ctx: NormalizeContext): MetricInstance | null {
   if (obs.metricKey === "OTHER") return null;
-  const def = metricDef(obs.metricKey);
-  if (!def) return null;
-  // Plans, forecasts and targets are not metrics. They stay in the raw audit trail only.
-  if (obs.isProjection) return null;
+  // Chronology: forecasts, targets and pipeline are never current metrics (kept in the raw audit trail).
+  if ((FORWARD_BASES as readonly string[]).includes(obs.basis)) return null;
   const endDate = parsePeriodDate(obs.periodEnd);
   if (endDate && endDate.getTime() > ctx.asOf.getTime() + 31 * 864e5) return null;
 
   const flags: string[] = [];
+  const lineage: { step: string; detail: string }[] = [
+    { step: "EXTRACTED", detail: `"${obs.rawText}"${obs.page !== null ? ` on p. ${obs.page}` : ""} (${obs.sourceKind.toLowerCase()}, basis ${obs.basis.toLowerCase()}) → model value ${obs.value ?? "null"} ${obs.unit.toLowerCase()}${obs.currency ? ` ${obs.currency}` : ""}` },
+  ];
+
+  // Signed / booked revenue is not ARR: reclassify to contracted ARR.
+  let key: string = obs.metricKey;
+  if ((obs.basis === "SIGNED" || obs.basis === "BOOKED") && (key === "arr" || key === "mrr" || key === "revenue_ttm")) {
+    flags.push(`SIGNED_NOT_DEPLOYED: reported as ${key.toUpperCase()} but basis is ${obs.basis.toLowerCase()} — reclassified as contracted ARR`);
+    lineage.push({ step: "RECLASSIFIED", detail: `${key} → contracted_arr (basis ${obs.basis.toLowerCase()})` });
+    key = "contracted_arr";
+  }
+  const def = metricDef(key);
+  if (!def) return null;
+
   let value = obs.value;
   let currency = obs.currency;
 
@@ -109,11 +121,13 @@ export function normalizeObservation(obs: MetricObservation, ctx: NormalizeConte
       const rel = Math.abs(value - parsed) / Math.abs(parsed);
       if (rel > 0.02) {
         flags.push(`EXTRACTION_MISMATCH: model=${value} parsed=${parsed}; parsed value used`);
+        lineage.push({ step: "PARSE_OVERRIDE", detail: `model value ${value} disagreed with deterministic parse of raw text (${parsed}); parsed value used` });
         value = parsed;
-      }
+      } else lineage.push({ step: "PARSE_CHECK", detail: `deterministic parse of raw text agrees (${parsed})` });
     } else if (parsed !== null && value === null && obs.state === "OBSERVED") {
       value = parsed;
       flags.push("VALUE_FROM_RAW_TEXT");
+      lineage.push({ step: "PARSED", detail: `value read from raw text: ${parsed}` });
     }
   }
 
@@ -122,6 +136,7 @@ export function normalizeObservation(obs: MetricObservation, ctx: NormalizeConte
     const factor = timeFactor(obs.rawText, def.unit);
     if (factor !== 1) {
       flags.push(`TIME_UNIT_CONVERTED ×${+factor.toFixed(6)} from raw text`);
+      lineage.push({ step: "TIME_UNIT", detail: `${value} × ${+factor.toFixed(6)} → ${def.unit.toLowerCase()}` });
       value = value * factor;
     }
   }
@@ -130,6 +145,7 @@ export function normalizeObservation(obs: MetricObservation, ctx: NormalizeConte
   if (def.unit === "PERCENT" && value !== null && Math.abs(value) <= 1.5 && /%|percent/i.test(obs.rawText) === false) {
     const pct = parseScaledNumber(obs.rawText);
     if (pct === null || Math.abs(pct) <= 1.5) {
+      lineage.push({ step: "PERCENT_SCALE", detail: `${value} read as a fraction → ${value * 100}%` });
       value = value * 100;
       flags.push("FRACTION_CONVERTED_TO_PERCENT");
     }
@@ -140,32 +156,40 @@ export function normalizeObservation(obs: MetricObservation, ctx: NormalizeConte
     const fx = toUsd(value, currency);
     if (!fx) {
       flags.push(`UNSUPPORTED_CURRENCY: ${currency}`);
+      lineage.push({ step: "FX_FAILED", detail: `no rate for ${currency}; value withheld from comparison` });
       value = null;
     } else {
-      if (fx.converted) flags.push(`FX_CONVERTED ${currency}→USD @ ${fx.rate} (${FX_TABLE.asOf}, model assumption)`);
+      if (fx.converted) {
+        flags.push(`FX_CONVERTED ${currency}→USD @ ${fx.rate} (${FX_TABLE.asOf}, model assumption)`);
+        lineage.push({ step: "FX", detail: `${value} ${currency} × ${fx.rate} (${FX_TABLE.asOf}) = ${fx.usd} USD` });
+      }
       value = fx.usd;
       currency = "USD";
     }
   }
 
-  // 4. Period handling: MRR stays monthly; ARR must be annualized. A monthly revenue figure labelled ARR is flagged.
-  if (obs.metricKey === "arr" && obs.periodType === "MONTHLY") {
+  // 4. Periodization: ARR must be annualized; cumulative figures are not run-rates.
+  if (key === "arr" && obs.periodType === "MONTHLY" && value !== null) {
     flags.push("MONTHLY_FIGURE_LABELLED_ARR: annualized ×12, treat as run-rate");
-    if (value !== null) value = value * 12;
+    lineage.push({ step: "ANNUALIZED", detail: `monthly ${value} × 12 = ${value * 12}` });
+    value = value * 12;
+  }
+  if ((key === "arr" || key === "revenue_ttm" || key === "gmv") && obs.periodType === "CUMULATIVE") {
+    flags.push("CUMULATIVE_NOT_RUN_RATE: figure is cumulative since inception, not a current run-rate");
   }
 
   // 5. State and quality.
   let state: DataState = obs.state === "UNKNOWN" ? "UNKNOWN" : obs.state;
   if (state === "OBSERVED" && value === null) state = "UNKNOWN";
 
-  const end = parsePeriodDate(obs.periodEnd);
-  if (end && state === "OBSERVED") {
-    const age = monthsBetween(end, ctx.asOf);
+  if (endDate && state === "OBSERVED") {
+    const age = monthsBetween(endDate, ctx.asOf);
     if (age > def.quality.maxAgeMonths) {
       state = "STALE";
       flags.push(`STALE: ${age} months old (max ${def.quality.maxAgeMonths})`);
+      lineage.push({ step: "STALENESS", detail: `as of ${obs.periodEnd}: ${age} months old, max ${def.quality.maxAgeMonths}` });
     }
-  } else if (!end && state === "OBSERVED") {
+  } else if (!endDate && state === "OBSERVED") {
     flags.push("NO_AS_OF_DATE");
   }
 
@@ -179,16 +203,31 @@ export function normalizeObservation(obs: MetricObservation, ctx: NormalizeConte
   if (def.disambiguation.length > 0 && obs.components.length === 0 && !obs.definitionAsStated) {
     flags.push("DEFINITION_NOT_STATED");
   }
+  const defText = (obs.components.join(" ") + " " + (obs.definitionAsStated ?? "") + " " + obs.rawText).toLowerCase();
   if (def.key === "cac") {
-    const text = (obs.components.join(" ") + " " + (obs.definitionAsStated ?? "")).toLowerCase();
-    const excluded = [...text.matchAll(/exclud\w*\s+([a-z ,&-]{3,60})/g)].map((m) => m[1]!.trim());
+    const excluded = [...defText.matchAll(/exclud\w*\s+([a-z ,&-]{3,60})/g)].map((m) => m[1]!.trim());
     if (excluded.length) flags.push(`CAC_NOT_FULLY_LOADED: excludes ${excluded.join("; ")}`);
-    else if (!/fully|loaded|salar|commission/.test(text)) flags.push("CAC_LOADING_UNVERIFIED");
+    else if (!/fully|loaded|salar|commission/.test(defText)) flags.push("CAC_LOADING_UNVERIFIED");
   }
   if (def.key === "gross_margin") {
-    const text = (obs.components.join(" ") + " " + (obs.definitionAsStated ?? "")).toLowerCase();
-    if (!/inference|cloud|hosting|support|delivery|labor|ops/.test(text)) flags.push("COGS_COMPOSITION_UNVERIFIED");
+    const excluded = [...defText.matchAll(/(?:exclud\w*|before|ex\.?)\s+([a-z ,&/-]{3,60})/g)].map((m) => m[1]!.trim());
+    if (excluded.some((x) => /inference|cloud|hosting|support|human|ops|operation|delivery|labor|annotat|review/.test(x)))
+      flags.push(`GROSS_MARGIN_EXCLUDES_COGS: ${excluded.join("; ")}`);
+    else if (!/inference|cloud|hosting|support|delivery|labor|ops/.test(defText)) flags.push("COGS_COMPOSITION_UNVERIFIED");
   }
+  if (def.key === "paying_customers" && /pilot|trial|poc|proof of concept|loi|free|freemium|design partner|logos?\b/.test(defText)) {
+    flags.push("CUSTOMER_COUNT_MAY_INCLUDE_NON_PAYING: definition mentions pilots, trials, LOIs, free users or logos");
+  }
+  if (def.key === "arr" && /pilot|one[- ]time|services|implementation|setup|booking|signed|contracted|pipeline/.test(defText)) {
+    flags.push("ARR_MAY_INCLUDE_NON_RECURRING: definition mentions pilots, one-time, services, bookings or signed-not-live revenue");
+  }
+  if (def.unit === "PERCENT" && ["nrr", "grr", "logo_retention", "pilot_to_production_rate", "win_rate", "d30_retention", "d7_retention", "d1_retention", "repeat_rate"].includes(def.key)) {
+    if (obs.sampleSize === null && !/\b\d+\s+(customers|accounts|users|clients|cohort|pilots|deals)/.test(defText))
+      flags.push("NO_DENOMINATOR: rate stated without the population it is measured on");
+    if (["nrr", "grr", "logo_retention"].includes(def.key) && !obs.cohortDefinition && !/cohort|trailing|ttm|12[- ]month/.test(defText))
+      flags.push("NO_COHORT_DEFINITION: aggregate retention without cohort or measurement window");
+  }
+  if (flags.length) lineage.push({ step: "QUALITY_CHECKS", detail: flags.join("; ") });
 
   return {
     id: ctx.nextId(),
@@ -217,6 +256,9 @@ export function normalizeObservation(obs: MetricObservation, ctx: NormalizeConte
     isPrimary: false,
     qualityFlags: flags,
     notes: null,
+    basis: obs.basis,
+    lineage,
+    inputs: [],
   };
 }
 

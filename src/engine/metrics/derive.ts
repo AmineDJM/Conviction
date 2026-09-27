@@ -65,6 +65,12 @@ export function deriveMetrics(input: MetricInstance[], nextId: () => string): Me
         ]),
       ],
       notes: `Derived from ${inputs.map((i) => i.id).join(", ")}`,
+      basis: "CURRENT",
+      inputs: inputs.map((i) => i.id),
+      lineage: [
+        { step: "INPUTS", detail: inputs.map((i) => `${i.id} ${i.metricKey} = ${i.normalizedValue}${i.periodEnd ? ` (${i.periodEnd})` : ""}`).join("; ") },
+        { step: "FORMULA", detail: `${derivation} = ${+value.toFixed(4)}` },
+      ],
     });
     metrics = selectPrimary(metrics);
   };

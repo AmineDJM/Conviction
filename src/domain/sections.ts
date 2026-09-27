@@ -85,6 +85,10 @@ export const PERIOD_TYPES = [
   "UNSPECIFIED",
 ] as const;
 
+export const METRIC_BASES = ["ACTUAL", "CURRENT", "LTM", "FORECAST", "TARGET", "PIPELINE", "SIGNED", "BOOKED"] as const;
+export type MetricBasis = (typeof METRIC_BASES)[number];
+export const FORWARD_BASES: readonly MetricBasis[] = ["FORECAST", "TARGET", "PIPELINE"];
+
 export const MetricObservation = z.object({
   metricKey: z.enum([...METRIC_KEYS, "OTHER"]),
   label: z.string().describe("Metric label as used by the company"),
@@ -105,9 +109,12 @@ export const MetricObservation = z.object({
   sampleSize: z.number().nullable().describe("Number of customers/users/cohort members underlying a ratio"),
   cohortDefinition: z.string().nullable(),
   state: z.enum(["OBSERVED", "INFERRED", "WITHHELD", "UNKNOWN"]),
-  isProjection: z
-    .boolean()
-    .describe("True for forecasts, plans, budgets, targets and milestones — anything not yet achieved. Projections are never current metrics."),
+  basis: z
+    .enum(METRIC_BASES)
+    .describe(
+      "Chronology: ACTUAL (historical period), CURRENT (as of now: live count, current run-rate), LTM, FORECAST, TARGET (goal/milestone), PIPELINE (unsigned opportunities), SIGNED (contracted, not yet live), BOOKED (bookings). Only ACTUAL/CURRENT/LTM are current metrics.",
+    ),
+  sourceKind: z.enum(["TEXT", "TABLE", "CHART", "IMAGE", "FOOTNOTE"]).describe("Where on the page the number was read"),
   page: z.number().int().nullable(),
   excerpt: z.string().describe("Verbatim excerpt supporting the value (max ~200 chars)"),
 });
@@ -127,6 +134,9 @@ export const ClaimExtraction = z.object({
   page: z.number().int().nullable(),
   excerpt: z.string().describe("Verbatim excerpt from the document"),
   material: z.boolean().describe("Would this claim change the investment view if false?"),
+  unusualness: z.number().int().describe("1 = ordinary (founded in 2024) … 5 = extraordinary (50× cheaper than the incumbent)"),
+  proposition: z.string().describe("The claim decomposed into a precise, testable proposition (what exactly would have to be true)"),
+  evidenceNeeded: z.string().describe("The evidence that would verify it (document, data, reference)"),
 });
 export type ClaimExtraction = z.infer<typeof ClaimExtraction>;
 
@@ -243,9 +253,12 @@ export const PainSection = z.object({
 });
 export type PainSection = z.infer<typeof PainSection>;
 
+export const CUSTOMER_EVIDENCE_LEVELS = ["LOGO_ONLY", "PILOT", "CONTRACT_SIGNED", "DEPLOYED", "PAYING", "RECURRING", "REFERENCEABLE", "UNKNOWN"] as const;
+
 export const NamedCustomer = z.object({
   name: z.string(),
   relationship: CustomerRelationship,
+  evidenceLevel: z.enum(CUSTOMER_EVIDENCE_LEVELS).describe("Highest level the materials actually support: a logo on a slide is LOGO_ONLY"),
   note: z.string().nullable(),
 });
 
@@ -692,3 +705,110 @@ export const ResearchFinding = z.object({
 export type ResearchFinding = z.infer<typeof ResearchFinding>;
 
 export { ClaimCategory };
+
+/* ---------------------------------------------------------------- */
+/* Deck forensics (visual + narrative) — "what is the deck trying to   */
+/* make me believe?"                                                   */
+/* ---------------------------------------------------------------- */
+
+export const CHART_ISSUES = [
+  "NON_ZERO_AXIS",
+  "CHERRY_PICKED_PERIOD",
+  "HIDDEN_PERIOD",
+  "CUMULATIVE_AS_RUN_RATE",
+  "INCONSISTENT_SCALE",
+  "MISLEADING_CAGR",
+  "MISSING_UNITS",
+  "TRUNCATED_OR_UNLABELLED",
+  "OTHER",
+] as const;
+
+export const PRODUCT_PROOF_LEVELS = ["MARKETING_SCREENSHOT", "PROTOTYPE", "DEMO", "PRODUCTION_USAGE", "REAL_INTEGRATIONS", "UNKNOWN"] as const;
+
+export const DeckForensics = z.object({
+  narrativeArchitecture: z.object({
+    centralArgument: z.string().describe("The single argument the deck is built to make"),
+    beliefTheDeckWantsMeToHold: z.string().describe("What the founder wants the investor to believe, in one sentence"),
+    slideOrderRationale: z.string().describe("Why the slides are in this order and what that sequencing achieves"),
+    emphasized: z.array(z.object({ what: z.string(), page: z.number().int().nullable() })),
+    absentDecisiveInformation: z.array(z.object({ what: z.string(), whyItMatters: z.string() })).describe("Decision-relevant facts a comparable deck would show but this one does not"),
+    routedAroundWeaknesses: z.array(z.string()).describe("Weaknesses the narrative appears to steer around (state as hypotheses)"),
+  }),
+  visualElements: z.array(
+    z.object({
+      page: z.number().int().nullable(),
+      kind: z.enum(["CHART", "TABLE", "LOGO_WALL", "ORG_CHART", "CAP_TABLE", "PRODUCT_SCREENSHOT", "DIAGRAM", "MAP", "OTHER"]),
+      readout: z.string().describe("What the visual actually shows, with numbers, axes, periods and units as read"),
+    }),
+  ),
+  chartForensics: z.array(z.object({ page: z.number().int().nullable(), issue: z.enum(CHART_ISSUES), detail: z.string(), severity: Level })),
+  crossSlideInconsistencies: z.array(
+    z.object({ topic: z.string(), pages: z.array(z.number().int()), values: z.array(z.string()), detail: z.string(), severity: Level }),
+  ),
+  narrativeInconsistencies: z
+    .array(z.object({ presentedAs: z.string(), evidenceSuggests: z.string(), detail: z.string(), severity: Level }))
+    .describe("e.g. presented as enterprise SaaS but revenue mix suggests services; self-serve claim vs six-month sales cycle"),
+  productProof: z.object({ level: z.enum(PRODUCT_PROOF_LEVELS), evidence: z.string() }),
+  founderSlideSkepticism: z.array(
+    z.object({ founder: z.string(), statement: z.string(), whatItActuallyShows: z.string(), gap: z.string().describe("e.g. 'worked at Google' vs 'built the relevant product at Google'; advisor vs operator") }),
+  ),
+  competitiveSlide: z
+    .object({ axesChosen: z.string(), whyTheyFavorTheCompany: z.string(), honestComparison: z.string() })
+    .nullable(),
+  marketSlide: z.object({ coherence: z.string().describe("Are TAM ⊇ SAM ⊇ SOM consistent with each other and with pricing × realistic customers?"), issues: z.array(z.string()) }),
+  claimChecks: z.array(
+    z.object({
+      claim: z.string().describe("Verbatim or near-verbatim marketing claim, e.g. '10× cheaper', 'market leader', 'proprietary AI', 'viral growth'"),
+      proposition: z.string(),
+      wouldVerify: z.string(),
+      wouldFalsify: z.string(),
+    }),
+  ),
+  deckQualitySignals: z
+    .object({ precision: z.string(), numberMastery: z.string(), customerUnderstanding: z.string() })
+    .describe("Secondary qualitative signals about reasoning quality — never about visual polish"),
+  suspectedInstructions: z.array(z.object({ page: z.number().int().nullable(), excerpt: z.string() })),
+});
+export type DeckForensics = z.infer<typeof DeckForensics>;
+
+/* ---------------------------------------------------------------- */
+/* Causal business model, alternative explanations, sensitivity        */
+/* ---------------------------------------------------------------- */
+
+export const CAUSAL_STAGES = ["ACQUISITION", "CONVERSION", "ACTIVATION", "USAGE", "RETENTION", "EXPANSION", "REVENUE", "GROSS_PROFIT", "CASH", "REINVESTMENT"] as const;
+
+export const CausalModel = z.object({
+  stages: z.array(
+    z.object({
+      stage: z.enum(CAUSAL_STAGES),
+      mechanism: z.string().describe("How this stage works for this company"),
+      evidence: z.string().describe("Numbers and facts, with claim/metric refs; say 'no evidence' when absent"),
+      health: z.enum(["STRONG", "ADEQUATE", "WEAK", "UNKNOWN"]),
+    }),
+  ),
+  bottleneck: z.object({ stage: z.enum(CAUSAL_STAGES), statement: z.string().describe("e.g. 'Demand is not the problem; conversion pilot→production at 21% is'"), evidence: z.string() }),
+});
+export type CausalModel = z.infer<typeof CausalModel>;
+
+export const AlternativeExplanation = z.object({
+  signal: z.string().describe("A positive signal, e.g. 'Revenue +250%'"),
+  bullishReading: z.string(),
+  alternativeReading: z.string().describe("A plausible non-bullish explanation, e.g. aggressive paid acquisition or one large customer"),
+  discriminatingTest: z.string().describe("The data that would tell the two readings apart"),
+});
+export type AlternativeExplanation = z.infer<typeof AlternativeExplanation>;
+
+export const SensitivityDriver = z.object({
+  variable: z.string().describe("e.g. NRR, fully-loaded CAC, pilot→production conversion, SAM, exit ownership"),
+  metricKey: z.string().nullable().describe("Metric dictionary key if quantitative, else null"),
+  currentAssumption: z.string(),
+  breaksAt: z.string().describe("The value or condition at which the thesis breaks"),
+  why: z.string(),
+});
+export type SensitivityDriver = z.infer<typeof SensitivityDriver>;
+
+export const PerfectSlide = z.object({
+  missing: z.string().describe("The missing or weak evidence"),
+  slide: z.string().describe("Exactly what the ideal slide would show (rows, columns, periods, cohorts)"),
+});
+export type PerfectSlide = z.infer<typeof PerfectSlide>;

@@ -70,6 +70,36 @@ export const METRIC_DICTIONARY: Record<MetricKey, MetricDefinition> = {
     quality: { maxAgeMonths: 6 },
     derivableFrom: ["mrr"],
   }),
+  contracted_arr: def({
+    key: "contracted_arr",
+    name: "Contracted ARR (signed, not yet live)",
+    shortName: "Contracted ARR",
+    family: "REVENUE",
+    definition: "Annualized recurring value of signed contracts not yet deployed or billing. Never part of ARR until live.",
+    formula: null,
+    unit: "USD",
+    period: "POINT_IN_TIME",
+    direction: "HIGHER_IS_BETTER",
+    disambiguation: ["Signed vs deployed vs billing", "Cancellation rights before go-live", "Pilot-to-contract conditions"],
+    requiredFields: ["value", "as-of date"],
+    exclusions: ["unsigned pipeline"],
+    quality: { maxAgeMonths: 6 },
+  }),
+  services_revenue_share: def({
+    key: "services_revenue_share",
+    name: "Services share of revenue",
+    shortName: "Services %",
+    family: "REVENUE",
+    definition: "Share of revenue from implementation, consulting, custom work or human-delivered services rather than recurring software.",
+    formula: "Services revenue / total revenue × 100",
+    unit: "PERCENT",
+    period: "PERIOD",
+    direction: "LOWER_IS_BETTER",
+    disambiguation: ["Implementation fees bundled into subscriptions", "Human-in-the-loop delivery counted as software"],
+    requiredFields: ["value", "period"],
+    exclusions: [],
+    quality: { maxAgeMonths: 9 },
+  }),
   mrr: def({
     key: "mrr",
     name: "Monthly Recurring Revenue",
@@ -915,6 +945,9 @@ export const METRIC_DICTIONARY: Record<MetricKey, MetricDefinition> = {
     quality: { maxAgeMonths: 6 },
   }),
 };
+
+/** Version of the metric dictionary. Bump on any definition change; stored with every analysis. */
+export const METRIC_DICTIONARY_VERSION = "1.1";
 
 export function metricDef(key: string): MetricDefinition | undefined {
   return (METRIC_DICTIONARY as Record<string, MetricDefinition>)[key];

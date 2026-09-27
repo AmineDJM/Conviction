@@ -3,7 +3,7 @@
  */
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { getDb, schema, type DB } from "@/db/client";
-import { CanonicalDeal } from "@/domain/canonical";
+import { CanonicalDeal, upgradeCanonical } from "@/domain/canonical";
 import { DEFAULT_FUND_PROFILE, FundProfile } from "@/domain/fund";
 import type { DerivedAnalysis } from "@/engine/derive";
 import { newId, normName, nowIso, slugify } from "./ids";
@@ -101,7 +101,7 @@ export interface LoadedVersion {
 }
 
 export function loadVersion(row: VersionRow): LoadedVersion {
-  return { row, canonical: CanonicalDeal.parse(row.canonical), derived: row.derived as DerivedAnalysis };
+  return { row, canonical: upgradeCanonical(row.canonical), derived: row.derived as DerivedAnalysis };
 }
 
 export function getCurrentVersion(company: CompanyRow, db: DB = getDb()): LoadedVersion | null {
