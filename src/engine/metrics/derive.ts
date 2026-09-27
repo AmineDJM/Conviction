@@ -23,7 +23,12 @@ export function deriveMetrics(input: MetricInstance[], nextId: () => string): Me
   const primary = (k: string) => metrics.find((m) => m.metricKey === k && m.isPrimary && m.normalizedValue !== null && (m.state === "OBSERVED" || m.state === "INFERRED" || m.state === "STALE"));
   const has = (k: string) => metrics.some((m) => m.metricKey === k && m.isPrimary && m.normalizedValue !== null && m.state !== "UNKNOWN");
 
-  const add = (key: string, value: number | null, inputs: MetricInstance[], derivation: string, unit: string, extraFlags: string[] = []) => {
+  /**
+   * `stateFrom`: inputs whose state/verification govern the derived value. For period-over-period
+   * metrics (growth, burn multiple) the comparison point is necessarily old; only the latest
+   * point decides staleness.
+   */
+  const add = (key: string, value: number | null, inputs: MetricInstance[], derivation: string, unit: string, extraFlags: string[] = [], stateFrom: MetricInstance[] = inputs) => {
     if (value === null || !Number.isFinite(value)) return;
     const periodEnd = inputs.map((i) => i.periodEnd).filter(Boolean).sort().pop() ?? null;
     metrics.push({
@@ -42,7 +47,7 @@ export function deriveMetrics(input: MetricInstance[], nextId: () => string): Me
       entityScope: "company",
       sampleSize: inputs.map((i) => i.sampleSize).find((s) => s !== null) ?? null,
       cohortDefinition: null,
-      state: weakestState(inputs),
+      state: weakestState(stateFrom),
       sourceId: null,
       claimId: null,
       location: null,
@@ -75,12 +80,13 @@ export function deriveMetrics(input: MetricInstance[], nextId: () => string): Me
       });
       if (prior && prior.m.normalizedValue! > 0) {
         const g = (latest.m.normalizedValue! / prior.m.normalizedValue! - 1) * 100;
-        add("arr_growth_yoy", g, [latest.m, prior.m], `(ARR ${latest.m.periodEnd} / ARR ${prior.m.periodEnd} − 1) × 100`, "PERCENT");
+        const priorOk = prior.m.state === "STALE" ? { ...prior.m, state: "OBSERVED" as const } : prior.m;
+        add("arr_growth_yoy", g, [latest.m, prior.m], `(ARR ${latest.m.periodEnd} / ARR ${prior.m.periodEnd} − 1) × 100`, "PERCENT", [], [latest.m, priorOk]);
         const burn = primary("monthly_net_burn");
         if (!has("burn_multiple") && burn) {
           const netNew = latest.m.normalizedValue! - prior.m.normalizedValue!;
           const bm = burnMultiple(burn.normalizedValue! * 12, netNew);
-          add("burn_multiple", bm, [burn, latest.m, prior.m], "Current monthly net burn × 12 / net new ARR over 12 months", "MULTIPLE", ["BURN_ASSUMED_CONSTANT_OVER_PERIOD"]);
+          add("burn_multiple", bm, [burn, latest.m, prior.m], "Current monthly net burn × 12 / net new ARR over 12 months", "MULTIPLE", ["BURN_ASSUMED_CONSTANT_OVER_PERIOD"], [burn, latest.m, priorOk]);
         }
       }
     }

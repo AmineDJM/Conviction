@@ -1,0 +1,268 @@
+@import "tailwindcss";
+
+/* ------------------------------------------------------------------ */
+/* Design tokens — restrained, institutional. One accent.              */
+/* ------------------------------------------------------------------ */
+:root {
+  --bg: #fbfbfa;
+  --surface: #ffffff;
+  --surface-2: #f5f5f3;
+  --surface-3: #efeeeb;
+  --line: #e7e6e2;
+  --line-strong: #d6d4ce;
+  --text: #17171a;
+  --text-2: #4b4b52;
+  --text-3: #85848c;
+  --accent: #2f4fd6;
+  --accent-soft: #eef1fd;
+  --accent-text: #2440b8;
+  --ok: #1f7a4d;
+  --ok-soft: #e9f5ee;
+  --warn: #9a6200;
+  --warn-soft: #fbf3e2;
+  --risk: #b4322a;
+  --risk-soft: #fbecea;
+  --unknown: #6d6c74;
+  --unknown-soft: #f0f0ee;
+  --focus: #2f4fd6;
+  --shadow-pop: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 28px rgb(0 0 0 / 0.08);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111113;
+    --surface: #17171a;
+    --surface-2: #1d1d21;
+    --surface-3: #25252a;
+    --line: #2a2a30;
+    --line-strong: #3a3a42;
+    --text: #ececef;
+    --text-2: #b4b4bc;
+    --text-3: #7f7f89;
+    --accent: #7d93f5;
+    --accent-soft: #1e2440;
+    --accent-text: #a4b3fa;
+    --ok: #5cc592;
+    --ok-soft: #15291f;
+    --warn: #e0a83f;
+    --warn-soft: #2c2312;
+    --risk: #f07a70;
+    --risk-soft: #321715;
+    --unknown: #9a9aa3;
+    --unknown-soft: #222226;
+    --shadow-pop: 0 1px 2px rgb(0 0 0 / 0.3), 0 12px 32px rgb(0 0 0 / 0.45);
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--text);
+  --color-ink-2: var(--text-2);
+  --color-ink-3: var(--text-3);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-text: var(--accent-text);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-risk: var(--risk);
+  --color-risk-soft: var(--risk-soft);
+  --color-unknown: var(--unknown);
+  --color-unknown-soft: var(--unknown-soft);
+  --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", "Inter", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --shadow-pop: var(--shadow-pop);
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Numbers align in tables and metric strips. */
+.num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* Typographic scale: display / section / body / meta. */
+.t-display {
+  font-size: 22px;
+  line-height: 1.25;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+.t-section {
+  font-size: 15px;
+  line-height: 1.35;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+.t-eyebrow {
+  font-size: 11px;
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.t-meta {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+/* Long-form reading (memo). */
+.prose-memo {
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--text);
+}
+.prose-memo h2 {
+  font-size: 17px;
+  font-weight: 600;
+  margin: 2.2em 0 0.6em;
+  letter-spacing: -0.01em;
+}
+.prose-memo h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 1.6em 0 0.4em;
+}
+.prose-memo p {
+  margin: 0.6em 0;
+}
+.prose-memo ul {
+  margin: 0.5em 0;
+  padding-left: 1.2em;
+  list-style: disc;
+}
+.prose-memo li {
+  margin: 0.25em 0;
+}
+
+/* Chat markdown. */
+.md p {
+  margin: 0.45em 0;
+}
+.md ul,
+.md ol {
+  margin: 0.4em 0;
+  padding-left: 1.2em;
+}
+.md ul {
+  list-style: disc;
+}
+.md ol {
+  list-style: decimal;
+}
+.md li {
+  margin: 0.15em 0;
+}
+.md strong {
+  font-weight: 600;
+}
+.md table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.6em 0;
+  font-size: 12.5px;
+}
+.md th,
+.md td {
+  border-bottom: 1px solid var(--line);
+  padding: 5px 8px 5px 0;
+  text-align: left;
+  vertical-align: top;
+}
+.md th {
+  color: var(--text-3);
+  font-weight: 500;
+}
+.md a {
+  color: var(--accent-text);
+}
+.md h1,
+.md h2,
+.md h3 {
+  font-weight: 600;
+  margin: 0.8em 0 0.3em;
+  font-size: 13.5px;
+}
+
+/* Subtle, functional motion only. */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.anim-in {
+  animation: fade-in 140ms ease-out;
+}
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.pulse-dot {
+  animation: pulse-dot 1.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .anim-in,
+  .pulse-dot {
+    animation: none;
+  }
+}
+
+@media print {
+  html,
+  body {
+    background: white;
+    font-size: 11px;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-page {
+    box-shadow: none !important;
+    border: none !important;
+    margin: 0 !important;
+    max-width: none !important;
+  }
+  @page {
+    margin: 14mm 14mm;
+  }
+}
