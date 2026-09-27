@@ -9,3 +9,4 @@ data/
 coverage/
 evals/results/
 .DS_Store
+scripts/.qa-*
