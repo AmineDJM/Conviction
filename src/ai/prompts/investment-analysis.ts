@@ -18,7 +18,7 @@ import {
 } from "@/domain/sections";
 import { ANALYST_STANDARD, today } from "./common";
 
-export const INVESTMENT_ANALYSIS = { id: "investment_analysis", version: "investment_analysis_v1" } as const;
+export const INVESTMENT_ANALYSIS = { id: "investment_analysis", version: "investment_analysis_v2" } as const;
 
 export const InvestmentAnalysisOutput = z.object({
   founders: z.array(FounderAnalysis),
@@ -67,4 +67,35 @@ RISKS — each with category, severity, likelihood (LOW/MODERATE/HIGH/CRITICAL),
 RUBRIC — rate every criterion: ${RUBRIC_CRITERIA.join(", ")}. Scale WEAK / BELOW_BAR / ADEQUATE / STRONG / EXCEPTIONAL; use INSUFFICIENT_EVIDENCE rather than guessing. Ratings must be justified by cited evidence. Deck assertions alone rarely justify STRONG.
 
 EXIT ASSUMPTIONS — one per scenario (FAILURE, LOW, BASE, BULL, OUTLIER): exit revenue and revenue multiple grounded in the business model and comparable outcomes, years to exit, rationale. FAILURE may use nulls. These are assumptions; code computes returns.`;
+}
+
+/**
+ * v2: the analysis runs as two parallel parts to halve wall-clock latency.
+ * Part A — people, product, customers, traction, GTM. Part B — market, competition,
+ * moat, financing, risks, exits. Rubric criteria are split accordingly.
+ */
+export const RUBRIC_PART_A = [
+  "FOUNDER_MARKET_FIT",
+  "EXECUTION_EVIDENCE",
+  "TEAM_COMPLETENESS",
+  "PAIN_SEVERITY",
+  "VALUE_QUANTIFIED",
+  "PRODUCT_DIFFERENTIATION",
+  "PMF_SIGNAL_QUALITY",
+  "ICP_CLARITY",
+  "SALES_MOTION_FIT",
+  "CHANNEL_SCALABILITY",
+  "PRICING_POWER",
+] as const;
+export const RUBRIC_PART_B = RUBRIC_CRITERIA.filter((c) => !(RUBRIC_PART_A as readonly string[]).includes(c));
+
+export const AnalysisPartA = InvestmentAnalysisOutput.pick({ founders: true, product: true, pain: true, customers: true, pmf: true, gtm: true, economicsNotes: true, rubric: true });
+export const AnalysisPartB = InvestmentAnalysisOutput.pick({ market: true, competition: true, moat: true, financingPath: true, risks: true, rubric: true, exitAssumptions: true, arpaAssumptionUsd: true });
+
+export function analysisPartInstructions(part: "A" | "B") {
+  const scope =
+    part === "A"
+      ? `THIS CALL — PART A ONLY: founders, product, pain, customers, PMF, GTM, economics notes, and the rubric for exactly these criteria: ${RUBRIC_PART_A.join(", ")}. Another analyst covers market, competition, moat, financing, risks and exits in parallel.`
+      : `THIS CALL — PART B ONLY: market reconstruction, competition, moat, financing path, risks (covering ALL risk categories including team, product and GTM risks visible in the record), exit assumptions, ARPA assumption, and the rubric for exactly these criteria: ${RUBRIC_PART_B.join(", ")}. Another analyst covers founders, product, customers, PMF and GTM in parallel.`;
+  return `${investmentAnalysisInstructions()}\n\n${scope}`;
 }

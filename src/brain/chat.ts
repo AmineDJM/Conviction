@@ -210,7 +210,8 @@ export async function* askBrain(inp: AskInput): AsyncGenerator<BrainEvent> {
   yield { type: "status", text: "Writing" };
   const fund = getDefaultFund(inp.workspaceId);
   const contextText = items.map((it, i) => `[${i + 1}] ${it.title}${it.label ? ` {${it.label}}` : ""}${it.href ? ` <${it.href}>` : ""}\n${it.text}`).join("\n\n");
-  const effort: Effort = plan.complexity === "SIMPLE" ? "none" : plan.complexity === "MODERATE" ? "low" : "medium";
+  // The heavy thinking happened at ingestion; answers only need light reasoning (fast first token).
+  const effort: Effort = plan.complexity === "SIMPLE" ? "none" : "low";
   const maxOut = plan.complexity === "SIMPLE" ? 900 : plan.complexity === "MODERATE" ? 1800 : 3500;
   let answer = "";
   let firstTokenMs: number | null = null;

@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useShell } from "@/components/shell/shell-context";
 import { Badge, Button } from "@/components/ui";
 import { DECISION_LABEL, STAGE_LABEL, decisionTone, relative, titleCase, usd } from "@/lib/format";
@@ -23,8 +24,15 @@ export function DealHeader(p: {
   mode: string | null;
 }) {
   const { ask } = useShell();
+  const router = useRouter();
+  async function remove() {
+    if (!confirm(`Permanently delete ${p.name}? Documents, analyses, versions and deal memory are removed. This cannot be undone.`)) return;
+    const res = await fetch(`/api/deals/${encodeURIComponent(p.slug)}`, { method: "DELETE" });
+    if (res.ok) router.push("/");
+    else alert((await res.json().catch(() => ({}))).error ?? "Delete failed");
+  }
   return (
-    <header className="no-print sticky top-0 z-30 border-b border-line bg-bg/90 px-8 pb-3 pt-5 backdrop-blur-md">
+    <header className="no-print px-8 pb-3 pt-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2.5">
@@ -58,6 +66,9 @@ export function DealHeader(p: {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Button size="sm" variant="ghost" onClick={remove} title="Delete this company and all its data">
+            Delete
+          </Button>
           <Button size="sm" variant="ghost" onClick={() => ask(`Challenge the investment thesis for ${p.name}.`)}>
             Challenge thesis
           </Button>

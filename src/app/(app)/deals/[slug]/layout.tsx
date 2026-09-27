@@ -9,6 +9,7 @@ export default async function DealLayout({ children, params }: { children: React
   const running = run && (run.status === "RUNNING" || run.status === "QUEUED");
   return (
     <div>
+      <div className="no-print sticky top-0 z-30 border-b border-line bg-bg/90 backdrop-blur-md">
       <DealHeader
         slug={company.slug}
         name={company.name}
@@ -28,6 +29,7 @@ export default async function DealLayout({ children, params }: { children: React
         mode={version?.canonical.analysis.mode ?? null}
       />
       {version && <DealTabs slug={company.slug} />}
+      </div>
       {running && <RunProgress runId={run.id} initial={run.progress} hasVersion={!!version} />}
       {!running && run?.status === "FAILED" && !version && (
         <div className="px-8 py-10">

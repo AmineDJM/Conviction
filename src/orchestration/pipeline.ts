@@ -12,7 +12,7 @@ import { wrapUntrusted } from "@/ai/untrusted";
 import { worstCaseCost } from "@/ai/pricing";
 import { DeckUnderstandingOutput, deckUnderstandingInstructions, DECK_UNDERSTANDING } from "@/ai/prompts/deck-understanding";
 import { ResearchOutput, researchInstructions, RESEARCH } from "@/ai/prompts/research";
-import { InvestmentAnalysisOutput, investmentAnalysisInstructions, INVESTMENT_ANALYSIS } from "@/ai/prompts/investment-analysis";
+import { AnalysisPartA, AnalysisPartB, analysisPartInstructions, INVESTMENT_ANALYSIS } from "@/ai/prompts/investment-analysis";
 import { RedTeamOutput, redTeamInstructions, RED_TEAM } from "@/ai/prompts/red-team";
 import { emptyCanonical, type CanonicalDeal } from "@/domain/canonical";
 import type { AnalysisMode } from "@/domain/enums";
@@ -92,7 +92,9 @@ export async function runDeckAnalysis(inp: RunDeckAnalysisInput): Promise<void> 
     step("INGEST", "DONE", `${docs.length} document(s), ${docs.reduce((a, d) => a + d.pages.length, 0)} pages`);
 
     // Reserve budget for the mandatory later passes so research cannot starve them.
-    const reserveAnalysis = cost.reserve(worstCaseCost(PRIMARY_MODEL, 70_000, tokens.analysis));
+    const partTokens = Math.ceil(tokens.analysis * 0.6);
+    const reserveAnalysisA = cost.reserve(worstCaseCost(PRIMARY_MODEL, 72_000, partTokens));
+    const reserveAnalysisB = cost.reserve(worstCaseCost(PRIMARY_MODEL, 72_000, partTokens));
     const reserveRedTeam = cost.reserve(worstCaseCost(PRIMARY_MODEL, 60_000, tokens.redTeam));
     const reserveIndex = cost.reserve(0.004);
 
@@ -208,27 +210,54 @@ export async function runDeckAnalysis(inp: RunDeckAnalysisInput): Promise<void> 
       });
     }
 
-    /* ---------------- ANALYZE (investment_analysis_v1) ---------------- */
+    /* ---------------- ANALYZE (investment_analysis_v2: two parallel parts) ---------------- */
     step("ANALYZE", "RUNNING");
-    try {
-      const analysis = await structured({
-        step: "ANALYZE",
+    const record = wrapUntrusted("canonical record (contains excerpts from untrusted documents and web pages)", JSON.stringify(canonicalForAnalysis(deal)));
+    const [partA, partB] = await Promise.allSettled([
+      structured({
+        step: "ANALYZE_A",
         promptVersion: INVESTMENT_ANALYSIS.version,
-        instructions: investmentAnalysisInstructions(),
-        input: [{ role: "user", content: wrapUntrusted("canonical record (contains excerpts from untrusted documents and web pages)", JSON.stringify(canonicalForAnalysis(deal))) }],
-        schema: InvestmentAnalysisOutput,
-        schemaName: "investment_analysis",
-        maxOutputTokens: tokens.analysis,
+        instructions: analysisPartInstructions("A"),
+        input: [{ role: "user", content: record }],
+        schema: AnalysisPartA,
+        schemaName: "investment_analysis_a",
+        maxOutputTokens: partTokens,
         effort: effort.analysis,
         cost,
-        reservation: reserveAnalysis,
-      });
-      deal = applyInvestmentAnalysis(deal, analysis.data);
+        reservation: reserveAnalysisA,
+      }),
+      structured({
+        step: "ANALYZE_B",
+        promptVersion: INVESTMENT_ANALYSIS.version,
+        instructions: analysisPartInstructions("B"),
+        input: [{ role: "user", content: record }],
+        schema: AnalysisPartB,
+        schemaName: "investment_analysis_b",
+        maxOutputTokens: partTokens,
+        effort: effort.analysis,
+        cost,
+        reservation: reserveAnalysisB,
+      }),
+    ]);
+    cost.release(reserveAnalysisA);
+    cost.release(reserveAnalysisB);
+    if (partA.status === "fulfilled" && partB.status === "fulfilled") {
+      const a = partA.value.data;
+      const b = partB.value.data;
+      deal = applyInvestmentAnalysis(deal, { ...a, ...b, rubric: [...a.rubric, ...b.rubric.filter((r) => !a.rubric.some((x) => x.criterion === r.criterion))] });
       deal.analysis.completedSteps.push("ANALYZE");
       step("ANALYZE", "DONE", `${deal.risks.length} risks, ${deal.rubric.length} rubric ratings`);
-    } catch (e) {
-      cost.release(reserveAnalysis);
-      const reason = e instanceof BudgetExceededError ? "Budget limit" : `Model failure: ${(e as Error).message.slice(0, 160)}`;
+    } else {
+      const errs = [partA, partB].filter((p): p is PromiseRejectedResult => p.status === "rejected").map((p) => p.reason as Error);
+      const reason = errs.some((e) => e instanceof BudgetExceededError) ? "Budget limit" : `Model failure: ${errs.map((e) => e.message.slice(0, 120)).join("; ")}`;
+      // Keep whichever half succeeded — partial analysis is labelled, never invented.
+      if (partA.status === "fulfilled") {
+        const a = partA.value.data;
+        deal = applyInvestmentAnalysis(deal, { ...a, market: null as never, competition: null as never, moat: [], financingPath: null as never, risks: [], exitAssumptions: [], arpaAssumptionUsd: null });
+      } else if (partB.status === "fulfilled") {
+        const b = partB.value.data;
+        deal = applyInvestmentAnalysis(deal, { ...b, founders: [], product: deal.product as never, pain: null as never, customers: deal.customers as never, pmf: null as never, gtm: null as never, economicsNotes: "" });
+      }
       step("ANALYZE", "FAILED", reason);
       skipped.push({ step: "ANALYZE", reason });
     }

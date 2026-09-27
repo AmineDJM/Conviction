@@ -1,5 +1,5 @@
 import { requireSession } from "@/server/session";
-import { Sidebar } from "@/components/shell/sidebar";
+import { MobileNav, Sidebar } from "@/components/shell/sidebar";
 import { BrainPanel } from "@/components/brain/brain-panel";
 import { CommandPalette } from "@/components/shell/command-palette";
 import { ShellProvider } from "@/components/shell/shell-context";
@@ -13,7 +13,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <ShellProvider>
       <div className="flex min-h-dvh">
         <Sidebar workspace={session.workspaceName} user={session.name} logout={logoutAction} />
-        <div className="min-w-0 flex-1">{children}</div>
+        <div className="min-w-0 flex-1">
+          <MobileNav workspace={session.workspaceName} />
+          {children}
+        </div>
         <BrainPanel fundName={session.workspaceName} />
       </div>
       <CommandPalette />

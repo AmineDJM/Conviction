@@ -68,3 +68,25 @@ export function Sidebar({ workspace, user, logout }: { workspace: string; user: 
     </aside>
   );
 }
+
+/** Mobile: compact top bar. The full analytics desktop is not recreated on phones (§109). */
+export function MobileNav({ workspace }: { workspace: string }) {
+  const path = usePathname();
+  const { toggleBrain } = useShell();
+  return (
+    <div className="no-print sticky top-0 z-40 flex items-center gap-3 overflow-x-auto border-b border-line bg-bg/95 px-4 py-2.5 backdrop-blur md:hidden">
+      <Link href="/" className="flex shrink-0 items-center gap-2 text-[13px] font-semibold">
+        <span className="grid h-5 w-5 place-items-center rounded-[5px] bg-ink text-[11px] text-bg">C</span>
+        {workspace}
+      </Link>
+      {NAV.slice(0, 4).map((n) => (
+        <Link key={n.href} href={n.href} className={cx("shrink-0 text-[13px]", n.match(path) ? "font-medium text-ink" : "text-ink-3")}>
+          {n.label}
+        </Link>
+      ))}
+      <button onClick={toggleBrain} className="ml-auto shrink-0 text-[13px] text-accent-text">
+        Brain
+      </button>
+    </div>
+  );
+}

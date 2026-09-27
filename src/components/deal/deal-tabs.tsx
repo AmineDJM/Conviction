@@ -27,7 +27,7 @@ export function DealTabs({ slug }: { slug: string }) {
   const base = `/deals/${slug}`;
   const current = path === base ? "" : path.slice(base.length + 1).split("/")[0];
   return (
-    <nav className="no-print sticky top-[78px] z-20 border-b border-line bg-bg/90 px-6 backdrop-blur-md">
+    <nav className="no-print border-t border-line px-6">
       <div className="-mb-px flex gap-0.5 overflow-x-auto">
         {DEAL_TABS.map((t) => (
           <Link
