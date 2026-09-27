@@ -377,7 +377,7 @@ async function execute(inp: RunDeckAnalysisInput, signal: AbortSignal): Promise<
         record: canonicalForAnalysis(deal),
         forensics: deal.forensics,
         latentSignals: deal.latentSignals,
-        deterministic: { ...derivedDigest(pre), integrity: compactReport(pre.integrity), latent: compactReport(pre.latent), economics: compactReport(pre.economics) },
+        deterministic: { ...derivedDigest(pre), integrity: compactReport(pre.integrity), latent: pre.latent.summary, economics: compactReport(pre.economics) },
       }),
     );
     const partCalls = partIds.map((id, k) =>

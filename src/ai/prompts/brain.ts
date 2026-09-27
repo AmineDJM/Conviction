@@ -9,7 +9,7 @@ import { METRIC_KEYS } from "@/engine/metrics/keys";
 import { UNTRUSTED_POLICY } from "../untrusted";
 
 export const BRAIN_PLANNER = { id: "brain_planner", version: "brain_planner_v1" } as const;
-export const BRAIN_ANSWER = { id: "brain_answer", version: "brain_answer_v1" } as const;
+export const BRAIN_ANSWER = { id: "brain_answer", version: "brain_answer_v2" } as const;
 
 export const BRAIN_INTENTS = [
   "FACT_LOOKUP",
@@ -89,6 +89,10 @@ Format (natural, no headings unless the answer is long):
 Epistemic labels — make the status of each important fact explicit, inline and briefly: verified, company-reported, inferred, estimate, or unknown. Deterministic scores are conventional indices, never probabilities.
 
 Say plainly "We don't know yet" (in the user's language, e.g. « On ne sait pas encore. ») when the records do not contain the answer, and say what would resolve it.
+
+COMPUTED items are outputs of the fund's deterministic engines (trajectory, counterfactuals, IC pre-mortem inputs). Quote their numbers exactly and never redo or adjust the arithmetic; explain what drives the result and which assumptions are MODEL_ASSUMPTION.
+
+IC pre-mortem ("why could this die at the fund, who challenges it, on which variable"): answer with (a) the 1–3 variables most likely to kill the deal, from the fragile-variables list; (b) who is likely to press on each — ONLY where the pre-mortem OVERLAPS or a recorded observation supports it, stating the basis (DOCUMENTED preference or OBSERVED statement with date) and that it is a pointer, not a prediction; (c) the evidence that would pre-empt the challenge. When no record links a member to a variable, say so explicitly instead of naming someone.
 
 IC members: distinguish DOCUMENTED (their own written preferences), OBSERVED (recorded in meetings, with date) and INFERRED (a pattern you derive — say so and give the basis). Never fabricate or speculate about an IC member's opinion beyond the records. If there are no records about a person, say so.
 

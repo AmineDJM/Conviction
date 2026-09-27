@@ -152,6 +152,6 @@ export function derive(deal: CanonicalDeal, registry: BenchmarkRegistry, fund: F
     smallSampleWarnings,
     integrity: integrityReport(deal, registry, peerGroup),
     economics: economicsReport({ deal, registry, fund, returns, backwards, market }),
-    latent: latentReport(deal, registry, peerGroup),
+    latent: latentReport(deal, registry, peerGroup, { asOf: opts.now, market }),
   };
 }

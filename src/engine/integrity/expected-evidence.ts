@@ -113,6 +113,9 @@ export const EVIDENCE_ITEMS: Record<EvidenceItemId, ItemSpec> = {
       const lvl = c.deal.forensics?.productProof?.level;
       const measured = arr(c.deal.product?.valueQuantification).some((v) => v?.evidenceStatus === "MEASURED");
       const verified = c.claims.some((x) => (x.category === "PRODUCT" || x.category === "TECHNOLOGY") && x.verification === "VERIFIED");
+      // Live recurring revenue or paying customers in production is product proof by itself.
+      const live = ["arr", "mrr", "revenue_ttm", "paying_customers", "units_shipped"].map((k) => c.primary(k)).find((m) => m && m.basis !== "SIGNED" && m.basis !== "BOOKED");
+      if (live) return [live.id];
       return lvl === "DEMO" || lvl === "PRODUCTION_USAGE" || lvl === "REAL_INTEGRATIONS" || measured || verified ? ["product"] : [];
     },
     perfectSlide: "Product proof: screenshots of the live product in a customer's workflow, the integrations in production, usage per active customer, and one measured before/after outcome with its baseline and measurement period.",
@@ -354,6 +357,8 @@ type StageSpec = { E: EvidenceItemId[]; N: EvidenceItemId[] };
 type ProfileSpec = Record<StageBand, StageSpec>;
 
 const BASE_EARLY: EvidenceItemId[] = ["team", "round_terms", "use_of_funds"];
+/** From Series A on, every profile is expected to show the product works (live revenue counts). */
+const BASE_GROWTH: EvidenceItemId[] = [...BASE_EARLY, "product_proof"];
 
 function late(growth: StageSpec, addE: EvidenceItemId[], n: EvidenceItemId[]): StageSpec {
   const E = [...new Set([...growth.E, ...addE])];
@@ -361,39 +366,39 @@ function late(growth: StageSpec, addE: EvidenceItemId[], n: EvidenceItemId[]): S
 }
 
 const ENTERPRISE_GROWTH: StageSpec = {
-  E: [...BASE_EARLY, "revenue", "arr_history", "paying_customers", "gross_margin", "retention", "acv", "sales_cycle", "cac_payback", "cash_and_burn", "customer_concentration"],
+  E: [...BASE_GROWTH, "revenue", "arr_history", "paying_customers", "gross_margin", "retention", "acv", "sales_cycle", "cac_payback", "cash_and_burn", "customer_concentration"],
   N: ["cohort_retention", "pipeline_funnel", "burn_multiple", "pricing", "headcount", "references", "cap_table", "named_customers", "pilot_conversion", "services_mix"],
 };
 const PLG_GROWTH: StageSpec = {
-  E: [...BASE_EARLY, "revenue", "arr_history", "paying_customers", "gross_margin", "retention", "arpu", "usage_growth", "cac_payback", "cash_and_burn"],
+  E: [...BASE_GROWTH, "revenue", "arr_history", "paying_customers", "gross_margin", "retention", "arpu", "usage_growth", "cac_payback", "cash_and_burn"],
   N: ["cohort_retention", "organic_share", "burn_multiple", "pricing", "engagement", "headcount", "cap_table"],
 };
 const INFRA_GROWTH: StageSpec = {
-  E: [...BASE_EARLY, "revenue", "arr_history", "paying_customers", "gross_margin", "retention", "usage_growth", "cash_and_burn"],
+  E: [...BASE_GROWTH, "revenue", "arr_history", "paying_customers", "gross_margin", "retention", "usage_growth", "cash_and_burn"],
   N: ["cohort_retention", "acv", "pricing", "burn_multiple", "customer_concentration", "engagement", "headcount"],
 };
 const CONSUMER_GROWTH: StageSpec = {
-  E: [...BASE_EARLY, "engagement", "consumer_retention", "organic_share", "usage_growth", "cash_and_burn"],
+  E: [...BASE_GROWTH, "engagement", "consumer_retention", "organic_share", "usage_growth", "cash_and_burn"],
   N: ["revenue", "arpu", "cac_payback", "cohort_retention", "gross_margin", "headcount"],
 };
 const MARKETPLACE_GROWTH: StageSpec = {
-  E: [...BASE_EARLY, "gmv", "take_rate", "revenue", "repeat_rate", "usage_growth", "arr_history", "cash_and_burn"],
+  E: [...BASE_GROWTH, "gmv", "take_rate", "revenue", "repeat_rate", "usage_growth", "arr_history", "cash_and_burn"],
   N: ["fill_rate", "cac_payback", "cohort_retention", "gross_margin", "headcount", "customer_concentration"],
 };
 const FINTECH_GROWTH: StageSpec = {
-  E: [...BASE_EARLY, "tpv", "active_accounts", "revenue", "take_rate", "gross_margin", "arr_history", "cash_and_burn", "regulatory_path"],
+  E: [...BASE_GROWTH, "tpv", "active_accounts", "revenue", "take_rate", "gross_margin", "arr_history", "cash_and_burn", "regulatory_path"],
   N: ["credit_losses", "cohort_retention", "cac_payback", "headcount", "customer_concentration"],
 };
 const HARDWARE_GROWTH: StageSpec = {
-  E: [...BASE_EARLY, "product_proof", "milestone_capital", "units_shipped", "asp", "backlog", "gross_margin", "revenue", "cash_and_burn", "pilot_conversion"],
+  E: [...BASE_GROWTH, "milestone_capital", "units_shipped", "asp", "backlog", "gross_margin", "revenue", "cash_and_burn", "pilot_conversion"],
   N: ["defect_rate", "named_customers", "ip", "customer_concentration", "headcount"],
 };
 const BIO_GROWTH: StageSpec = {
-  E: [...BASE_EARLY, "milestone_capital", "regulatory_path", "ip", "cash_and_burn", "product_proof"],
+  E: [...BASE_GROWTH, "milestone_capital", "regulatory_path", "ip", "cash_and_burn"],
   N: ["cap_table", "headcount", "named_customers"],
 };
 const GENERAL_GROWTH: StageSpec = {
-  E: [...BASE_EARLY, "revenue", "arr_history", "paying_customers", "gross_margin", "cash_and_burn"],
+  E: [...BASE_GROWTH, "revenue", "arr_history", "paying_customers", "gross_margin", "cash_and_burn"],
   N: ["retention", "acv", "customer_concentration", "headcount", "cap_table", "cac_payback"],
 };
 
@@ -440,7 +445,7 @@ export const EXPECTED_EVIDENCE: Record<ProfileId, ProfileSpec> = {
   },
   GENERAL: {
     EARLY: { E: BASE_EARLY, N: ["revenue", "paying_customers", "product_proof", "pricing", "cash_and_burn"] },
-    GROWTH: GENERAL_GROWTH,
+    GROWTH: GENERAL_GROWTH, // product_proof is NICE at EARLY for GENERAL, EXPECTED from GROWTH
     LATE: late(GENERAL_GROWTH, ["retention", "customer_concentration", "headcount", "cap_table", "cohort_retention", "burn_multiple"], ["acv", "cac_payback"]),
   },
 };

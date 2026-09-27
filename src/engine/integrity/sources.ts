@@ -85,7 +85,7 @@ const COMMERCIAL_ESTIMATE_DOMAINS = [
 ];
 const SOCIAL_DOMAINS = ["linkedin.com", "x.com", "twitter.com", "crunchbase.com", "facebook.com", "instagram.com", "medium.com", "substack.com", "youtube.com", "tiktok.com", "wellfound.com", "angel.co", "producthunt.com", "f6s.com", "reddit.com", "quora.com"];
 const REVIEW_AGGREGATOR_DOMAINS = ["g2.com", "capterra.com", "getapp.com", "softwareadvice.com", "trustradius.com", "financesonline.com", "saasworthy.com", "sourceforge.net", "slashdot.org", "crozdesk.com"];
-const SEO_DOMAIN_TOKEN_RE = /^(best|top\d*|reviews?|compare|comparisons?|alternatives?|versus|ranked|rankings?)$/;
+const SEO_DOMAIN_TOKEN_RE = /^(best|top\d*|reviews?|compare|comparisons?|alternatives?|versus|ranked|rankings?)$|^top\d+[a-z]+$/;
 const SEO_TITLE_RE = /\b(top|best)\s+\d{1,3}\b|\b\d{1,3}\s+best\b|\bbest\s+[\w\s-]{0,40}\b(tools?|software|apps?|platforms?|alternatives|solutions)\b|\balternatives\s+to\b|\b(review|reviews)\b.*\b20\d\d\b|\bultimate guide\b/i;
 
 export function domainOf(url: string | null | undefined): string | null {
