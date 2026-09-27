@@ -56,6 +56,10 @@ export interface ScenarioResult {
 export interface ReturnModel {
   inputs: ReturnInputs;
   scenarios: ScenarioResult[];
+  /** Which model produced `scenarios` (CAP_TABLE is the institutional one; SIMPLIFIED is a fallback). */
+  engine?: "CAP_TABLE" | "SIMPLIFIED";
+  /** Simplified-model scenarios kept for comparison when the cap-table model is used. */
+  simplified?: ScenarioResult[] | null;
   assumptions: string[];
   warnings: string[];
   modelable: boolean;
@@ -238,7 +242,7 @@ export function runReturnModel(inputs: ReturnInputs, registry: BenchmarkRegistry
     inputs.followOn
       ? `Follow-on: pro rata in the next round, capped at reserves of $${(inputs.reserveUsd / 1e6).toFixed(2)}M.`
       : "No follow-on investment.",
-    `Preference stack: every preferred round ${inputs.entry.liquidationPrefMultiple}x ${inputs.entry.participating ? "participating" : "non-participating"}, pari passu (MODEL_ASSUMPTION unless terms provided).`,
+    `Preference stack: our round ${inputs.entry.liquidationPrefMultiple}x ${inputs.entry.participating ? "participating" : "non-participating"} (deal terms or default); other investors' rounds 1x non-participating; pari passu (MODEL_ASSUMPTION unless terms provided).`,
     "Exit equity value treated as proceeds to equity (net debt assumed zero).",
   ];
   if (inputs.entry.instrument === "SAFE" || inputs.entry.instrument === "CONVERTIBLE_NOTE")

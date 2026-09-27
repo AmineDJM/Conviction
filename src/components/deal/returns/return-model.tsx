@@ -7,6 +7,7 @@ import { RETURN_SCENARIOS, type ReturnScenarioName } from "@/domain/enums";
 import { backwardsReturn, buildReturnInputs, entryTermsFromDeal, priceSensitivity, runReturnModel, type ReturnInputs } from "@/engine/returns";
 import { getRegistry } from "@/engine/benchmarks";
 import { arpaFor } from "@/engine/derive";
+import { unifiedReturnModel } from "@/engine/unified-returns";
 import { Badge, Button, Callout, Section, Td, Th, cx } from "@/components/ui";
 import { multiple, pct, titleCase, usd, type Tone } from "@/lib/format";
 
@@ -83,11 +84,17 @@ export function ReturnModelView({ deal, fund, registryId, stored, samHighUsd, sa
     });
   }, [deal, registry, fund, checkUsd, followOn, postUsd, deckEntry.postMoneyUsd, stored.futureRounds, dilution, exitOv]);
 
-  const model = useMemo(() => runReturnModel(inputs, registry, fund), [inputs, registry, fund]);
+  // Same engine as the stored analysis: headline scenarios come from the pro-forma cap table.
+  const model = useMemo(
+    () => unifiedReturnModel(runReturnModel(inputs, registry, fund), { deal, registry, fund, market: { primary: samHighUsd ? ({ highUsd: samHighUsd } as never) : null } }).model,
+    [inputs, registry, fund, deal, samHighUsd],
+  );
   const base = model.scenarios.find((s) => s.scenario === "BASE");
+  // Same convention as the stored analysis: a fund-returning outcome follows the outlier path.
+  const outcome = model.scenarios.find((s) => s.scenario === "OUTLIER") ?? base;
   const backwards = useMemo(
-    () => (base ? backwardsReturn(targetUsd, base.exitOwnershipPct, registry, arpa, samHighUsd) : null),
-    [base, targetUsd, registry, arpa, samHighUsd],
+    () => (outcome ? backwardsReturn(targetUsd, outcome.exitOwnershipPct, registry, arpa, samHighUsd) : null),
+    [outcome, targetUsd, registry, arpa, samHighUsd],
   );
   const sensitivity = useMemo(() => priceSensitivity(inputs, registry), [inputs, registry]);
   const midIdx = Math.floor(registry.returns.backwardsRevenueMultiples.length / 2);

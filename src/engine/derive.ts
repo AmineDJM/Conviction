@@ -26,6 +26,7 @@ import { fundFit, type FundFitResult } from "./fund";
 import { riskProfile, type RiskProfile } from "./risk";
 import { decide, type Recommendation } from "./decision";
 import { metricDef } from "./metrics/dictionary";
+import { unifiedReturnModel } from "./unified-returns";
 import { integrityReport, type IntegrityReport } from "./integrity";
 import { economicsReport, type EconomicsReport } from "./economics";
 import { latentReport, type LatentReport } from "./latent";
@@ -101,10 +102,13 @@ export function derive(deal: CanonicalDeal, registry: BenchmarkRegistry, fund: F
   const evidence = evidenceQuality(deal, registry);
 
   const returnInputs: ReturnInputs = buildReturnInputs(deal, registry, fund, opts.returnOverrides);
-  const returns = runReturnModel(returnInputs, registry, fund);
-  const base = returns.scenarios.find((s) => s.scenario === "BASE");
-  const backwards = base
-    ? backwardsReturn(opts.targetContributionUsd ?? fund.targetDealReturnUsd, base.exitOwnershipPct, registry, arpaFor(deal), market.primary?.highUsd ?? null)
+  const simpleReturns = runReturnModel(returnInputs, registry, fund);
+  // One return model everywhere: headline scenarios come from the pro-forma cap table.
+  const returns = unifiedReturnModel(simpleReturns, { deal, registry, fund, market }).model;
+  // A fund-returning outcome goes through the outlier path (more rounds, more dilution), not the base path.
+  const outcome = returns.scenarios.find((s) => s.scenario === "OUTLIER") ?? returns.scenarios.find((s) => s.scenario === "BASE");
+  const backwards = outcome
+    ? backwardsReturn(opts.targetContributionUsd ?? fund.targetDealReturnUsd, outcome.exitOwnershipPct, registry, arpaFor(deal), market.primary?.highUsd ?? null)
     : null;
   const pl = powerLaw(deal, registry, market, backwards);
   const ff = fundFit(deal, fund, registry, returnInputs.entry);
@@ -151,7 +155,7 @@ export function derive(deal: CanonicalDeal, registry: BenchmarkRegistry, fund: F
     researchPriority,
     smallSampleWarnings,
     integrity: integrityReport(deal, registry, peerGroup),
-    economics: economicsReport({ deal, registry, fund, returns, backwards, market }),
+    economics: economicsReport({ deal, registry, fund, returns: simpleReturns, backwards, market }),
     latent: latentReport(deal, registry, peerGroup, { asOf: opts.now, market }),
   };
 }
