@@ -85,6 +85,10 @@ export function normalizeObservation(obs: MetricObservation, ctx: NormalizeConte
   if (obs.metricKey === "OTHER") return null;
   const def = metricDef(obs.metricKey);
   if (!def) return null;
+  // Plans, forecasts and targets are not metrics. They stay in the raw audit trail only.
+  if (obs.isProjection) return null;
+  const endDate = parsePeriodDate(obs.periodEnd);
+  if (endDate && endDate.getTime() > ctx.asOf.getTime() + 31 * 864e5) return null;
 
   const flags: string[] = [];
   let value = obs.value;

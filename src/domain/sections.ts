@@ -105,6 +105,9 @@ export const MetricObservation = z.object({
   sampleSize: z.number().nullable().describe("Number of customers/users/cohort members underlying a ratio"),
   cohortDefinition: z.string().nullable(),
   state: z.enum(["OBSERVED", "INFERRED", "WITHHELD", "UNKNOWN"]),
+  isProjection: z
+    .boolean()
+    .describe("True for forecasts, plans, budgets, targets and milestones — anything not yet achieved. Projections are never current metrics."),
   page: z.number().int().nullable(),
   excerpt: z.string().describe("Verbatim excerpt supporting the value (max ~200 chars)"),
 });

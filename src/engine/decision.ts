@@ -64,8 +64,11 @@ export function decide(inp: DecisionInputs): Recommendation {
   const remove = (s: DecisionStatus[]) => s.forEach((x) => admissible.delete(x));
 
   const aiSuggested = deal.aiRecommendation?.suggestedStatus ?? null;
-  const exceptional = (powerLaw.value ?? 0) >= d.exceptionalOverridePowerLaw && powerLaw.coverage >= 0.5;
   const hasRatedStrength = deal.exceptionalStrengths.some((s) => s.rating === "STRONG" || s.rating === "EXCEPTIONAL");
+  const strongMechanism = deal.powerLawRatings?.nonlinearMechanism === "STRONG" || deal.powerLawRatings?.nonlinearMechanism === "EXCEPTIONAL";
+  // A big market alone is not exceptional: the override needs a rated strength or mechanism.
+  const exceptional =
+    (powerLaw.value ?? 0) >= d.exceptionalOverridePowerLaw && powerLaw.coverage >= 0.5 && (hasRatedStrength || strongMechanism);
 
   // MANDATE
   if (fund.mandate === "FAIL") {

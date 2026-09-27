@@ -373,7 +373,7 @@ export const VC_BENCHMARK_V1_0: BenchmarkRegistry = {
     gates: [
       { id: "MANDATE", description: "Any mandate gate FAIL → SCREEN_OUT (binary; never averaged into Fund Fit)." },
       { id: "SCREEN_OUT_QUALITY", description: "Operating-quality upper bound below threshold AND power-law below override AND no rated exceptional strength → SCREEN_OUT." },
-      { id: "EXCEPTIONAL_OVERRIDE", description: "Power-Law Index ≥ override threshold prevents screen-out on composite quality alone; routes to founder call with explicit rationale." },
+      { id: "EXCEPTIONAL_OVERRIDE", description: "Power-Law Index ≥ override threshold AND a STRONG/EXCEPTIONAL rated exceptional strength or nonlinear mechanism prevents screen-out on composite quality alone." },
       { id: "THESIS_KILLER", description: "A thesis-killing weakness with HIGH/CRITICAL likelihood → ANALYTICAL_RECOMMEND_PASS unless the exceptional override applies." },
       { id: "DEPTH_LIMIT", description: "FAST_SCREEN may only produce SCREEN_OUT, NEEDS_FOUNDER_CALL or WATCH. PARTIAL analyses cannot be IC_READY or recommend invest." },
       { id: "MUST_ASK_OPEN", description: "Open MUST_ASK questions with evidence below HIGH → NEEDS_FOUNDER_CALL at most." },
