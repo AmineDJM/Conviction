@@ -138,7 +138,7 @@ export function deriveMetrics(input: MetricInstance[], nextId: () => string): Me
     if (key === "runway_months" && cash && burn) recomputed = runwayMonths(cash.normalizedValue!, burn.normalizedValue!);
     if (key === "acv" && arr && customers) recomputed = ratio(arr.normalizedValue, customers.normalizedValue);
     if (recomputed !== null && Math.abs(recomputed - reported.normalizedValue) / Math.max(1e-9, Math.abs(recomputed)) > 0.2) {
-      reported.qualityFlags.push(`INCONSISTENT_WITH_INPUTS: recomputed ${recomputed.toFixed(1)}`);
+      if (!reported.qualityFlags.some((f) => f.startsWith("INCONSISTENT_WITH_INPUTS"))) reported.qualityFlags.push(`INCONSISTENT_WITH_INPUTS: recomputed ${recomputed.toFixed(1)}`);
     }
   }
   return metrics;

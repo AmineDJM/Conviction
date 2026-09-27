@@ -94,50 +94,50 @@ describe("pipeline end-to-end: observations → normalize → derive → integri
   });
 });
 
-describe("KNOWN BUGS in files owned elsewhere (skipped — see report)", () => {
-  it.skip("normalize.timeFactor: 'days' should win over a parenthetical 'months' — '90 days (about 3 months)' becomes 2,739.6 days", () => {
+describe("previously-known normalization bugs (fixed; regression tests)", () => {
+  it("normalize.timeFactor: 'days' should win over a parenthetical 'months' — '90 days (about 3 months)' becomes 2,739.6 days", () => {
     expect(N("sales_cycle_days", 90, { unit: "DAYS", currency: null, rawText: "90 days (about 3 months)" })!.normalizedValue).toBe(90);
     expect(timeFactor("90 days (3 months)", "DAYS")).toBe(1);
   });
-  it.skip("normalize.timeFactor: abbreviations 'mo', 'mos', 'wk', 'wks' are not recognised — '3 mo' sales cycle is read as 3 days", () => {
+  it("normalize.timeFactor: abbreviations 'mo', 'mos', 'wk', 'wks' are not recognised — '3 mo' sales cycle is read as 3 days", () => {
     expect(N("sales_cycle_days", 3, { unit: "DAYS", currency: null, rawText: "3 mo" })!.normalizedValue).toBeCloseTo(91.3, 0);
     expect(N("sales_cycle_days", 6, { unit: "DAYS", currency: null, rawText: "6 wks" })!.normalizedValue).toBe(42);
   });
-  it.skip("normalize gross-margin exclusion regex has no word boundary: 'complex human review' matches 'ex human review' → false GROSS_MARGIN_EXCLUDES_COGS", () => {
+  it("normalize gross-margin exclusion regex has no word boundary: 'complex human review' matches 'ex human review' → false GROSS_MARGIN_EXCLUDES_COGS", () => {
     const r = N("gross_margin", 70, { unit: "PERCENT", currency: null, rawText: "70%", definitionAsStated: "includes inference for complex human review workloads" })!;
     expect(r.qualityFlags.some((f) => f.startsWith("GROSS_MARGIN_EXCLUDES_COGS"))).toBe(false);
   });
-  it.skip("normalize customer-count regex has no word boundaries: 'industrial' contains 'trial' → false CUSTOMER_COUNT_MAY_INCLUDE_NON_PAYING (likewise 'carefree' ⊃ 'free', 'apocalypse' ⊃ 'poc')", () => {
+  it("normalize customer-count regex has no word boundaries: 'industrial' contains 'trial' → false CUSTOMER_COUNT_MAY_INCLUDE_NON_PAYING (likewise 'carefree' ⊃ 'free', 'apocalypse' ⊃ 'poc')", () => {
     const r = N("paying_customers", 40, { unit: "COUNT", currency: null, rawText: "40 customers", definitionAsStated: "paying industrial customers" })!;
     expect(r.qualityFlags.some((f) => f.startsWith("CUSTOMER_COUNT_MAY_INCLUDE_NON_PAYING"))).toBe(false);
   });
-  it.skip("normalize ARR regex has no word boundaries: 'financial services customers' and 'redesigned' (⊃ 'signed') → false ARR_MAY_INCLUDE_NON_RECURRING", () => {
+  it("normalize ARR regex has no word boundaries: 'financial services customers' and 'redesigned' (⊃ 'signed') → false ARR_MAY_INCLUDE_NON_RECURRING", () => {
     expect(N("arr", 2e6, { rawText: "$2M ARR", definitionAsStated: "ARR from financial services customers" })!.qualityFlags).toEqual([]);
     expect(N("arr", 2e6, { rawText: "$2M ARR", definitionAsStated: "recurring revenue from our redesigned product" })!.qualityFlags).toEqual([]);
   });
-  it.skip("normalize drops current-year observations with a year-only or quarter period: '2026' and '2026-Q2' parse to Dec 28 2026 (> asOf + 31 days) and the metric silently disappears", () => {
+  it("normalize drops current-year observations with a year-only or quarter period: '2026' and '2026-Q2' parse to Dec 28 2026 (> asOf + 31 days) and the metric silently disappears", () => {
     expect(N("arr", 2e6, { rawText: "$2M ARR", periodEnd: "2026" })).not.toBeNull();
     expect(N("arr", 2e6, { rawText: "$2M ARR", periodEnd: "2026-Q2" })).not.toBeNull();
   });
-  it.skip("normalize: SIGNED/BOOKED basis is only handled for arr/mrr/revenue_ttm — '25 signed customers' becomes 25 paying_customers with no flag", () => {
+  it("normalize: SIGNED/BOOKED basis is only handled for arr/mrr/revenue_ttm — '25 signed customers' becomes 25 paying_customers with no flag", () => {
     const r = N("paying_customers", 25, { unit: "COUNT", currency: null, rawText: "25 signed customers", basis: "SIGNED" })!;
     expect(r.qualityFlags.some((f) => /SIGNED|NON_PAYING/.test(f))).toBe(true);
   });
-  it.skip("normalize NO_DENOMINATOR: a population written as '45 enterprise customers' (adjective between number and noun) is not recognised", () => {
+  it("normalize NO_DENOMINATOR: a population written as '45 enterprise customers' (adjective between number and noun) is not recognised", () => {
     const r = N("nrr", 118, { unit: "PERCENT", currency: null, rawText: "118% NRR", definitionAsStated: "measured across 45 enterprise customers", cohortDefinition: "ttm" })!;
     expect(r.qualityFlags.some((f) => f.startsWith("NO_DENOMINATOR"))).toBe(false);
   });
-  it.skip("normalize percent-fraction heuristic misfires on genuinely small percentages without a % sign: 'default rate 0.9' becomes 90%", () => {
+  it("normalize percent-fraction heuristic misfires on genuinely small percentages without a % sign: 'default rate 0.9' becomes 90%", () => {
     expect(N("default_rate", 0.9, { unit: "PERCENT", currency: null, rawText: "default rate 0.9" })!.normalizedValue).toBe(0.9);
   });
-  it.skip("derive.deriveMetrics mutates the caller's metric objects (qualityFlags arrays are shared by selectPrimary's shallow copies) and re-deriving accumulates duplicate INCONSISTENT_WITH_INPUTS flags", () => {
+  it("derive.deriveMetrics mutates the caller's metric objects (qualityFlags arrays are shared by selectPrimary's shallow copies) and re-deriving accumulates duplicate INCONSISTENT_WITH_INPUTS flags", () => {
     const input = [metric("arr", 1_000_000, { id: "A" }), metric("paying_customers", 10, { id: "C", unit: "COUNT" }), metric("acv", 500_000, { id: "V" })];
     deriveMetrics(input, () => "D1");
     expect(input.find((x) => x.id === "V")!.qualityFlags).toEqual([]);
     deriveMetrics(input, () => "D2");
     expect(input.find((x) => x.id === "V")!.qualityFlags.filter((f) => f.startsWith("INCONSISTENT")).length).toBeLessThanOrEqual(1);
   });
-  it.skip("normalize.monthsBetween uses local-time getters on UTC dates: staleness depends on the server time zone (e.g. TZ=America/Los_Angeles turns '2026-03-01' into February → ARR flagged STALE at 7 months)", () => {
+  it("normalize.monthsBetween uses local-time getters on UTC dates: staleness depends on the server time zone (e.g. TZ=America/Los_Angeles turns '2026-03-01' into February → ARR flagged STALE at 7 months)", () => {
     const prev = process.env.TZ;
     process.env.TZ = "America/Los_Angeles";
     try {

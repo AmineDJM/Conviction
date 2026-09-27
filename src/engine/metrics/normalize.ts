@@ -42,9 +42,34 @@ export function parseScaledNumber(raw: string): number | null {
 }
 
 /** Conversion factor from the unit named in raw text to the dictionary's time unit. */
+const TIME_UNITS: [RegExp, number][] = [
+  [/^(minutes?|mins?)$/, 1 / 1440],
+  [/^(hours?|hrs?|h)$/, 1 / 24],
+  [/^(days?|d)$/, 1],
+  [/^(weeks?|wks?|wk|w)$/, 7],
+  [/^(months?|mos?|mths?)$/, 30.44],
+  [/^(years?|yrs?|yr|y)$/, 365.25],
+];
+
+function unitDays(u: string): number | null {
+  const x = u.toLowerCase();
+  for (const [re, d] of TIME_UNITS) if (re.test(x)) return d;
+  return null;
+}
+
+/**
+ * Conversion factor from the unit named in raw text to the dictionary's time unit.
+ * The unit attached to the first number wins ("90 days (about 3 months)" is days);
+ * abbreviations (mo, wks, hrs) are recognised.
+ */
 export function timeFactor(raw: string, target: "DAYS" | "MONTHS"): number {
   const t = raw.toLowerCase();
-  const inDays = /\bmin(ute)?s?\b/.test(t) ? 1 / 1440 : /\b(hours?|hrs?)\b/.test(t) ? 1 / 24 : /\bweeks?\b/.test(t) ? 7 : /\bmonths?\b/.test(t) ? 30.44 : /\b(years?|yrs?)\b/.test(t) ? 365.25 : /\bdays?\b/.test(t) ? 1 : null;
+  const attached = /\d(?:[\d.,]*)\s*-?\s*(minutes?|mins?|hours?|hrs?|days?|weeks?|wks?|wk|months?|mos?|mths?|years?|yrs?|yr)\b/.exec(t);
+  let inDays = attached ? unitDays(attached[1]!) : null;
+  if (inDays === null) {
+    const loose = /\b(minutes?|mins?|hours?|hrs?|days?|weeks?|wks?|months?|mos?|years?|yrs?)\b/.exec(t);
+    inDays = loose ? unitDays(loose[1]!) : null;
+  }
   if (inDays === null) return 1;
   return target === "DAYS" ? inDays : inDays / 30.44;
 }
@@ -57,20 +82,48 @@ export function toUsd(amount: number, currency: string | null | undefined): { us
   return { usd: amount * rate, converted: true, rate };
 }
 
+/** Whole months between two instants, in UTC (independent of the server time zone). */
 function monthsBetween(a: Date, b: Date) {
-  return (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
+  return (b.getUTCFullYear() - a.getUTCFullYear()) * 12 + (b.getUTCMonth() - a.getUTCMonth());
 }
 
-export function parsePeriodDate(s: string | null | undefined): Date | null {
+export interface PeriodBounds {
+  start: Date;
+  end: Date;
+  precision: "DAY" | "MONTH" | "QUARTER" | "YEAR";
+}
+
+/** Parse "2026-06-30", "2026-06", "2026-Q2", "Q2 2026", "FY2026", "2026". */
+export function parsePeriodBounds(s: string | null | undefined): PeriodBounds | null {
   if (!s) return null;
-  const m = /^(\d{4})(?:-(\d{1,2}))?(?:-(\d{1,2}))?/.exec(s.trim());
+  const t = s.trim();
+  const q = /^(?:(\d{4})\s*-?\s*Q([1-4])|Q([1-4])\s*-?\s*(\d{4}))/i.exec(t);
+  if (q) {
+    const y = Number(q[1] ?? q[4]);
+    const qi = Number(q[2] ?? q[3]);
+    return { start: new Date(Date.UTC(y, (qi - 1) * 3, 1)), end: new Date(Date.UTC(y, qi * 3, 0)), precision: "QUARTER" };
+  }
+  const m = /^(?:FY\s*)?(\d{4})(?:-(\d{1,2}))?(?:-(\d{1,2}))?/i.exec(t);
   if (!m) return null;
   const y = Number(m[1]);
-  const mo = m[2] ? Number(m[2]) - 1 : 11;
-  const d = m[3] ? Number(m[3]) : 28;
-  const date = new Date(Date.UTC(y, mo, d));
-  return Number.isNaN(date.getTime()) ? null : date;
+  if (m[2] && m[3]) {
+    const d = new Date(Date.UTC(y, Number(m[2]) - 1, Number(m[3])));
+    return Number.isNaN(d.getTime()) ? null : { start: d, end: d, precision: "DAY" };
+  }
+  if (m[2]) {
+    const mo = Number(m[2]) - 1;
+    if (mo < 0 || mo > 11) return null;
+    return { start: new Date(Date.UTC(y, mo, 1)), end: new Date(Date.UTC(y, mo, 28)), precision: "MONTH" };
+  }
+  return { start: new Date(Date.UTC(y, 0, 1)), end: new Date(Date.UTC(y, 11, 28)), precision: "YEAR" };
 }
+
+/** Period end date (conventional day 28 for month precision, last day for quarters). */
+export function parsePeriodDate(s: string | null | undefined): Date | null {
+  return parsePeriodBounds(s)?.end ?? null;
+}
+
+const SMALL_RATE_KEYS = new Set(["default_rate", "loss_rate", "defect_rate"]);
 
 function dictUnitToObsUnit(u: MetricUnit): MetricObservation["unit"] {
   switch (u) {
@@ -93,8 +146,12 @@ export function normalizeObservation(obs: MetricObservation, ctx: NormalizeConte
   if (obs.metricKey === "OTHER") return null;
   // Chronology: forecasts, targets and pipeline are never current metrics (kept in the raw audit trail).
   if ((FORWARD_BASES as readonly string[]).includes(obs.basis)) return null;
-  const endDate = parsePeriodDate(obs.periodEnd);
-  if (endDate && endDate.getTime() > ctx.asOf.getTime() + 31 * 864e5) return null;
+  const bounds = parsePeriodBounds(obs.periodEnd);
+  // Future-dated "actuals" are dropped; a coarse period (a year, a quarter) that has started is not in the future.
+  if (bounds && bounds.start.getTime() > ctx.asOf.getTime() + 31 * 864e5) return null;
+  if (bounds && bounds.precision !== "YEAR" && bounds.precision !== "QUARTER" && bounds.end.getTime() > ctx.asOf.getTime() + 31 * 864e5) return null;
+  // Staleness is measured from the period end, capped at the analysis date for periods still running.
+  const endDate = bounds ? new Date(Math.min(bounds.end.getTime(), ctx.asOf.getTime())) : null;
 
   const flags: string[] = [];
   const lineage: { step: string; detail: string }[] = [
@@ -107,6 +164,8 @@ export function normalizeObservation(obs: MetricObservation, ctx: NormalizeConte
     flags.push(`SIGNED_NOT_DEPLOYED: reported as ${key.toUpperCase()} but basis is ${obs.basis.toLowerCase()} — reclassified as contracted ARR`);
     lineage.push({ step: "RECLASSIFIED", detail: `${key} → contracted_arr (basis ${obs.basis.toLowerCase()})` });
     key = "contracted_arr";
+  } else if (obs.basis === "SIGNED" || obs.basis === "BOOKED") {
+    flags.push(`SIGNED_NOT_DEPLOYED: basis is ${obs.basis.toLowerCase()} — signed or booked, not necessarily live or paying`);
   }
   const def = metricDef(key);
   if (!def) return null;
@@ -142,7 +201,10 @@ export function normalizeObservation(obs: MetricObservation, ctx: NormalizeConte
   }
 
   // 2. Percent sanity: a retention/margin given as 0.92 is almost certainly 92%.
-  if (def.unit === "PERCENT" && value !== null && Math.abs(value) <= 1.5 && /%|percent/i.test(obs.rawText) === false) {
+  //    Rates that are genuinely small (default, loss, defect) are never rescaled.
+  if (def.unit === "PERCENT" && SMALL_RATE_KEYS.has(def.key) && value !== null && Math.abs(value) <= 1.5 && !/%|percent/i.test(obs.rawText)) {
+    flags.push("PERCENT_SCALE_AMBIGUOUS: small value without a % sign kept as percent units");
+  } else if (def.unit === "PERCENT" && value !== null && Math.abs(value) <= 1.5 && /%|percent/i.test(obs.rawText) === false) {
     const pct = parseScaledNumber(obs.rawText);
     if (pct === null || Math.abs(pct) <= 1.5) {
       lineage.push({ step: "PERCENT_SCALE", detail: `${value} read as a fraction → ${value * 100}%` });
@@ -210,19 +272,22 @@ export function normalizeObservation(obs: MetricObservation, ctx: NormalizeConte
     else if (!/fully|loaded|salar|commission/.test(defText)) flags.push("CAC_LOADING_UNVERIFIED");
   }
   if (def.key === "gross_margin") {
-    const excluded = [...defText.matchAll(/(?:exclud\w*|before|ex\.?)\s+([a-z ,&/-]{3,60})/g)].map((m) => m[1]!.trim());
+    const excluded = [...defText.matchAll(/\b(?:exclud\w*|before|ex\.?)\s+([a-z ,&/-]{3,60})/g)].map((m) => m[1]!.trim());
     if (excluded.some((x) => /inference|cloud|hosting|support|human|ops|operation|delivery|labor|annotat|review/.test(x)))
       flags.push(`GROSS_MARGIN_EXCLUDES_COGS: ${excluded.join("; ")}`);
     else if (!/inference|cloud|hosting|support|delivery|labor|ops/.test(defText)) flags.push("COGS_COMPOSITION_UNVERIFIED");
   }
-  if (def.key === "paying_customers" && /pilot|trial|poc|proof of concept|loi|free|freemium|design partner|logos?\b/.test(defText)) {
+  if (def.key === "paying_customers" && /\b(pilots?|trials?|pocs?|proofs? of concept|lois?|letters? of intent|free|freemium|design partners?|logos?)\b/.test(defText)) {
     flags.push("CUSTOMER_COUNT_MAY_INCLUDE_NON_PAYING: definition mentions pilots, trials, LOIs, free users or logos");
   }
-  if (def.key === "arr" && /pilot|one[- ]time|services|implementation|setup|booking|signed|contracted|pipeline/.test(defText)) {
+  if (
+    def.key === "arr" &&
+    /\b(pilots?|one[- ]time|non[- ]recurring|implementation|setup|set-up|bookings?|signed|contracted|pipeline|(professional|consulting|onboarding|implementation)\s+services|services\s+(revenue|fees|income))\b/.test(defText)
+  ) {
     flags.push("ARR_MAY_INCLUDE_NON_RECURRING: definition mentions pilots, one-time, services, bookings or signed-not-live revenue");
   }
   if (def.unit === "PERCENT" && ["nrr", "grr", "logo_retention", "pilot_to_production_rate", "win_rate", "d30_retention", "d7_retention", "d1_retention", "repeat_rate"].includes(def.key)) {
-    if (obs.sampleSize === null && !/\b\d+\s+(customers|accounts|users|clients|cohort|pilots|deals)/.test(defText))
+    if (obs.sampleSize === null && !/\b\d[\d,]*\s+(?:[a-z][a-z-]*\s+){0,2}(customers?|accounts?|users?|clients?|cohorts?|pilots?|deals?|logos?|companies|merchants?|buyers?)\b/.test(defText))
       flags.push("NO_DENOMINATOR: rate stated without the population it is measured on");
     if (["nrr", "grr", "logo_retention"].includes(def.key) && !obs.cohortDefinition && !/cohort|trailing|ttm|12[- ]month/.test(defText))
       flags.push("NO_COHORT_DEFINITION: aggregate retention without cohort or measurement window");
@@ -298,7 +363,8 @@ export function selectPrimary(input: MetricInstance[]): MetricInstance[] {
       // Reported beats derived at equal freshness.
       return Number(a.calculationMethod === "DERIVED") - Number(b.calculationMethod === "DERIVED");
     });
-    sorted.forEach((m, i) => out.push({ ...m, isPrimary: i === 0 }));
+    // Fresh arrays: callers' instances are never mutated by later flagging.
+    sorted.forEach((m, i) => out.push({ ...m, qualityFlags: [...m.qualityFlags], lineage: [...m.lineage], inputs: [...m.inputs], isPrimary: i === 0 }));
   }
   return out;
 }
