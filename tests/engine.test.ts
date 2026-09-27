@@ -247,3 +247,14 @@ describe("evidence independence", () => {
     expect(r.evidence.independentConfirmations).toBe(1);
   });
 });
+
+describe("market plausibility", () => {
+  it("rejects per-customer figures mislabelled as a market", async () => {
+    const { reconstructMarket } = await import("@/engine/market");
+    const d = makeDeal();
+    d.market = { ...d.market!, bottomUp: null, valueCapture: { economicValueCreatedLowUsd: 41_000, economicValueCreatedHighUsd: 3_420_000, captureShareLowPct: 10, captureShareHighPct: 20, basis: "" } };
+    const m = reconstructMarket(d);
+    expect(m.ranges.find((r) => r.method === "VALUE_CAPTURE")).toBeUndefined();
+    expect(m.rejected[0]).toMatch(/VALUE_CAPTURE rejected/);
+  });
+});

@@ -219,6 +219,12 @@ export default async function CompetitionTab({ params }: { params: Promise<{ slu
               </tbody>
             </TableFrame>
           )}
+          {matrix.rows.some((r) => !r.own) && (
+            <p className="mt-2 text-[11.5px] text-ink-3">
+              The analysis did not state {name}&apos;s own position on {matrix.rows.filter((r) => !r.own).length} of {matrix.rows.length} dimensions — a gap in the comparison, not
+              parity.
+            </p>
+          )}
         </Section>
       )}
 

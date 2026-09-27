@@ -199,7 +199,9 @@ export function applyResearch(c: CanonicalDeal, out: ResearchOutput, ctx: Resear
     } else {
       const id = clmId();
       refMap.set(f.ref, id);
-      const independent = src.origin !== "COMPANY" && !f.derivedFromCompany && src.citationVerified;
+      // "No evidence found" is a gap, not a verified fact about the company.
+      const negative = NEGATIVE_FINDING.test(f.finding);
+      const independent = !negative && src.origin !== "COMPANY" && !f.derivedFromCompany && src.citationVerified;
       next.claims.push({
         id,
         category: topicToCategory(f.topic),
@@ -213,7 +215,7 @@ export function applyResearch(c: CanonicalDeal, out: ResearchOutput, ctx: Resear
         freshness: freshnessFor(f.publishedDate, asOf),
         independence: independent ? "INDEPENDENT" : src.independenceGroup === "COMPANY" ? "COMPANY_DERIVED" : "SHARED_ORIGIN",
         verificationMethod: `External research (${src.origin.toLowerCase().replace(/_/g, " ")})`,
-        limitations: src.citationVerified ? null : "Cited URL not among retrieved search results",
+        limitations: negative ? "Absence of evidence in the sources searched — not a verified fact" : src.citationVerified ? null : "Cited URL not among retrieved search results",
         contradictions: [],
         evidence: [{ sourceId: src.id, effect: "NEW_INFORMATION", excerpt: f.finding, location: f.sourceUrl, note: null }],
         history: [{ at: asOf.toISOString(), change: "CREATED", note: "From external research" }],
@@ -302,6 +304,8 @@ export function applyResearch(c: CanonicalDeal, out: ResearchOutput, ctx: Resear
   next.analysis.securityFlags = dedupeFlags([...next.analysis.securityFlags, ...flags]);
   return next;
 }
+
+export const NEGATIVE_FINDING = /\b(no|not any|could not|couldn't|unable to|did not|didn't)\b[^.]{0,60}\b(evidence|record|information|mention|trace|result|verif|find|found|locate|confirm)/i;
 
 function topicToCategory(t: string): Claim["category"] {
   switch (t) {

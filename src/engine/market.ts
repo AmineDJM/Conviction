@@ -23,7 +23,11 @@ export interface MarketReconstruction {
   deckInflation: number | null;
   /** max(high)/min(low) across methods; > 10 means methods disagree materially. */
   methodDivergence: number | null;
+  /** Ranges discarded by deterministic plausibility checks, with the reason. */
+  rejected: string[];
 }
+
+export const MIN_PLAUSIBLE_MARKET_USD = 5_000_000;
 
 const fmt = (n: number) => {
   if (n >= 1e9) return `$${(n / 1e9).toFixed(1)}B`;
@@ -48,11 +52,14 @@ export function reconstructMarket(c: CanonicalDeal): MarketReconstruction {
         basis: b.spendBasis,
       });
   }
+  const rejected: string[] = [];
   if (m?.valueCapture) {
     const v = m.valueCapture;
     const lo = v.economicValueCreatedLowUsd * (v.captureShareLowPct / 100);
     const hi = v.economicValueCreatedHighUsd * (v.captureShareHighPct / 100);
-    if (hi > 0)
+    // A serviceable market below $5M is almost always a per-customer figure mislabelled as a market.
+    if (hi > 0 && hi < MIN_PLAUSIBLE_MARKET_USD) rejected.push(`VALUE_CAPTURE rejected: ${fmt(lo)}–${fmt(hi)} is below ${fmt(MIN_PLAUSIBLE_MARKET_USD)} (likely per-customer value, not a market)`);
+    else if (hi > 0)
       ranges.push({
         method: "VALUE_CAPTURE",
         lowUsd: Math.min(lo, hi),
@@ -60,6 +67,12 @@ export function reconstructMarket(c: CanonicalDeal): MarketReconstruction {
         formula: `${fmt(v.economicValueCreatedLowUsd)}–${fmt(v.economicValueCreatedHighUsd)} value created × ${v.captureShareLowPct}–${v.captureShareHighPct}% captured`,
         basis: v.basis,
       });
+  }
+  for (const r of [...ranges]) {
+    if (r.method === "BOTTOM_UP" && r.highUsd < MIN_PLAUSIBLE_MARKET_USD) {
+      ranges.splice(ranges.indexOf(r), 1);
+      rejected.push(`BOTTOM_UP rejected: ${fmt(r.lowUsd)}–${fmt(r.highUsd)} is below ${fmt(MIN_PLAUSIBLE_MARKET_USD)}`);
+    }
   }
   if (m?.topDown && m.topDown.highUsd > 0) {
     ranges.push({
@@ -81,5 +94,5 @@ export function reconstructMarket(c: CanonicalDeal): MarketReconstruction {
   const methodDivergence =
     ranges.length >= 2 ? Math.max(...ranges.map((r) => r.highUsd)) / Math.max(1, Math.min(...ranges.map((r) => r.lowUsd))) : null;
 
-  return { ranges, primary, midpointUsd, deckTamUsd, deckInflation, methodDivergence };
+  return { ranges, primary, midpointUsd, deckTamUsd, deckInflation, methodDivergence, rejected };
 }

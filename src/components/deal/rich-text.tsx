@@ -3,11 +3,11 @@ import { Fragment } from "react";
 
 /**
  * Renders analysis prose with claim / source / metric / risk references
- * (CLM-012, SRC-004, MET-003, RSK-02, Q-03) turned into links to the evidence.
+ * (CLM-012, SRC-004, MET-003, RSK-02, Q-03, GAP-05) turned into links to the evidence.
  */
 export function RichText({ text, slug, className }: { text: string | null | undefined; slug: string; className?: string }) {
   if (!text) return null;
-  const parts = text.split(/(\b(?:CLM|SRC|MET)-\d{3}\b|\bRSK-\d{2}\b|\bQ-\d{2}\b)/g);
+  const parts = text.split(/(\b(?:CLM|SRC|MET)-\d{3}\b|\bRSK-\d{2}\b|\bQ-\d{2}\b|\bGAP-\d{2}\b)/g);
   return (
     <span className={className}>
       {parts.map((p, i) => {
@@ -22,6 +22,12 @@ export function RichText({ text, slug, className }: { text: string | null | unde
         if (/^RSK-\d{2}$/.test(p))
           return (
             <Link key={i} href={`/deals/${slug}/risks#${p}`} className="rounded bg-surface-3 px-1 font-mono text-[10.5px] text-ink-2 hover:text-accent-text">
+              {p}
+            </Link>
+          );
+        if (/^GAP-\d{2}$/.test(p))
+          return (
+            <Link key={i} href={`/deals/${slug}/questions#${p}`} className="rounded bg-surface-3 px-1 font-mono text-[10.5px] text-ink-2 hover:text-accent-text">
               {p}
             </Link>
           );

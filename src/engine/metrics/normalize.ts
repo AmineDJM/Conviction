@@ -41,6 +41,14 @@ export function parseScaledNumber(raw: string): number | null {
   return n * scale;
 }
 
+/** Conversion factor from the unit named in raw text to the dictionary's time unit. */
+export function timeFactor(raw: string, target: "DAYS" | "MONTHS"): number {
+  const t = raw.toLowerCase();
+  const inDays = /\bmin(ute)?s?\b/.test(t) ? 1 / 1440 : /\b(hours?|hrs?)\b/.test(t) ? 1 / 24 : /\bweeks?\b/.test(t) ? 7 : /\bmonths?\b/.test(t) ? 30.44 : /\b(years?|yrs?)\b/.test(t) ? 365.25 : /\bdays?\b/.test(t) ? 1 : null;
+  if (inDays === null) return 1;
+  return target === "DAYS" ? inDays : inDays / 30.44;
+}
+
 export function toUsd(amount: number, currency: string | null | undefined): { usd: number; converted: boolean; rate: number } | null {
   const cur = (currency ?? "USD").toUpperCase().trim();
   if (cur === "USD" || cur === "$") return { usd: amount, converted: false, rate: 1 };
@@ -109,6 +117,15 @@ export function normalizeObservation(obs: MetricObservation, ctx: NormalizeConte
     }
   }
 
+  // 1b. Time units: "5 minutes" is not 5 days; "6 weeks" is not 6 months.
+  if ((def.unit === "DAYS" || def.unit === "MONTHS") && value !== null) {
+    const factor = timeFactor(obs.rawText, def.unit);
+    if (factor !== 1) {
+      flags.push(`TIME_UNIT_CONVERTED ×${+factor.toFixed(6)} from raw text`);
+      value = value * factor;
+    }
+  }
+
   // 2. Percent sanity: a retention/margin given as 0.92 is almost certainly 92%.
   if (def.unit === "PERCENT" && value !== null && Math.abs(value) <= 1.5 && /%|percent/i.test(obs.rawText) === false) {
     const pct = parseScaledNumber(obs.rawText);
@@ -164,7 +181,9 @@ export function normalizeObservation(obs: MetricObservation, ctx: NormalizeConte
   }
   if (def.key === "cac") {
     const text = (obs.components.join(" ") + " " + (obs.definitionAsStated ?? "")).toLowerCase();
-    if (!/fully|loaded|salar|commission|founder/.test(text)) flags.push("CAC_LOADING_UNVERIFIED");
+    const excluded = [...text.matchAll(/exclud\w*\s+([a-z ,&-]{3,60})/g)].map((m) => m[1]!.trim());
+    if (excluded.length) flags.push(`CAC_NOT_FULLY_LOADED: excludes ${excluded.join("; ")}`);
+    else if (!/fully|loaded|salar|commission/.test(text)) flags.push("CAC_LOADING_UNVERIFIED");
   }
   if (def.key === "gross_margin") {
     const text = (obs.components.join(" ") + " " + (obs.definitionAsStated ?? "")).toLowerCase();
@@ -201,8 +220,20 @@ export function normalizeObservation(obs: MetricObservation, ctx: NormalizeConte
   };
 }
 
+/** Remove exact duplicates (same key, value, period and method) produced by repeated extraction. */
+export function dedupeMetrics(metrics: MetricInstance[]): MetricInstance[] {
+  const seen = new Set<string>();
+  return metrics.filter((m) => {
+    const k = `${m.metricKey}|${m.normalizedValue}|${m.periodEnd}|${m.calculationMethod}|${m.state}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
 /** Mark one primary instance per metric key: freshest observed value wins. */
-export function selectPrimary(metrics: MetricInstance[]): MetricInstance[] {
+export function selectPrimary(input: MetricInstance[]): MetricInstance[] {
+  const metrics = dedupeMetrics(input);
   const byKey = new Map<string, MetricInstance[]>();
   for (const m of metrics) {
     const list = byKey.get(m.metricKey) ?? [];

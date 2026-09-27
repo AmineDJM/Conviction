@@ -71,3 +71,19 @@ describe("parseScaledNumber", () => {
     expect(parseScaledNumber("$2M to $3M")).toBeNull();
   });
 });
+
+describe("normalization guards", () => {
+  it("converts time units named in raw text", async () => {
+    const { timeFactor } = await import("@/engine/metrics/normalize");
+    expect(timeFactor("5 minutes", "DAYS")).toBeCloseTo(5 / 1440 / 5, 12);
+    expect(timeFactor("6 weeks", "DAYS")).toBe(7);
+    expect(timeFactor("54 days", "DAYS")).toBe(1);
+    expect(timeFactor("18 months", "MONTHS")).toBeCloseTo(1, 12);
+  });
+  it("flags absence of evidence phrasing", async () => {
+    const { NEGATIVE_FINDING } = await import("@/orchestration/assemble");
+    expect(NEGATIVE_FINDING.test("No verifiable public evidence was found for the founder's prior role.")).toBe(true);
+    expect(NEGATIVE_FINDING.test("Could not locate any registry record for the entity.")).toBe(true);
+    expect(NEGATIVE_FINDING.test("The company raised a $12M Series A led by Northzone.")).toBe(false);
+  });
+});

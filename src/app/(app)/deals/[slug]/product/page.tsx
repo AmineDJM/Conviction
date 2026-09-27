@@ -136,7 +136,7 @@ export default async function ProductTab({ params }: { params: Promise<{ slug: s
                       </Td>
                       <Td className="text-[12.5px] text-ink-2">{v.baseline ?? <span className="text-ink-3">None stated</span>}</Td>
                       <Td className="text-[12.5px] text-ink-2">{v.measurementPeriod ?? <span className="text-ink-3">—</span>}</Td>
-                      <Td className="text-[12.5px] text-ink-2">{v.source ?? <span className="text-ink-3">—</span>}</Td>
+                      <Td className="text-[12.5px] text-ink-2">{v.source ? <Prose text={v.source} slug={slug} /> : <span className="text-ink-3">—</span>}</Td>
                       <Td className="text-[12.5px] text-ink-3">
                         <Prose text={v.method} slug={slug} />
                       </Td>

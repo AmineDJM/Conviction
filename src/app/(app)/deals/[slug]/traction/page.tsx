@@ -125,7 +125,7 @@ export default async function TractionTab({ params }: { params: Promise<{ slug: 
       {/* Headline metrics */}
       <Section
         eyebrow="Traction"
-        title={lead ? `${FAMILY_LABEL[lead]} first — the metrics that matter for a ${titleCase(c.classification.productType[0])} business` : "Business-specific traction metrics"}
+        title={lead ? `${FAMILY_LABEL[lead]} first — the metrics that matter for a ${enumLabel(c.classification.productType[0])} business` : "Business-specific traction metrics"}
         action={
           <Link href={`/deals/${slug}/evidence`} className="text-[12.5px] text-ink-3 hover:text-ink">
             All metrics and claims →

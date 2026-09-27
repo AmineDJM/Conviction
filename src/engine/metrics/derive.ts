@@ -56,7 +56,14 @@ export function deriveMetrics(input: MetricInstance[], nextId: () => string): Me
       calculationMethod: "DERIVED",
       derivation,
       isPrimary: false,
-      qualityFlags: [...new Set([...inputs.flatMap((i) => i.qualityFlags.filter((f) => !f.startsWith("EXTRACTION"))), ...extraFlags])],
+      qualityFlags: [
+        ...new Set([
+          ...inputs.flatMap((i) =>
+            i.qualityFlags.filter((f) => !f.startsWith("EXTRACTION") && !(f.startsWith("STALE") && !stateFrom.some((x) => x.id === i.id && x.state === "STALE"))),
+          ),
+          ...extraFlags,
+        ]),
+      ],
       notes: `Derived from ${inputs.map((i) => i.id).join(", ")}`,
     });
     metrics = selectPrimary(metrics);

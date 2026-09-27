@@ -44,3 +44,11 @@ export function humanList(items: string[], max = items.length): string {
 }
 
 export const NOT_DISCLOSED = "Not disclosed";
+
+/** Enum → human label with acronyms preserved (AI, PMF, GTM, SaaS, API, IP, B2B). */
+export function enumLabel(s: string | null | undefined): string {
+  if (!s) return "—";
+  const w = s.toLowerCase().split("_");
+  const ACR: Record<string, string> = { ai: "AI", pmf: "PMF", gtm: "GTM", saas: "SaaS", api: "API", ip: "IP", smb: "SMB", plg: "PLG", ic: "IC", dd: "DD", erp: "ERP" };
+  return w.map((x, i) => ACR[x] ?? (i === 0 ? x.charAt(0).toUpperCase() + x.slice(1) : x)).join(" ");
+}

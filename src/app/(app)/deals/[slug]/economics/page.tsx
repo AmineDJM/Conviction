@@ -24,16 +24,73 @@ const INPUTS = ["acv", "ltv", "cash_balance", "headcount", "magic_number", "arpu
 
 const METHOD_TEXT: Record<string, string> = { REPORTED: "Reported by company", DERIVED: "Derived by code", USER_CORRECTED: "Corrected by user" };
 
-function Checklist({ items }: { items: string[] }) {
+/** Keyword stems used to read the company's own definition against each dictionary checklist item. */
+const TOPICS: [RegExp, RegExp][] = [
+  [/salar/i, /salar/i],
+  [/commission/i, /commission/i],
+  [/marketing/i, /marketing|programs|paid/i],
+  [/founder/i, /founder/i],
+  [/sales engineering/i, /sales engineer|solutions engineer|pre-?sales/i],
+  [/partner|channel/i, /partner|channel|referral/i],
+  [/cloud|hosting/i, /cloud|hosting/i],
+  [/inference|third-party api/i, /inference|api|model/i],
+  [/human-in-the-loop|human operations/i, /human|manual|operations/i],
+  [/support|delivery/i, /support|delivery|implementation/i],
+  [/one-off/i, /one-off|one-time|non-recurring/i],
+  [/gross.* vs\.? net/i, /\bnet\b|\bgross\b/i],
+  [/pre- or post-round/i, /pre-round|post-round/i],
+  [/contractors/i, /contractor/i],
+];
+
+type CheckState = "INCLUDED" | "EXCLUDED" | "UNSPECIFIED" | "OPEN";
+
+/**
+ * Resolves a checklist item against the company's stated definition, where
+ * the text addresses it explicitly. Anything not mentioned stays open.
+ */
+function resolve(item: string, stated: string): CheckState {
+  if (!stated) return "OPEN";
+  const topic = TOPICS.find(([itemRe]) => itemRe.test(item));
+  if (!topic) return "OPEN";
+  const [, textRe] = topic;
+  for (const clause of stated.split(/[;,.]| and /i)) {
+    if (!textRe.test(clause)) continue;
+    if (/not (specify|specified|state|stated|disclose|disclosed|define|defined)|unclear|unknown|unspecified/i.test(clause)) return "UNSPECIFIED";
+    return /exclud|without|not incl|except/i.test(clause) ? "EXCLUDED" : "INCLUDED";
+  }
+  return "OPEN";
+}
+
+const CHECK: Record<CheckState, { mark: string; cls: string; label: string }> = {
+  INCLUDED: { mark: "✓", cls: "text-ok", label: "addressed in company definition" },
+  EXCLUDED: { mark: "✕", cls: "text-risk", label: "explicitly excluded by the company" },
+  UNSPECIFIED: { mark: "?", cls: "text-warn", label: "company text says this is not specified" },
+  OPEN: { mark: "", cls: "", label: "not addressed" },
+};
+
+function Checklist({ items, stated }: { items: string[]; stated: string }) {
   if (!items.length) return <span className="text-[12px] text-ink-3">No ambiguity recorded in the dictionary.</span>;
   return (
     <ul className="space-y-0.5 text-[12px] text-ink-2">
-      {items.map((x) => (
-        <li key={x} className="flex gap-2">
-          <span className="mt-[5px] h-2 w-2 shrink-0 rounded-[2px] border border-line-strong" aria-hidden />
-          <span>{x}</span>
-        </li>
-      ))}
+      {items.map((x) => {
+        const st = resolve(x, stated);
+        const c = CHECK[st];
+        return (
+          <li key={x} className="flex gap-2" title={c.label}>
+            {st === "OPEN" ? (
+              <span className="mt-[5px] h-2 w-2 shrink-0 rounded-[2px] border border-line-strong" aria-hidden />
+            ) : (
+              <span className={cx("w-2 shrink-0 text-center text-[11px] font-semibold leading-[18px]", c.cls)} aria-hidden>
+                {c.mark}
+              </span>
+            )}
+            <span>
+              {x}
+              {st !== "OPEN" && <span className={cx("ml-1.5 text-[11px]", c.cls)}>{st === "INCLUDED" ? "stated" : st === "EXCLUDED" ? "excluded" : "not specified"}</span>}
+            </span>
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -42,6 +99,7 @@ function MetricRow({ m, def, others, slug }: { m: MetricInstance; def: MetricDef
   const ev = metricEvidence(m);
   const small = m.qualityFlags.some((f) => f.startsWith("SMALL_SAMPLE") || f.startsWith("SAMPLE_SIZE_UNKNOWN"));
   const stated = m.definitionUsed && m.calculationMethod !== "DERIVED" ? m.definitionUsed : null;
+  const extraComponents = m.components.filter((x) => !(stated ?? "").toLowerCase().includes(x.toLowerCase()));
   return (
     <Link
       href={`/deals/${slug}/evidence?metric=${m.id}`}
@@ -72,10 +130,10 @@ function MetricRow({ m, def, others, slug }: { m: MetricInstance; def: MetricDef
       <div className="space-y-3">
         <div>
           <div className="t-eyebrow mb-1">Definition used</div>
-          {stated || m.components.length ? (
+          {stated || extraComponents.length ? (
             <div className="text-[12.5px] text-ink-2">
               {stated && <p>{stated}</p>}
-              {m.components.length > 0 && <p className="mt-0.5 text-ink-3">Components: {m.components.join("; ")}</p>}
+              {extraComponents.length > 0 && <p className="mt-0.5 text-ink-3">Components: {extraComponents.join("; ")}</p>}
             </div>
           ) : m.calculationMethod === "DERIVED" ? (
             <p className="text-[12.5px] text-ink-2">Computed from the inputs below — no company definition applies.</p>
@@ -103,7 +161,10 @@ function MetricRow({ m, def, others, slug }: { m: MetricInstance; def: MetricDef
         </div>
         <div>
           <div className="t-eyebrow mb-1">Confirm before relying on it</div>
-          <Checklist items={def?.disambiguation ?? []} />
+          {m.calculationMethod !== "DERIVED" && (stated || m.components.length > 0) && (
+            <p className="mb-1 text-[11px] text-ink-3">Checked against the company&apos;s stated definition; open boxes are not addressed.</p>
+          )}
+          <Checklist items={def?.disambiguation ?? []} stated={m.calculationMethod === "DERIVED" ? "" : [m.definitionUsed ?? "", ...m.components].join("; ")} />
         </div>
       </div>
     </Link>
