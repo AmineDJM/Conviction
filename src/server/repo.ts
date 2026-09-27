@@ -78,6 +78,16 @@ export function listCompanies(workspaceId: string, db: DB = getDb()): CompanyRow
     .all();
 }
 
+/** Once the model has identified the company, replace the filename-based slug with the real name. */
+export function renameFromIdentity(companyId: string, name: string, db: DB = getDb()) {
+  const c = db.select().from(s.companies).where(eq(s.companies.id, companyId)).get();
+  if (!c || !name.trim() || c.currentVersionId) return;
+  let slug = slugify(name);
+  const clash = db.select({ id: s.companies.id }).from(s.companies).where(and(eq(s.companies.workspaceId, c.workspaceId), eq(s.companies.slug, slug))).get();
+  if (clash && clash.id !== companyId) slug = `${slug}-${companyId.slice(-4)}`;
+  db.update(s.companies).set({ name, normName: normName(name), slug }).where(eq(s.companies.id, companyId)).run();
+}
+
 export function setCompanyStatus(companyId: string, status: CompanyRow["status"], db: DB = getDb()) {
   db.update(s.companies).set({ status, updatedAt: nowIso() }).where(eq(s.companies.id, companyId)).run();
 }

@@ -123,6 +123,7 @@ export async function runDeckAnalysis(inp: RunDeckAnalysisInput): Promise<void> 
     step("EXTRACT", "DONE", `${deal.metrics.filter((m) => m.isPrimary).length} metrics, ${deal.claims.length} claims`);
 
     // Preliminary version: the user sees company understanding before the full analysis finishes (§110).
+    repo.renameFromIdentity(inp.companyId, deal.identity.name);
     const prelim = derive(deal, registry, inp.fund);
     repo.saveVersion({ company, canonical: deal, derived: prelim, reason: "DECK_ANALYSIS", runId: inp.runId, summary: "Preliminary: deck understanding", userId: inp.userId, preliminary: true });
 

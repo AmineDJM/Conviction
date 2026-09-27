@@ -25,7 +25,7 @@ function headers(): Record<string, string> {
   return h;
 }
 
-export type Effort = "minimal" | "low" | "medium" | "high";
+export type Effort = "none" | "low" | "medium" | "high";
 
 export interface InputMessage {
   role: "developer" | "user" | "assistant";
