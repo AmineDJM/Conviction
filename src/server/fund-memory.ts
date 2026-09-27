@@ -12,6 +12,7 @@ import { structured } from "@/ai/openai";
 import { wrapUntrusted } from "@/ai/untrusted";
 import { IC_OBSERVATIONS, IcObservationsOutput, icObservationsInstructions } from "@/ai/prompts/ic-observations";
 import { recordCost, audit } from "./repo";
+import { refreshPatterns } from "./fund-brain";
 import { logger } from "@/lib/log";
 
 const s = schema;
@@ -70,6 +71,12 @@ export function listFundMemory(workspaceId: string) {
 }
 
 function reindex(workspaceId: string) {
+  // INFERRED patterns follow the record: recomputed whenever members or observations change.
+  try {
+    refreshPatterns(workspaceId);
+  } catch (e) {
+    logger.warn({ err: (e as Error).message }, "pattern refresh failed");
+  }
   indexFundMemory(workspaceId).catch((e) => logger.warn({ err: (e as Error).message }, "fund memory reindex failed"));
 }
 

@@ -278,7 +278,8 @@ function Knowledge({ items, canWrite }: { items: Memory["knowledge"]; canWrite: 
       </div>
       {canWrite && (
         <div className="space-y-3 lg:sticky lg:top-6 lg:self-start">
-          <div className="t-eyebrow">Add knowledge</div>
+          <FundDocumentImport />
+          <div className="t-eyebrow pt-4">Add knowledge</div>
           <select className={input} value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value as never })}>
             {KINDS.map((k) => (
               <option key={k} value={k}>
@@ -300,6 +301,96 @@ function Knowledge({ items, canWrite }: { items: Memory["knowledge"]; canWrite: 
           {err && <div className="text-[12.5px] text-risk">{err}</div>}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ------------------------------ Fund documents & inferred patterns ------------------------------ */
+
+type ImportResult = { added: number; droppedUnverified: { title: string; quote: string }[]; profileSuggestions: { field: string; value: string; quote: string }[]; costUsd: number };
+
+function FundDocumentImport() {
+  const router = useRouter();
+  const [busy, setBusy] = useState<"import" | "patterns" | null>(null);
+  const [res, setRes] = useState<ImportResult | null>(null);
+  const [patterns, setPatterns] = useState<number | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  async function upload(file: File) {
+    setBusy("import");
+    setErr(null);
+    setRes(null);
+    const fd = new FormData();
+    fd.append("file", file);
+    try {
+      const r = await fetch("/api/fund/import", { method: "POST", body: fd });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error ?? "Import failed");
+      setRes(j);
+      router.refresh();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+  async function recompute() {
+    setBusy("patterns");
+    setErr(null);
+    try {
+      const r = await fetch("/api/fund/patterns", { method: "POST" });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error ?? "Failed");
+      setPatterns(j.count);
+      router.refresh();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+  return (
+    <div className="space-y-3 rounded-lg border border-line bg-surface p-4">
+      <div className="t-eyebrow">Import a fund document</div>
+      <p className="text-[12.5px] text-ink-3">
+        Strategy memo, investment criteria, IC charter, post-mortem. Each statement is recorded as DOCUMENTED only if its verbatim quote is found in the document.
+      </p>
+      <label className={cx("flex h-8 cursor-pointer items-center justify-center rounded-md border border-dashed border-line-strong text-[12.5px]", busy && "pointer-events-none opacity-60")}>
+        {busy === "import" ? "Reading…" : "Choose PDF, PPTX or text"}
+        <input type="file" accept=".pdf,.pptx,.txt,.md" className="hidden" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
+      </label>
+      {res && (
+        <div className="space-y-2 text-[12.5px]">
+          <div>
+            {res.added} statement(s) recorded · ${res.costUsd.toFixed(3)}
+          </div>
+          {res.droppedUnverified.length > 0 && (
+            <div className="text-ink-3">
+              {res.droppedUnverified.length} dropped: quote not found in the document ({res.droppedUnverified.map((d) => d.title).join("; ")}).
+            </div>
+          )}
+          {res.profileSuggestions.length > 0 && (
+            <div>
+              <div className="font-medium">Fund profile suggestions (not applied)</div>
+              <ul className="mt-1 space-y-1 text-ink-2">
+                {res.profileSuggestions.map((p, i) => (
+                  <li key={i}>
+                    <span className="font-mono text-[11.5px]">{p.field}</span>: {p.value} <span className="text-ink-3">— “{p.quote}”</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+      <div className="border-t border-line pt-3">
+        <div className="t-eyebrow">Inferred patterns</div>
+        <p className="mt-1 text-[12.5px] text-ink-3">Computed from recorded IC observations and decisions, with counts and minimum samples. Associations, never stated preferences.</p>
+        <Button size="sm" className="mt-2" onClick={recompute} disabled={busy !== null}>
+          {busy === "patterns" ? "Computing…" : "Recompute from the record"}
+        </Button>
+        {patterns !== null && <div className="mt-1 text-[12.5px] text-ink-3">{patterns === 0 ? "Not enough recorded evidence for any pattern yet." : `${patterns} pattern(s) recorded as INFERRED.`}</div>}
+      </div>
+      {err && <div className="text-[12.5px] text-risk">{err}</div>}
     </div>
   );
 }
