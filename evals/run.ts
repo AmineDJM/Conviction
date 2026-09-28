@@ -471,7 +471,7 @@ async function main() {
     const chatItems: Item[] = [];
     let unresolvable = 0;
     for (const m of msgs) {
-      const cites = (m.citations ?? []) as { n: number; title: string; href: string | null; kind: string }[];
+      const cites = (m.citations ?? []) as { n: number; title: string; href: string | null; kind: string; label?: string | null }[];
       for (const st of cs.citedStatements(m.content)) {
         const texts = st.refs.map((n) => {
           const c = cites.find((x) => x.n === n);
@@ -486,7 +486,12 @@ async function main() {
         }
         // Same lengths the answer model was given (chat.ts: passages 1,800 chars, memory packs up to 7,000).
         const limit = (n: number) => (cites.find((x) => x.n === n)?.kind === "PACK" ? 7000 : 1800);
-        chatItems.push({ origin: "CHAT", statement: st.statement, source: texts.map((t, i) => `[${st.refs[i]}] ${t!.slice(0, limit(st.refs[i]!))}`).join("\n\n"), ref: `answer ${m.createdAt} refs ${st.refs.join(",")}` });
+        // Exactly what the answer model saw for each item: "[n] title {label}" then the text (chat.ts contextText).
+        const head = (n: number) => {
+          const c = cites.find((x) => x.n === n)!;
+          return `[${n}] ${c.title}${c.label ? ` {${c.label}}` : ""}`;
+        };
+        chatItems.push({ origin: "CHAT", statement: st.statement, source: texts.map((t, i) => `${head(st.refs[i]!)}\n${t!.slice(0, limit(st.refs[i]!))}`).join("\n\n"), ref: `answer ${m.createdAt} refs ${st.refs.join(",")}` });
       }
     }
 

@@ -8,6 +8,7 @@
  * formatted, never re-derived (§74 report consistency). Evidence references
  * (CLM-…, SRC-…, MET-…, RSK-…, Q-…) are kept inline so a renderer can link them.
  */
+import { maturityText } from "@/engine/scoring/maturity";
 import type { CanonicalDeal, MetricInstance } from "@/domain/canonical";
 import type { DerivedAnalysis } from "@/engine/derive";
 import { metricDef } from "@/engine/metrics/dictionary";
@@ -181,7 +182,7 @@ export function buildInvestmentMemo(c: CanonicalDeal, d: DerivedAnalysis): Inves
             })(),
             { k: "Classification", v: [cl.industry.map(label).join(", "), cl.productType.map(label).join(", "), cl.revenueModel.map(label).join(", ")].filter(Boolean).join(" · ") || "—" },
             { k: "Go-to-market", v: cl.gtm.map(label).join(", ") || "—" },
-            { k: "Maturity · stage", v: `${label(cl.operationalMaturity)} · ${STAGE_LABEL[cl.financingStage] ?? label(cl.financingStage)}${cl.declaredStage ? ` (declared “${cl.declaredStage}”)` : ""}` },
+            { k: "Maturity · stage", v: `${maturityText(cl.operationalMaturity, d.maturity, label)} · ${STAGE_LABEL[cl.financingStage] ?? label(cl.financingStage)}${cl.declaredStage ? ` (declared “${cl.declaredStage}”)` : ""}` },
           ],
         },
         ...(cl.rationale ? [{ kind: "p", text: cl.rationale } as MemoBlock] : []),

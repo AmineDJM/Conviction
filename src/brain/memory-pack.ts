@@ -63,7 +63,7 @@ export function buildMemoryPack(
   L.push(`# ${c.identity.name} (/deals/${company.slug})`);
   L.push(`${c.identity.oneLiner}`);
   L.push(
-    `HQ ${c.identity.hqCountry ?? "unknown"} · founded ${c.identity.foundedYear ?? "?"} · ${c.classification.financingStage} (declared: ${c.classification.declaredStage ?? "n/a"}) · maturity ${c.classification.operationalMaturity} · peer group ${d.peerGroup.name}`,
+    `HQ ${c.identity.hqCountry ?? "unknown"} · founded ${c.identity.foundedYear ?? "?"} · ${c.classification.financingStage} (declared: ${c.classification.declaredStage ?? "n/a"}) · maturity ${d.maturity?.effective ?? c.classification.operationalMaturity}${d.maturity && d.maturity.effective !== c.classification.operationalMaturity ? ` (anchored on measured revenue; model classified ${c.classification.operationalMaturity})` : ""} · peer group ${d.peerGroup.name}`,
   );
   L.push(`Industry ${c.classification.industry.join(", ")} · product ${c.classification.productType.join(", ")} · tech ${c.classification.technology.join(", ")} · revenue ${c.classification.revenueModel.join(", ")} · GTM ${c.classification.gtm.join(", ")}`);
   L.push(

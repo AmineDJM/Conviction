@@ -15,6 +15,7 @@
  * block existed render "not computed for this version" — nothing is computed
  * on view.
  */
+import { maturityText } from "@/engine/scoring/maturity";
 import { dedupeSecurityFlags } from "@/engine/security-flags";
 import type { CanonicalDeal, Claim, MetricInstance } from "@/domain/canonical";
 import type { DerivedAnalysis } from "@/engine/derive";
@@ -545,7 +546,7 @@ export function buildDeepDdReport(c: CanonicalDeal, d: DerivedAnalysis, meta: De
     add("Founded", c.identity.foundedYear ? String(c.identity.foundedYear) : null);
     add("Website", c.identity.website);
     known4.push({ k: "Classification", v: [cl.industry.map(label).join(", "), cl.productType.map(label).join(", "), cl.revenueModel.map(label).join(", ")].filter(Boolean).join(" · ") || "—", refs: [], origin: "META" });
-    known4.push({ k: "Maturity", v: `${label(cl.operationalMaturity)}${cl.declaredStage ? ` (declared “${cl.declaredStage}”)` : ""}`, refs: [], origin: "META" });
+    known4.push({ k: "Maturity", v: `${maturityText(cl.operationalMaturity, d.maturity, label)}${cl.declaredStage ? ` (declared “${cl.declaredStage}”)` : ""}`, refs: [], origin: "META" });
     b.push({ kind: "facts", rows: known4 });
     if (p) {
       b.push({ kind: "h3", text: "Product" });

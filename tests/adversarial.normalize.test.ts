@@ -400,3 +400,27 @@ describe("corpus regressions (third full eval run)", () => {
     expect(kinds(run(d))).not.toContain("PILOTS_AS_CUSTOMERS");
   });
 });
+
+describe("corpus regressions (fifth full eval run)", () => {
+  it("Drypoint: a headline ARR equal to live ARR + contracted ARR includes the contracted part; the live ARR is the metric", () => {
+    const d = pipelineDeal([
+      obs("arr", 2_400_000, { label: "ARR", rawText: "$2.4M", periodType: "ANNUAL", periodEnd: "2026-05" }),
+      obs("contracted_arr", 2_090_000, { label: "Signed utility contracts ARR not yet deployed", rawText: "$2.09M", periodType: "ANNUAL", periodEnd: "2026-05", basis: "SIGNED" }),
+      obs("arr", 310_000, { label: "Live subscription ARR", rawText: "$0.31M", periodType: "ANNUAL", periodEnd: "2026-05", definitionAsStated: "Live subscription ARR, excluding signed utility contracts not yet deployed.", components: ["live subscription ARR", "excludes $2.09M signed utility contracts not yet deployed"] }),
+    ]);
+    expect(d.metrics.find((x) => x.metricKey === "arr" && x.isPrimary)!.normalizedValue).toBe(310_000);
+    const live = d.metrics.find((x) => x.metricKey === "arr" && x.normalizedValue === 310_000)!;
+    expect(live.qualityFlags.join(" ")).not.toContain("ARR_MAY_INCLUDE_NON_RECURRING");
+  });
+
+  it("an exclusion clause runs to the end of its sentence even through a decimal amount", () => {
+    const r = N("arr", 310_000, { rawText: "$0.31M", definitionAsStated: "Live ARR, excluding $2.09M of signed contracts not yet deployed." })!;
+    expect(r.qualityFlags.join(" ")).not.toContain("ARR_MAY_INCLUDE_NON_RECURRING");
+    const r2 = N("arr", 2_400_000, { rawText: "$2.4M", definitionAsStated: "Excluding services. Includes $2.09M signed contracts." })!;
+    expect(r2.qualityFlags.join(" ")).toContain("ARR_MAY_INCLUDE_NON_RECURRING");
+  });
+
+  it("Carbonmoss: 'Team headcount' is the headcount", () => {
+    expect(N("OTHER", 8, { label: "Team headcount", rawText: "8", unit: "COUNT", currency: null })!.metricKey).toBe("headcount");
+  });
+});

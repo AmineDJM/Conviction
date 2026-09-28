@@ -112,9 +112,41 @@ describe("§124 missing data", () => {
     const d = makeDeal();
     d.classification.operationalMaturity = "PILOT";
     d.classification.financingStage = "SEED";
+    // A pilot-stage company has no measured revenue (with revenue, maturity is anchored on it — see below).
+    d.metrics = d.metrics.filter((m) => !["arr", "revenue_ttm", "mrr"].includes(m.metricKey));
     const r = derive(d, reg, DEFAULT_FUND_PROFILE, { now });
     const comp = r.dimensions.find((x) => x.id === "TRACTION_PMF")!.components.find((c) => c.id === "retention")!;
     expect(comp.state).toBe("NOT_YET_MEANINGFUL");
+    expect(r.maturity).toMatchObject({ effective: "PILOT", basis: "MODEL_CLASSIFICATION" });
+  });
+
+  it("measured revenue anchors maturity: identical metrics give identical maturity whatever the model's label", () => {
+    const a = makeDeal();
+    const b = makeDeal();
+    a.classification.operationalMaturity = "EARLY_REVENUE";
+    b.classification.operationalMaturity = "PMF_EMERGING";
+    const ra = derive(a, reg, DEFAULT_FUND_PROFILE, { now });
+    const rb = derive(b, reg, DEFAULT_FUND_PROFILE, { now });
+    expect(ra.maturity).toMatchObject({ effective: "PMF_EMERGING", basis: "MEASURED_REVENUE", model: "EARLY_REVENUE" });
+    expect(ra.dimensions.find((x) => x.id === "TRACTION_PMF")!.value).toBe(rb.dimensions.find((x) => x.id === "TRACTION_PMF")!.value);
+  });
+
+  it.each([
+    [300_000, "EARLY_REVENUE"],
+    [3_840_000, "PMF_EMERGING"],
+    [12_000_000, "SCALED_GTM"],
+    [60_000_000, "GROWTH"],
+  ])("ARR %d → %s", (arr, maturity) => {
+    const d = makeDeal();
+    d.metrics = d.metrics.map((m) => (m.metricKey === "arr" ? { ...m, normalizedValue: arr } : m));
+    expect(derive(d, reg, DEFAULT_FUND_PROFILE, { now }).maturity!.effective).toBe(maturity);
+  });
+
+  it("an analyst override of maturity is respected", () => {
+    const d = makeDeal();
+    d.classification.operationalMaturity = "SCALED_GTM";
+    d.overrides = [{ id: "OVR-1", target: "CLASSIFICATION", ref: "classification", field: "operationalMaturity", from: "PMF_EMERGING", to: "SCALED_GTM", reason: "board deck", by: "gp", at: "2026-09-01", anchor: null, carry: null } as never];
+    expect(derive(d, reg, DEFAULT_FUND_PROFILE, { now }).maturity).toMatchObject({ basis: "ANALYST_OVERRIDE" });
   });
 
   it("small samples lose coverage credit", () => {

@@ -237,7 +237,7 @@ export function keyFromLabel(o: Pick<MetricObservation, "metricKey" | "label" | 
   if (k === "paying_customers" && /\bpilots?\b/.test(text) && !/\b(customers?|clients?|logos?|accounts?)\b/.test(label)) return { key: "pilots", reason: `"${o.label}" counts pilots, not paying customers` };
   if (k === "pilots" && /\b(completed|past|finished|concluded|ended|converted|to date|since)\b/.test(label)) return { key: null, reason: `"${o.label}" is a historical pilot count, not active pilots` };
   if (k === "founder_led_revenue_share" && /\b(partners?|channels?|resellers?|marketplaces?|alliances?)\b/.test(label) && !/\bfounders?\b/.test(label)) return { key: null, reason: `"${o.label}" is a channel share, not founder-led revenue` };
-  if (k === "OTHER" && o.unit === "COUNT" && /^(company|total|current|full[- ]time)?\s*(headcount|employees|team size|team|ftes?|staff|people)$/.test(label.replace(/\(.*?\)/g, "").trim())) return { key: "headcount", reason: `"${o.label}" is the company headcount` };
+  if (k === "OTHER" && o.unit === "COUNT" && /^(company|total|current|full[- ]time|team)?\s*(headcount|employees|team size|team|ftes?|staff|people)$/.test(label.replace(/\(.*?\)/g, "").trim())) return { key: "headcount", reason: `"${o.label}" is the company headcount` };
   if (k === "OTHER" && o.unit === "PERCENT" && /\bfill rate\b|\bsell[- ]through\b|\bliquidity\b|\blistings?\b.*\b(sold|sell|sells|filled|transact(ed)?)\b/.test(label)) return { key: "fill_rate", reason: `"${o.label}" is a marketplace fill rate` };
   return undefined;
 }
@@ -414,7 +414,8 @@ export function normalizeObservation(input: MetricObservation, ctx: NormalizeCon
     else if (!/inference|cloud|hosting|support|delivery|labor|ops/.test(defText)) flags.push("COGS_COMPOSITION_UNVERIFIED");
   }
   // What a figure says it excludes ("excluding signed contracts not yet deployed") is not what it includes.
-  const inclText = defText.replace(/\b(exclud\w*|without|net of|not including|hors|sans)\b[^.;]*/g, " ");
+  // Up to the end of the sentence — a decimal point ("$2.09M") does not end it.
+  const inclText = defText.replace(/\b(exclud\w*|without|net of|not including|hors|sans)\b(?:[^.;]|\.(?=\d))*/g, " ");
   if (def.key === "paying_customers" && /\b(pilots?|trials?|pocs?|proofs? of concept|lois?|letters? of intent|free|freemium|design partners?|logos?)\b/.test(inclText)) {
     flags.push("CUSTOMER_COUNT_MAY_INCLUDE_NON_PAYING: definition mentions pilots, trials, LOIs, free users or logos");
   }

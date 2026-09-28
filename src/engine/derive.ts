@@ -32,6 +32,7 @@ import { economicsReport, type EconomicsReport } from "./economics";
 import { latentReport, type LatentReport } from "./latent";
 import { divergenceReport, type DivergenceReport } from "./divergence";
 import { decisionFocus, type DecisionFocus } from "./focus";
+import { withAnchoredMaturity, type MaturityAnchor } from "./scoring/maturity";
 import { applyOverrides } from "./overrides";
 
 export interface ResearchPriority {
@@ -49,6 +50,8 @@ export interface SmallSampleWarning {
 }
 
 export interface DerivedAnalysis {
+  /** How operating maturity was set for scoring (absent on versions derived before it existed). */
+  maturity?: MaturityAnchor;
   registryId: string;
   computedAt: string;
   fundProfileId: string;
@@ -104,6 +107,9 @@ export interface DeriveOptions {
 export function derive(deal: CanonicalDeal, registry: BenchmarkRegistry, fund: FundProfile, opts: DeriveOptions = {}): DerivedAnalysis {
   // Analyst overrides flow into every score; the raw extraction stays untouched in the stored canonical object.
   deal = applyOverrides(deal);
+  // Maturity decides which components are meaningful; measured revenue anchors it (code, not the model's label).
+  const anchored = withAnchoredMaturity(deal);
+  deal = anchored.deal;
   const peerGroup = resolvePeerGroup(deal.classification);
   const market = reconstructMarket(deal);
   const dimensions = scoreDimensions({ deal, registry, profile: peerGroup.profile, stageBand: peerGroup.stageBand, market });
@@ -149,6 +155,7 @@ export function derive(deal: CanonicalDeal, registry: BenchmarkRegistry, fund: F
   const latent = latentReport(deal, registry, peerGroup, { asOf: opts.now, market });
 
   return {
+    maturity: anchored.anchor,
     registryId: registry.id,
     computedAt: (opts.now ?? new Date()).toISOString(),
     fundProfileId: fund.id,

@@ -75,6 +75,17 @@ export function deriveMetrics(input: MetricInstance[], nextId: () => string): Me
     metrics = selectPrimary(metrics);
   };
 
+  // Arithmetic identity: an ARR equal to another stated ARR plus contracted (signed, not live) ARR of the same period
+  // includes the contracted part, whatever its label says. It is flagged, and then loses to the live figure below.
+  const contracted = metrics.filter((m) => m.metricKey === "contracted_arr" && m.normalizedValue !== null && m.normalizedValue > 0);
+  const arrs = metrics.filter((m) => m.metricKey === "arr" && m.calculationMethod === "REPORTED" && m.normalizedValue !== null);
+  const sameMonth = (a: MetricInstance, b: MetricInstance) => (parsePeriodDate(a.periodEnd)?.getTime() ?? null) === (parsePeriodDate(b.periodEnd)?.getTime() ?? null);
+  metrics = metrics.map((m) => {
+    if (!arrs.includes(m) || m.qualityFlags.some((f) => f.startsWith("ARR_MAY_INCLUDE_NON_RECURRING"))) return m;
+    const hit = contracted.find((c) => sameMonth(c, m) && arrs.some((live) => live !== m && sameMonth(live, m) && Math.abs(live.normalizedValue! + c.normalizedValue! - m.normalizedValue!) <= 0.02 * m.normalizedValue!));
+    return hit ? { ...m, qualityFlags: [...m.qualityFlags, `ARR_MAY_INCLUDE_NON_RECURRING: equals live ARR + contracted ARR ${hit.rawValue} (${hit.id}) of the same period`] } : m;
+  });
+
   // A broad figure ("ARR incl. signed contracts", "41 customers incl. pilots") reported next to a narrower one for the
   // same or a later period: the narrower one is the metric; the broad one is kept, marked CONTRADICTED and explained.
   for (const [key, flag] of [

@@ -37,7 +37,7 @@ export function buildQuickMemo(c: CanonicalDeal, d: DerivedAnalysis, company?: {
 
   const facts = [
     { label: "Sector", value: sector || "—" },
-    { label: "Stage", value: `${STAGE_LABEL[c.classification.financingStage] ?? "—"} · ${titleCase(c.classification.operationalMaturity)}` },
+    { label: "Stage", value: `${STAGE_LABEL[c.classification.financingStage] ?? "—"} · ${titleCase(d.maturity?.effective ?? c.classification.operationalMaturity)}` },
     ...(c.identity.hqCountry ?? company?.country ? [{ label: "Country", value: (c.identity.hqCountry ?? company?.country)! }] : []),
     { label: "Round", value: entry.raiseUsd ? `${usd(entry.raiseUsd)} ${titleCase(entry.instrument)}` : titleCase(entry.instrument) },
     { label: isSafe ? "Cap" : "Post-money", value: entry.postMoneyUsd ? usd(entry.postMoneyUsd) : "Not disclosed" },
