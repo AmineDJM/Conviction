@@ -9,10 +9,15 @@ export const metadata = { title: "Journal · Formation" };
 const TONE = { agree: "ok", diverge: "risk", neutral: "neutral" } as const;
 const KIND = { IC: "IC", ANALYSIS: "Analysis", FOUNDER_MEETING: "Founder meeting", PROGRESS: "Progress" } as const;
 
-export default async function JournalPage() {
+/** Beliefs worth revisiting: judgments rather than arithmetic. `?all=1` shows every answer. */
+const BELIEF_KINDS = new Set(["DECISION", "OUTLIER", "BULL_BEAR", "OPEN_THESIS", "OPEN_PASS_TRIGGER", "OPEN_TWENTY_X", "OPEN_NEXT_METRIC", "FOUNDER_QUESTIONS", "MCQ_CONCERN"]);
+
+export default async function JournalPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const s = await requireSession();
-  const entries = journal(s);
-  if (!entries.length)
+  const showAll = (await searchParams).all === "1";
+  const everything = journal(s);
+  const entries = showAll ? everything : everything.filter((e) => BELIEF_KINDS.has(e.kind));
+  if (!everything.length)
     return (
       <Empty title="Your journal is empty" action={<Button href="/formation/practice" variant="primary">Start practice</Button>}>
         Every answer is recorded here before the reveal, exactly as you gave it, and compared later with the founder meeting, the IC decision and the company&apos;s progress.
@@ -26,7 +31,10 @@ export default async function JournalPage() {
         What you believed at the time — recorded before the answer was revealed and never edited — against what happened afterwards.{" "}
         <span className="text-ink-3">
           {entries.length} entries · {divergences} divergence{divergences === 1 ? "" : "s"} · {agreements} confirmation{agreements === 1 ? "" : "s"}.
-        </span>
+        </span>{" "}
+        <Link href={showAll ? "/formation/journal" : "/formation/journal?all=1"} className="text-[12.5px] text-accent-text hover:underline">
+          {showAll ? "Show judgments only" : `Show all ${everything.length} answers`}
+        </Link>
       </p>
       <ol className="space-y-4">
         {entries.map((e) => (
