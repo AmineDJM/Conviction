@@ -18,7 +18,7 @@ import {
 } from "@/domain/sections";
 import { ANALYST_STANDARD, today } from "./common";
 
-export const INVESTMENT_ANALYSIS = { id: "investment_analysis", version: "investment_analysis_v3" } as const;
+export const INVESTMENT_ANALYSIS = { id: "investment_analysis", version: "investment_analysis_v4" } as const;
 
 export const InvestmentAnalysisOutput = z.object({
   founders: z.array(FounderAnalysis),
@@ -70,7 +70,7 @@ EXIT ASSUMPTIONS — one per scenario (FAILURE, LOW, BASE, BULL, OUTLIER): exit 
 }
 
 /**
- * v3: the analysis runs as five parallel parts so no single call is the latency
+ * v3: the analysis runs as six parallel parts so no single call is the latency
  * bottleneck (output tokens are the wall-clock driver). Each part owns its
  * sections and exactly its rubric criteria; code merges them.
  */
@@ -96,9 +96,14 @@ export const ANALYSIS_PARTS = {
     others: "founders, product, customers, PMF, GTM, market, financing, risks and exits",
   },
   B2: {
-    sections: ["financingPath", "risks", "exitAssumptions", "arpaAssumptionUsd"],
+    sections: ["financingPath", "exitAssumptions", "arpaAssumptionUsd"],
     rubric: ["TIMING_CATALYST", "INFLECTION_EVIDENCE"],
-    others: "founders, product, customers, PMF, GTM, market, competition and moat",
+    others: "founders, product, customers, PMF, GTM, market, competition, moat and risks",
+  },
+  B4: {
+    sections: ["risks"],
+    rubric: [],
+    others: "founders, product, customers, PMF, GTM, market, competition, moat, financing and exits",
   },
 } as const satisfies Record<string, { sections: readonly (keyof InvestmentAnalysisOutput)[]; rubric: readonly (typeof RUBRIC_CRITERIA)[number][]; others: string }>;
 export type AnalysisPartId = keyof typeof ANALYSIS_PARTS;
@@ -108,13 +113,14 @@ export const AnalysisPartSchemas = {
   A2: InvestmentAnalysisOutput.pick({ product: true, customers: true, gtm: true, economicsNotes: true, rubric: true }),
   B1: InvestmentAnalysisOutput.pick({ market: true, rubric: true }),
   B3: InvestmentAnalysisOutput.pick({ competition: true, moat: true, rubric: true }),
-  B2: InvestmentAnalysisOutput.pick({ financingPath: true, risks: true, exitAssumptions: true, arpaAssumptionUsd: true, rubric: true }),
+  B2: InvestmentAnalysisOutput.pick({ financingPath: true, exitAssumptions: true, arpaAssumptionUsd: true, rubric: true }),
+  B4: InvestmentAnalysisOutput.pick({ risks: true, rubric: true }),
 };
 
 export function analysisPartInstructions(part: AnalysisPartId) {
   const p = ANALYSIS_PARTS[part];
-  const extra = part === "B2" ? " Risks must cover ALL risk categories visible in the record (team, product, GTM, market, competition, financing, regulatory), not only this part's sections." : "";
+  const extra = part === "B4" ? " Risks must cover ALL risk categories visible in the record (team, product, GTM, market, competition, financing, regulatory), not only this part's sections." : "";
   return `${investmentAnalysisInstructions()}
 
-THIS CALL — PART ${part} ONLY: ${p.sections.join(", ")}, and the rubric for exactly these criteria: ${p.rubric.join(", ")}.${extra} Other analysts cover ${p.others} in parallel — do not produce them.`;
+THIS CALL — PART ${part} ONLY: ${p.sections.join(", ")}${p.rubric.length ? `, and the rubric for exactly these criteria: ${p.rubric.join(", ")}` : " (no rubric criteria in this part: leave rubric empty)"}.${extra} Other analysts cover ${p.others} in parallel — do not produce them.`;
 }

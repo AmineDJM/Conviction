@@ -231,9 +231,9 @@ describe("divergence · schema, upgrade and prompt", () => {
   it("prompt versions are registered and bumped", () => {
     expect(PROMPT_VERSIONS.divergence_signals).toBe("divergence_signals_v1");
     expect(DIVERGENCE_SIGNALS.version).toBe("divergence_signals_v1");
-    expect(DECISION_THESIS.version).toBe("decision_thesis_v4");
+    expect(DECISION_THESIS.version).toBe("decision_thesis_v5");
     expect(DECISION_CHALLENGE.version).toBe("decision_challenge_v2");
-    expect(PROMPT_VERSIONS.decision_thesis).toBe("decision_thesis_v4");
+    expect(PROMPT_VERSIONS.decision_thesis).toBe("decision_thesis_v5");
   });
 
   it("the extraction prompt forbids psychology, honesty judgements and pedigree, and asks for pages", () => {

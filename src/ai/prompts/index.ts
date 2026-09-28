@@ -6,7 +6,7 @@ import { LATENT_SIGNALS } from "./latent";
 import { DIVERGENCE_SIGNALS } from "./divergence";
 import { RESEARCH } from "./research";
 import { INVESTMENT_ANALYSIS } from "./investment-analysis";
-import { DECISION_THESIS, DECISION_CHALLENGE, DECISION_ACTIONS } from "./decision";
+import { DECISION_CORE, DECISION_THESIS, DECISION_CHALLENGE, DECISION_ACTIONS } from "./decision";
 import { FOUNDER_CALL_UPDATE } from "./founder-call";
 import { PRE_MEETING_BRIEF_PROMPT } from "./meeting-brief";
 import { BRAIN_PLANNER, BRAIN_ANSWER } from "./brain";
@@ -23,6 +23,7 @@ export const PROMPT_VERSIONS = {
   [DIVERGENCE_SIGNALS.id]: DIVERGENCE_SIGNALS.version,
   [RESEARCH.id]: RESEARCH.version,
   [INVESTMENT_ANALYSIS.id]: INVESTMENT_ANALYSIS.version,
+  [DECISION_CORE.id]: DECISION_CORE.version,
   [DECISION_THESIS.id]: DECISION_THESIS.version,
   [DECISION_CHALLENGE.id]: DECISION_CHALLENGE.version,
   [DECISION_ACTIONS.id]: DECISION_ACTIONS.version,

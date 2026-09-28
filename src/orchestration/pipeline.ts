@@ -19,12 +19,12 @@ import { worstCaseCost } from "@/ai/pricing";
 import { PROMPT_VERSIONS } from "@/ai/prompts";
 import { TriageOutput, triageInstructions, TRIAGE } from "@/ai/prompts/triage";
 import { MetricsExtractionOutput, ClaimsOnlyOutput, ProfileExtractionOutput, metricsExtractionInstructions, claimsExtractionInstructions, profileExtractionInstructions, EXTRACT_METRICS, EXTRACT_CLAIMS, EXTRACT_PROFILE } from "@/ai/prompts/extract";
-import { ForensicsOutput, forensicsInstructions, DECK_FORENSICS } from "@/ai/prompts/forensics";
+import { ForensicsVisualOutput, ForensicsNarrativeOutput, forensicsInstructions, DECK_FORENSICS } from "@/ai/prompts/forensics";
 import { LatentSignalsOutput, latentSignalsInstructions, LATENT_SIGNALS } from "@/ai/prompts/latent";
 import { DivergenceSignalsOutput, divergenceSignalsInstructions, DIVERGENCE_SIGNALS } from "@/ai/prompts/divergence";
 import { ResearchOutput, researchInstructions, RESEARCH } from "@/ai/prompts/research";
 import { AnalysisPartSchemas, ANALYSIS_PARTS, analysisPartInstructions, INVESTMENT_ANALYSIS, type AnalysisPartId, type InvestmentAnalysisOutput } from "@/ai/prompts/investment-analysis";
-import { ThesisCoreOutput, ChallengeOutput, ActionsOutput, thesisInstructions, challengeInstructions, actionsInstructions, DECISION_THESIS, DECISION_CHALLENGE, DECISION_ACTIONS } from "@/ai/prompts/decision";
+import { DecisionCoreOutput, ThesisBodyOutput, ChallengeOutput, MachineOutput, NextProofOutput, decisionCoreInstructions, thesisInstructions, challengeInstructions, actionsInstructions, DECISION_CORE, DECISION_THESIS, DECISION_CHALLENGE, DECISION_ACTIONS } from "@/ai/prompts/decision";
 import { emptyCanonical, CANONICAL_SCHEMA_VERSION, ANALYSIS_ENGINE_VERSION, type CanonicalDeal } from "@/domain/canonical";
 import type { AnalysisMode } from "@/domain/enums";
 import type { FundProfile } from "@/domain/fund";
@@ -51,6 +51,8 @@ import { canonicalForAnalysis, derivedDigest } from "./context";
 import { registerRun, releaseRun, acquireSlot, releaseSlot, throwIfCancelled, CancelledError } from "./run-control";
 import * as repo from "@/server/repo";
 import { indexCompanyForBrain } from "@/brain/indexer";
+import { applyOverrides } from "@/engine/overrides";
+import { withCarriedOverrides, type CarryOverSource } from "@/engine/override-carry";
 import { logger } from "@/lib/log";
 
 export const PIPELINE_STEPS = [
@@ -96,8 +98,12 @@ export interface RunDeckAnalysisInput {
   userId: string | null;
   companyUrl?: string | null;
   budgetUsd?: number;
-  /** Human overrides carried over from the previous version (never lost on re-analysis). */
-  carryOver?: Pick<CanonicalDeal, "overrides"> | null;
+  /**
+   * Human overrides carried over from the previous version (never lost on re-analysis). Ids change between
+   * analyses, so they are re-anchored on the new record (engine/override-carry.ts); `source` is the analysis
+   * they were made on (anchors overrides stored before anchors existed).
+   */
+  carryOver?: CarryOverSource | null;
 }
 
 export function budgetFor(mode: AnalysisMode, requested?: number) {
@@ -139,6 +145,19 @@ const settle = <T>(p: Promise<T>): Promise<Settled<T>> => p.then((value) => ({ o
 const errReason = (e: unknown) => (e instanceof BudgetExceededError ? "Budget limit" : `Model failure: ${(e as Error).message.slice(0, 160)}`);
 const isCancel = (e: unknown, signal: AbortSignal) => e instanceof CancelledError || signal.aborted;
 
+/** Page ranges for claim extraction: decks of 8+ pages are split in two so no single call dominates latency. */
+export function claimPageRanges(docs: { filename: string; pages: { pageNo: number }[] }[]): (string | null)[] {
+  const all = docs.flatMap((d) => d.pages.map((p) => ({ f: d.filename, n: p.pageNo })));
+  if (all.length < 8) return [null];
+  const half = Math.ceil(all.length / 2);
+  const describe = (xs: typeof all) => {
+    const byDoc = new Map<string, number[]>();
+    for (const x of xs) byDoc.set(x.f, [...(byDoc.get(x.f) ?? []), x.n]);
+    return [...byDoc.entries()].map(([f, ns]) => `${f} pages ${Math.min(...ns)}–${Math.max(...ns)}`).join("; ");
+  };
+  return [describe(all.slice(0, half)), describe(all.slice(half))];
+}
+
 /** Keep deterministic reports small in model context: large reports collapse to their summary. */
 function compactReport(r: unknown, max = 12_000): unknown {
   const s = JSON.stringify(r ?? null);
@@ -175,7 +194,8 @@ async function execute(inp: RunDeckAnalysisInput, signal: AbortSignal): Promise<
     startedAt: new Date(t0).toISOString(),
     durationMs: null,
   };
-  if (inp.carryOver?.overrides?.length) deal.overrides = structuredClone(inp.carryOver.overrides);
+  // Only field overrides (classification, identity) can anchor before extraction; the rest are re-anchored after it.
+  deal = withCarriedOverrides(deal, inp.carryOver, new Date(t0).toISOString());
   const skipped: { step: string; reason: string }[] = [];
   const researchNotCompleted: string[] = [];
   let identified = false;
@@ -210,9 +230,11 @@ async function execute(inp: RunDeckAnalysisInput, signal: AbortSignal): Promise<
     const t1Reserve = (maxOut: number) => reserve(worstCaseCost(PRIMARY_MODEL, T1_INPUT_CHARS, maxOut));
     const partIds = Object.keys(ANALYSIS_PARTS) as AnalysisPartId[];
     const resParts = partIds.map(() => t1Reserve(tokens.analysisPart));
+    const resCore = t1Reserve(tokens.thesis);
     const resThesis = t1Reserve(tokens.thesis);
     const resChallenge = t1Reserve(tokens.challenge);
     const resActions = t1Reserve(tokens.actions);
+    const resActions2 = t1Reserve(tokens.actions);
     const resIndex = reserve(0.004);
 
     /* ---------------- T0: five parallel reads of the deck ---------------- */
@@ -222,12 +244,22 @@ async function execute(inp: RunDeckAnalysisInput, signal: AbortSignal): Promise<
     const common = { cost, signal, cache: true } as const;
     const triageP = structured({ ...common, step: "TRIAGE", promptVersion: TRIAGE.version, instructions: triageInstructions(), input: extraction, schema: TriageOutput, schemaName: "triage", maxOutputTokens: tokens.triage, effort: effort.fast });
     const metricsP = structured({ ...common, step: "EXTRACT_METRICS", promptVersion: EXTRACT_METRICS.version, instructions: metricsExtractionInstructions(), input: extraction, schema: MetricsExtractionOutput, schemaName: "extract_metrics", maxOutputTokens: tokens.metrics, effort: effort.extract });
-    const claimsOnlyP = structured({ ...common, step: "EXTRACT_CLAIMS", promptVersion: EXTRACT_CLAIMS.version, instructions: claimsExtractionInstructions(), input: extraction, schema: ClaimsOnlyOutput, schemaName: "extract_claims", maxOutputTokens: tokens.claims, effort: effort.extract });
+    // Claims are the longest extraction: long decks are split into two page ranges read in parallel.
+    const claimRanges = claimPageRanges(docs);
+    const claimsOnlyP = Promise.all(
+      claimRanges.map((range, i) =>
+        structured({ ...common, step: claimRanges.length > 1 ? `EXTRACT_CLAIMS_${i + 1}` : "EXTRACT_CLAIMS", promptVersion: EXTRACT_CLAIMS.version, instructions: claimsExtractionInstructions(range ?? undefined), input: extraction, schema: ClaimsOnlyOutput, schemaName: "extract_claims", maxOutputTokens: tokens.claims, effort: effort.extract }),
+      ),
+    ).then((parts) => ({ data: { claims: parts.flatMap((p) => p.data.claims), suspectedInstructions: parts.flatMap((p) => p.data.suspectedInstructions) } }));
     const profileP = structured({ ...common, step: "EXTRACT_PROFILE", promptVersion: EXTRACT_PROFILE.version, instructions: profileExtractionInstructions(), input: extraction, schema: ProfileExtractionOutput, schemaName: "extract_profile", maxOutputTokens: tokens.profile, effort: effort.extract });
     // Claims and profile are one logical extraction: both are required for the merged result.
     const claimsP = Promise.all([claimsOnlyP, profileP]).then(([c, p]) => ({ data: { ...c.data, ...p.data } }));
     claimsP.catch(() => undefined);
-    const forensicsP = structured({ ...common, step: "FORENSICS", promptVersion: DECK_FORENSICS.version, instructions: forensicsInstructions(), input: [{ role: "user", content: deckContent("forensics") }], schema: ForensicsOutput, schemaName: "deck_forensics", maxOutputTokens: tokens.forensics, effort: effort.extract });
+    // Forensics: the visual read (file/images, slow) carries only what needs visuals; the narrative read uses text.
+    const forensicsP = Promise.all([
+      structured({ ...common, step: "FORENSICS_VISUAL", promptVersion: DECK_FORENSICS.version, instructions: forensicsInstructions("VISUAL"), input: [{ role: "user", content: deckContent("forensics") }], schema: ForensicsVisualOutput, schemaName: "deck_forensics_visual", maxOutputTokens: tokens.forensics, effort: effort.extract }),
+      structured({ ...common, step: "FORENSICS_NARRATIVE", promptVersion: DECK_FORENSICS.version, instructions: forensicsInstructions("NARRATIVE"), input: extraction, schema: ForensicsNarrativeOutput, schemaName: "deck_forensics_narrative", maxOutputTokens: tokens.forensics, effort: effort.extract }),
+    ]).then(([v, n]) => ({ data: { ...v.data, ...n.data } }));
     const latentP = structured({ ...common, step: "LATENT", promptVersion: LATENT_SIGNALS.version, instructions: latentSignalsInstructions(), input: extraction, schema: LatentSignalsOutput, schemaName: "latent_signals", maxOutputTokens: tokens.latent, effort: effort.extract });
     // Divergence signals: deck-only, low effort, modest output — issued last so it can never starve a mandatory T0 call.
     const divergenceP = structured({ ...common, step: "DIVERGENCE", promptVersion: DIVERGENCE_SIGNALS.version, instructions: divergenceSignalsInstructions(), input: extraction, schema: DivergenceSignalsOutput, schemaName: "divergence_signals", maxOutputTokens: tokens.divergence, effort: "low" });
@@ -354,6 +386,8 @@ async function execute(inp: RunDeckAnalysisInput, signal: AbortSignal): Promise<
     // Optional: a failed divergence pass leaves the factors on computed data only (reported, never invented).
     if (divergenceR.status === "fulfilled") deal = applyDivergence(deal, divergenceR.value.data);
     else skipped.push({ step: "DIVERGENCE", reason: errReason(divergenceR.reason) });
+    // Metrics and claims now exist: re-anchor the carried overrides on their new ids.
+    deal = withCarriedOverrides(deal, inp.carryOver, new Date(t0).toISOString());
     const t0Ok = forensicsR.status === "fulfilled" && latentR.status === "fulfilled";
     if (t0Ok) deal.analysis.completedSteps.push("FORENSICS");
     step("FORENSICS", t0Ok ? "DONE" : "FAILED", t0Ok ? `${deal.forensics?.visualElements.length ?? 0} visuals read, ${deal.forensics?.crossSlideInconsistencies.length ?? 0} cross-slide inconsistencies` : "Partial: " + skipped.filter((s) => s.step === "FORENSICS" || s.step === "LATENT").map((s) => s.reason).join("; "));
@@ -390,17 +424,26 @@ async function execute(inp: RunDeckAnalysisInput, signal: AbortSignal): Promise<
     const partCalls = partIds.map((id, k) =>
       structured({ ...common, step: `ANALYZE_${id}`, promptVersion: INVESTMENT_ANALYSIS.version, instructions: analysisPartInstructions(id), input: [{ role: "user", content: record }], schema: AnalysisPartSchemas[id], schemaName: `investment_analysis_${id.toLowerCase()}`, maxOutputTokens: tokens.analysisPart, effort: effort.analysis, reservation: resParts[k] }),
     );
+    const coreC = settle(
+      structured({ ...common, step: "DECIDE_CORE", promptVersion: DECISION_CORE.version, instructions: decisionCoreInstructions(inp.mode), input: [{ role: "user", content: decisionInput }], schema: DecisionCoreOutput, schemaName: "decision_core", maxOutputTokens: tokens.thesis, effort: effort.decide, reservation: resCore }),
+    );
     const thesisC = settle(
-      structured({ ...common, step: "DECIDE_THESIS", promptVersion: DECISION_THESIS.version, instructions: thesisInstructions(inp.mode), input: [{ role: "user", content: decisionInput }], schema: ThesisCoreOutput, schemaName: "decision_thesis", maxOutputTokens: tokens.thesis, effort: effort.decide, reservation: resThesis }),
+      structured({ ...common, step: "DECIDE_THESIS", promptVersion: DECISION_THESIS.version, instructions: thesisInstructions(inp.mode), input: [{ role: "user", content: decisionInput }], schema: ThesisBodyOutput, schemaName: "decision_thesis", maxOutputTokens: tokens.thesis, effort: effort.decide, reservation: resThesis }),
     );
     const challengeC = settle(
       structured({ ...common, step: "DECIDE_CHALLENGE", promptVersion: DECISION_CHALLENGE.version, instructions: challengeInstructions(inp.mode), input: [{ role: "user", content: decisionInput }], schema: ChallengeOutput, schemaName: "decision_challenge", maxOutputTokens: tokens.challenge, effort: effort.decide, reservation: resChallenge }),
     );
     const actionsC = settle(
-      structured({ ...common, step: "DECIDE_ACTIONS", promptVersion: DECISION_ACTIONS.version, instructions: actionsInstructions(inp.mode), input: [{ role: "user", content: decisionInput }], schema: ActionsOutput, schemaName: "decision_actions", maxOutputTokens: tokens.actions, effort: effort.decide, reservation: resActions }),
+      Promise.all([
+        structured({ ...common, step: "DECIDE_MACHINE", promptVersion: DECISION_ACTIONS.version, instructions: actionsInstructions(inp.mode, "MACHINE"), input: [{ role: "user", content: decisionInput }], schema: MachineOutput, schemaName: "decision_machine", maxOutputTokens: tokens.actions, effort: effort.decide, reservation: resActions }),
+        structured({ ...common, step: "DECIDE_NEXT_PROOF", promptVersion: DECISION_ACTIONS.version, instructions: actionsInstructions(inp.mode, "NEXT_PROOF"), input: [{ role: "user", content: decisionInput }], schema: NextProofOutput, schemaName: "decision_next_proof", maxOutputTokens: tokens.actions, effort: effort.decide, reservation: resActions2 }),
+      ]).then(([m, n]) => ({ data: { ...m.data, ...n.data } })),
     );
-    const [partsR, thesisR, challengeR, actionsR] = await Promise.all([Promise.allSettled(partCalls), thesisC, challengeC, actionsC]);
-    for (const r of [...resParts, resThesis, resChallenge, resActions]) cost.release(r);
+    const [partsR, coreR, bodyR, challengeR, actionsR] = await Promise.all([Promise.allSettled(partCalls), coreC, thesisC, challengeC, actionsC]);
+    for (const r of [...resParts, resCore, resThesis, resChallenge, resActions, resActions2]) cost.release(r);
+    // The bet = decision core + thesis body; both are required for a complete thesis.
+    const thesisR: Settled<{ data: import("@/ai/prompts/decision").ThesisCoreOutput }> =
+      coreR.ok && bodyR.ok ? { ok: true, value: { data: { ...coreR.value.data, ...bodyR.value.data } } } : { ok: false, error: !coreR.ok ? coreR.error : (bodyR as { ok: false; error: unknown }).error };
     throwIfCancelled(signal);
 
     // Merge the analysis parts. A failed part leaves its sections empty and is reported — never invented.
@@ -416,7 +459,8 @@ async function execute(inp: RunDeckAnalysisInput, signal: AbortSignal): Promise<
     }
     if (thesisR.ok && challengeR.ok) deal = applyThesis(deal, { ...thesisR.value.data, ...challengeR.value.data });
     else if (thesisR.ok) deal = applyThesis(deal, { ...thesisR.value.data, revealedBeyondPitch: [], redTeam: deal.redTeam as never, alternativeExplanations: [] });
-    if (!thesisR.ok) skipped.push({ step: "DECIDE_THESIS", reason: errReason(thesisR.error) });
+    if (!coreR.ok) skipped.push({ step: "DECIDE_CORE", reason: errReason(coreR.error) });
+    if (!bodyR.ok) skipped.push({ step: "DECIDE_THESIS", reason: errReason(bodyR.error) });
     if (!challengeR.ok) skipped.push({ step: "DECIDE_CHALLENGE", reason: errReason(challengeR.error) });
     if (actionsR.ok) deal = applyActions(deal, actionsR.value.data);
     else skipped.push({ step: "DECIDE_ACTIONS", reason: errReason(actionsR.error) });
@@ -451,7 +495,8 @@ async function execute(inp: RunDeckAnalysisInput, signal: AbortSignal): Promise<
     step("INDEX", "RUNNING");
     cost.release(resIndex);
     try {
-      const stats = await indexCompanyForBrain({ workspaceId: inp.workspaceId, companyId: inp.companyId, versionId: version.id, canonical: deal, derived, cost });
+      // The Fund Brain indexes the effective deal (raw extraction + analyst overrides), like every view.
+      const stats = await indexCompanyForBrain({ workspaceId: inp.workspaceId, companyId: inp.companyId, versionId: version.id, canonical: applyOverrides(deal), derived, cost });
       step("INDEX", "DONE", `${stats.chunks} chunks, ${stats.embedded} embedded, ${stats.facts} facts`);
     } catch (e) {
       log.error({ err: (e as Error).message }, "indexing failed");
@@ -480,7 +525,7 @@ async function execute(inp: RunDeckAnalysisInput, signal: AbortSignal): Promise<
   }
 }
 
-const MANDATORY = new Set(["ANALYZE", "DECIDE_THESIS", "DECIDE_CHALLENGE", "DECIDE_ACTIONS", "EXTRACT_CLAIMS", "EXTRACT_METRICS", "RUN"]);
+const MANDATORY = new Set(["ANALYZE", "DECIDE_CORE", "DECIDE_THESIS", "DECIDE_CHALLENGE", "DECIDE_ACTIONS", "EXTRACT_CLAIMS", "EXTRACT_METRICS", "RUN"]);
 
 /** Mutates the analysis state (depth, partial reasons, unknowns, duration) and returns the deterministic layer. */
 function finalize(
