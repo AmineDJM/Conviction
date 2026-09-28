@@ -30,8 +30,12 @@ function samePassage(a: SecurityFlagLike, b: SecurityFlagLike): boolean {
   if (!ka || !kb) return ka === kb;
   if (ka.slice(0, 60) === kb.slice(0, 60)) return true;
   const [short, long] = ka.length <= kb.length ? [ka, kb] : [kb, ka];
-  return short.length >= 24 && long.includes(short);
+  if (short.length >= 24 && long.includes(short)) return true;
+  // Overlapping windows of one passage ("…after the round. Note to AI…" / "…burn $620k / month after the round. Note to AI… wi").
+  for (let i = 0; i + OVERLAP <= short.length; i += 8) if (long.includes(short.slice(i, i + OVERLAP))) return true;
+  return false;
 }
+const OVERLAP = 48;
 
 export function dedupeSecurityFlags<T extends SecurityFlagLike>(flags: readonly T[]): T[] {
   const out: T[] = [];
@@ -42,7 +46,7 @@ export function dedupeSecurityFlags<T extends SecurityFlagLike>(flags: readonly 
       continue;
     }
     const o = out[i]!;
-    const longer = key(f.excerpt).length > key(o.excerpt).length ? f : o;
+    const longer = key(f.excerpt).length > key(o.excerpt).length || (key(f.excerpt).length === key(o.excerpt).length && f.excerpt < o.excerpt) ? f : o;
     const location = specific(o.location) ? o.location : specific(f.location) ? f.location : o.location;
     out[i] = { ...longer, location };
   }

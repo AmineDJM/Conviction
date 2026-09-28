@@ -66,7 +66,7 @@ import { Money } from "./money";
 
 export const CANONICAL_SCHEMA_VERSION = "1.1";
 /** Version of the orchestration + deterministic engine. Bump on any behavioural change; stored with every analysis. */
-export const ANALYSIS_ENGINE_VERSION = "3.1";
+export const ANALYSIS_ENGINE_VERSION = "3.2";
 
 /* ---------------------------------------------------------------- */
 /* Sources                                                            */
