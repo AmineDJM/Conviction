@@ -75,31 +75,52 @@ export function deriveMetrics(input: MetricInstance[], nextId: () => string): Me
     metrics = selectPrimary(metrics);
   };
 
+  // Revenue reported at the level of gross volume in a take-rate business: the reported figure is kept but
+  // marked CONTRADICTED (it is GMV), and net revenue is estimated by code as GMV × take rate.
+  const gmv = primary("gmv");
+  const take = primary("take_rate");
+  if (gmv && take && gmv.normalizedValue! > 0 && take.normalizedValue! > 0 && take.normalizedValue! < 50) {
+    const g = gmv.normalizedValue!;
+    const isGross = (m: MetricInstance) => m.calculationMethod === "REPORTED" && m.normalizedValue !== null && Math.abs(m.normalizedValue / g - 1) <= 0.1;
+    let demoted = false;
+    metrics = metrics.map((m) => {
+      if ((m.metricKey !== "revenue_ttm" && m.metricKey !== "arr") || !isGross(m) || m.state === "CONTRADICTED") return m;
+      demoted = true;
+      return { ...m, state: "CONTRADICTED" as const, qualityFlags: [...m.qualityFlags, `GROSS_VOLUME_AS_REVENUE: equals GMV (${g}) although the take rate is ${take.normalizedValue}% — this is gross volume, not revenue`] };
+    });
+    if (demoted) {
+      metrics = selectPrimary(metrics);
+      if (!metrics.some((m) => m.metricKey === "revenue_ttm" && m.normalizedValue !== null && m.state !== "CONTRADICTED" && m.state !== "UNKNOWN")) add("revenue_ttm", (g * take.normalizedValue!) / 100, [gmv, take], "GMV × take rate", "USD", ["NET_REVENUE_ESTIMATED_FROM_GMV"]);
+    }
+  }
+
   const mrr = primary("mrr");
   if (!has("arr") && mrr) add("arr", mrr.normalizedValue! * 12, [mrr], "MRR × 12", "USD", ["RUN_RATE_FROM_MRR"]);
 
   // ARR growth from a time series ~12 months apart.
   if (!has("arr_growth_yoy")) {
     const series = metrics
-      .filter((m) => m.metricKey === "arr" && m.normalizedValue !== null && m.periodEnd && m.state !== "UNKNOWN")
+      .filter((m) => m.metricKey === "arr" && m.normalizedValue !== null && m.periodEnd && (m.state === "OBSERVED" || m.state === "INFERRED" || m.state === "STALE"))
       .map((m) => ({ m, d: parsePeriodDate(m.periodEnd)! }))
       .filter((x) => x.d)
       .sort((a, b) => b.d.getTime() - a.d.getTime());
     const latest = series[0];
     if (latest) {
-      const prior = series.find((x) => {
-        const months = (latest.d.getTime() - x.d.getTime()) / (1000 * 60 * 60 * 24 * 30.44);
-        return months >= 10 && months <= 14;
-      });
+      const monthsTo = (x: { d: Date }) => (latest.d.getTime() - x.d.getTime()) / (1000 * 60 * 60 * 24 * 30.44);
+      const prior = series.find((x) => monthsTo(x) >= 10 && monthsTo(x) <= 14);
       if (prior && prior.m.normalizedValue! > 0) {
-        const g = (latest.m.normalizedValue! / prior.m.normalizedValue! - 1) * 100;
+        // Points 10–14 months apart are annualized to 12 months (compounded for growth, linear for net new ARR).
+        const months = Math.round(monthsTo(prior));
+        const annual = months === 12;
+        const g = (Math.pow(latest.m.normalizedValue! / prior.m.normalizedValue!, 12 / months) - 1) * 100;
         const priorOk = prior.m.state === "STALE" ? { ...prior.m, state: "OBSERVED" as const } : prior.m;
-        add("arr_growth_yoy", g, [latest.m, prior.m], `(ARR ${latest.m.periodEnd} / ARR ${prior.m.periodEnd} − 1) × 100`, "PERCENT", [], [latest.m, priorOk]);
+        const gFormula = annual ? `(ARR ${latest.m.periodEnd} / ARR ${prior.m.periodEnd} − 1) × 100` : `((ARR ${latest.m.periodEnd} / ARR ${prior.m.periodEnd})^(12/${months}) − 1) × 100`;
+        add("arr_growth_yoy", g, [latest.m, prior.m], gFormula, "PERCENT", annual ? [] : [`ANNUALIZED_FROM_${months}_MONTHS`], [latest.m, priorOk]);
         const burn = primary("monthly_net_burn");
         if (!has("burn_multiple") && burn) {
-          const netNew = latest.m.normalizedValue! - prior.m.normalizedValue!;
+          const netNew = ((latest.m.normalizedValue! - prior.m.normalizedValue!) * 12) / months;
           const bm = burnMultiple(burn.normalizedValue! * 12, netNew);
-          add("burn_multiple", bm, [burn, latest.m, prior.m], "Current monthly net burn × 12 / net new ARR over 12 months", "MULTIPLE", ["BURN_ASSUMED_CONSTANT_OVER_PERIOD"], [burn, latest.m, priorOk]);
+          add("burn_multiple", bm, [burn, latest.m, prior.m], annual ? "Current monthly net burn × 12 / net new ARR over 12 months" : `Current monthly net burn × 12 / (net new ARR over ${months} months × 12/${months})`, "MULTIPLE", ["BURN_ASSUMED_CONSTANT_OVER_PERIOD", ...(annual ? [] : [`ANNUALIZED_FROM_${months}_MONTHS`])], [burn, latest.m, priorOk]);
         }
       }
     }
@@ -125,7 +146,8 @@ export function deriveMetrics(input: MetricInstance[], nextId: () => string): Me
 
   const dau = primary("dau");
   const mau = primary("mau");
-  if (!has("dau_mau") && dau && mau) add("dau_mau", (ratio(dau.normalizedValue, mau.normalizedValue) ?? 0) * 100, [dau, mau], "DAU / MAU × 100", "PERCENT");
+  const dauMau = dau && mau ? ratio(dau.normalizedValue, mau.normalizedValue) : null;
+  if (!has("dau_mau") && dau && mau && dauMau !== null) add("dau_mau", dauMau * 100, [dau, mau], "DAU / MAU × 100", "PERCENT");
 
   const hc = primary("headcount");
   if (!has("revenue_per_employee") && arr && hc) add("revenue_per_employee", ratio(arr.normalizedValue, hc.normalizedValue), [arr, hc], "ARR / headcount", "USD");

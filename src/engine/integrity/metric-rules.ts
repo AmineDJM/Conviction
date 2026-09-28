@@ -119,7 +119,9 @@ function gmvAsRevenue(ctx: IntegrityContext, out: IntegrityFinding[]) {
   const isMarketplace = ctx.profile === "MARKETPLACE" || c.revenueModel.includes("TAKE_RATE") || c.productType.includes("MARKETPLACE");
   const gmv = ctx.primary("gmv");
   const take = ctx.primary("take_rate");
-  const revenue = ctx.primary("revenue_ttm") ?? ctx.primary("arr");
+  // A reported revenue figure already identified as gross volume by normalization (kept, marked CONTRADICTED).
+  const grossFlagged = ctx.metrics.find((m) => hasFlag(m, "GROSS_VOLUME_AS_REVENUE") && isNum(m.normalizedValue));
+  const revenue = grossFlagged ?? ctx.primary("revenue_ttm") ?? ctx.primary("arr");
   // Revenue ≈ GMV: gross volume presented as the company's revenue.
   if (gmv && revenue && isNum(gmv.normalizedValue) && isNum(revenue.normalizedValue) && gmv.normalizedValue > 0) {
     const ratio = revenue.normalizedValue / gmv.normalizedValue;
@@ -438,7 +440,16 @@ function cumulative(ctx: IntegrityContext, out: IntegrityFinding[]) {
   const runRateKeys = ["arr", "mrr", "revenue_ttm", "gmv", "tpv"];
   const flagged = ctx.metrics.filter((m) => hasFlag(m, "CUMULATIVE_NOT_RUN_RATE"));
   const flaggedPages = new Set(flagged.map((m) => ctx.metricPage(m)));
-  const obs = ctx.observations.filter((o) => runRateKeys.includes(o.metricKey) && o.periodType === "CUMULATIVE" && !flaggedPages.has(o.page) && o.basis !== "FORECAST" && o.basis !== "TARGET");
+  // Free-labelled cumulative money flows ("Revenue since launch", "Loan volume originated since 2023") count too.
+  const flowLabel = /\b(revenue|sales|volume|originat\w*|loans?|gmv|tpv|bookings|transactions?|payments?|processed)\b/i;
+  const obs = ctx.observations.filter(
+    (o) =>
+      (runRateKeys.includes(o.metricKey) || (o.metricKey === "OTHER" && o.unit === "USD_OR_CURRENCY" && flowLabel.test(o.label ?? ""))) &&
+      o.periodType === "CUMULATIVE" &&
+      !flaggedPages.has(o.page) &&
+      o.basis !== "FORECAST" &&
+      o.basis !== "TARGET",
+  );
   if (!flagged.length && !obs.length) return;
   const onRunRate = flagged.some((m) => ["arr", "mrr"].includes(m.metricKey) && m.isPrimary) || obs.some((o) => o.metricKey === "arr" || o.metricKey === "mrr");
   out.push(
@@ -447,7 +458,7 @@ function cumulative(ctx: IntegrityContext, out: IntegrityFinding[]) {
       module: M,
       severity: onRunRate ? "HIGH" : "MODERATE",
       title: "Cumulative figure presented as a run-rate",
-      detail: `${flagged.length + obs.length} figure(s) are cumulative since inception (${[...new Set([...flagged.map((m) => m.metricKey), ...obs.map((o) => o.metricKey)])].join(", ")}). Cumulative totals always rise and say nothing about the current rate; ask for the same metric per month or quarter.`,
+      detail: `${flagged.length + obs.length} figure(s) are cumulative since inception (${[...new Set([...flagged.map((m) => m.metricKey), ...obs.map((o) => (o.metricKey === "OTHER" ? `"${o.label}"` : o.metricKey))])].join(", ")}). Cumulative totals always rise and say nothing about the current rate; ask for the same metric per month or quarter.`,
       metricIds: flagged.map((m) => m.id),
       claimIds: flagged.map((m) => m.claimId),
       pages: [...pagesOf(ctx, flagged), ...obs.map((o) => o.page)],

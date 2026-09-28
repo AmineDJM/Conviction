@@ -96,6 +96,15 @@ describe("GMV presented as revenue", () => {
     expect(f.map((x) => x.severity)).toEqual(sev ? [sev] : []);
   });
 
+  it("a revenue figure already demoted as gross volume is still reported", () => {
+    const d = marketplace();
+    setMetric(d, "revenue_ttm", 8_200_000, { state: "CONTRADICTED", qualityFlags: ["GROSS_VOLUME_AS_REVENUE: equals GMV"] });
+    d.metrics.push(m("MET-GMV", "gmv", 8_200_000));
+    d.metrics.push(m("MET-TAKE", "take_rate", 11, { unit: "PERCENT" }));
+    d.metrics.push(m("MET-NET", "revenue_ttm", 902_000, { calculationMethod: "DERIVED", isPrimary: true }));
+    expect(findingsOf(run(d), "GMV_AS_REVENUE").some((f) => f.severity === "CRITICAL")).toBe(true);
+  });
+
   it.each(["GMV", "gross merchandise value", "gross bookings", "total payment volume"])("revenue defined as %s is HIGH", (word) => {
     const d = marketplace();
     setMetric(d, "revenue_ttm", 5_000_000, { definitionUsed: `Revenue (${word})` });
@@ -330,6 +339,21 @@ describe("cumulative used as run-rate", () => {
   it("forecast cumulative figures are chronology, not this rule", () => {
     const d = cleanDeal();
     d.metricObservations.push(obs("gmv", 50_000_000, { periodType: "CUMULATIVE", basis: "FORECAST", periodEnd: "2028-12" }));
+    expect(kinds(run(d))).not.toContain("CUMULATIVE_AS_RUN_RATE");
+  });
+
+  it.each([
+    ["Revenue since launch", 1_100_000],
+    ["Loan volume originated since March 2023", 48_000_000],
+  ])("free-labelled cumulative money flow '%s' is detected", (label, v) => {
+    const d = cleanDeal();
+    d.metricObservations.push(obs("OTHER" as never, v, { label, periodType: "CUMULATIVE", page: 5, rawText: String(v) }));
+    expect(one(run(d), "CUMULATIVE_AS_RUN_RATE").detail).toContain(label);
+  });
+
+  it("a free-labelled cumulative count that is not a money flow is not this rule", () => {
+    const d = cleanDeal();
+    d.metricObservations.push(obs("OTHER" as never, 1_400_000, { label: "Downloads since launch", unit: "COUNT", currency: null, periodType: "CUMULATIVE", page: 5 }));
     expect(kinds(run(d))).not.toContain("CUMULATIVE_AS_RUN_RATE");
   });
 

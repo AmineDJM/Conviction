@@ -1,5 +1,5 @@
 /**
- * extract_metrics_v2 / extract_claims_v2 — parallel extraction passes over
+ * extract_metrics_v3 / extract_claims_v3 — parallel extraction passes over
  * the deck (numbers vs statements) so neither is the latency bottleneck.
  */
 import { z } from "zod";
@@ -8,7 +8,7 @@ import { Money } from "@/domain/money";
 import { METRIC_KEYS } from "@/engine/metrics/keys";
 import { ANALYST_STANDARD, today } from "./common";
 
-export const EXTRACT_METRICS = { id: "extract_metrics", version: "extract_metrics_v2" } as const;
+export const EXTRACT_METRICS = { id: "extract_metrics", version: "extract_metrics_v3" } as const;
 export const EXTRACT_CLAIMS = { id: "extract_claims", version: "extract_claims_v3" } as const;
 export const EXTRACT_PROFILE = { id: "extract_profile", version: "extract_profile_v1" } as const;
 
@@ -48,6 +48,8 @@ TASK: extract every NUMBER in the startup materials as structured observations. 
 - sourceKind: TEXT, TABLE, CHART (value read off a chart — also note axis/units in definitionAsStated), IMAGE, FOOTNOTE.
 - rawText and excerpt verbatim. Record definitions and what figures include/exclude (e.g. "CAC excludes founder time", "gross margin before inference costs", "customers incl. pilots"). sampleSize and cohortDefinition for every rate when stated.
 - services_revenue_share when the revenue mix is shown; contracted_arr for signed-not-live.
+- periodType: MONTHLY only when the figure itself is a monthly amount ("$400k / month", MRR, monthly burn). ARR and run-rates are ANNUAL even when dated with a month ("ARR (Aug 2026) $5.6M"). CUMULATIVE for totals since launch/inception ("$48M originated since 2023", "revenue since launch").
+- Keys by meaning, not by neighbouring words: gross LOGO retention → logo_retention (grr is gross REVENUE retention); paid or active pilots → pilots (never paying_customers); completed or past pilots are OTHER; a partner/channel share of revenue is OTHER (founder_led_revenue_share is only revenue closed by founders); "listings that sell within N days" → fill_rate. Revenue labelled as gross order value / GMV → gmv, not revenue_ttm.
 - headcount is the WHOLE company's headcount only. Function or sub-team counts ("7 AEs", "12 engineers", "sales team of 5") are OTHER with the function in the label.
 - state=WITHHELD when explicitly not disclosed; INFERRED only when you computed it (say how).
 - FINANCING: instrument, amount, pre/post or cap, discount, pool top-up, cash, burn, runway claim, investors, total raised, use of funds, milestones with timing, terms.

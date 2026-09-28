@@ -14,13 +14,19 @@ const SCALE: Record<string, number> = {
   m: 1e6,
   mm: 1e6,
   mn: 1e6,
+  mio: 1e6,
   million: 1e6,
   b: 1e9,
   bn: 1e9,
+  md: 1e9,
+  mds: 1e9,
+  mrd: 1e9,
+  milliard: 1e9,
   billion: 1e9,
   t: 1e12,
   trillion: 1e12,
 };
+const scaleOf = (w: string) => SCALE[w.toLowerCase().replace(/s$/, "")] ?? SCALE[w.toLowerCase()] ?? 1;
 
 /**
  * Parse the single numeric quantity in a raw text like "$4.2M", "€850k",
@@ -28,17 +34,28 @@ const SCALE: Record<string, number> = {
  * number (ambiguous) — callers then keep the model's value and flag it.
  */
 export function parseScaledNumber(raw: string): number | null {
-  const text = raw.replace(/ /g, " ");
-  const re = /(-?\d{1,3}(?:[,\s]\d{3})+(?:\.\d+)?|-?\d+(?:\.\d+)?)\s*(thousand|million|billion|trillion|bn|mn|mm|k|m|b|t)?\b/gi;
+  return parseScaledDetail(raw)?.value ?? null;
+}
+
+/**
+ * The parse with what it relied on: `scaled` when a scale word was recognised ("M", "millions",
+ * "Md", "k€"…), `commaGroup` when the number used a comma group that a French deck could mean as
+ * a decimal ("1,250 M€"). A currency glued to the scale ("MEUR", "k€", "M$") is accepted.
+ */
+export function parseScaledDetail(raw: string): { value: number; scaled: boolean; commaGroup: boolean } | null {
+  const text = raw.replace(/\u00a0|\u202f/g, " ");
+  const re = /(-?\d{1,3}(?:[,\s]\d{3})+(?:\.\d+)?|-?\d+,\d{1,2}(?!\d)|-?\d+(?:\.\d+)?)\s*(thousands?|millions?|milliards?|billions?|trillions?|mds?|mrd|mio|bn|mn|mm|md|k|m|b|t)?(?:\s*(?:eur|usd|gbp|chf|€|\$|£))?(?![a-z])/gi;
   const matches = [...text.matchAll(re)];
   // Ignore bare years (e.g. "ARR 2025: $4.2M") when another number is present.
   const meaningful = matches.filter((m) => !/^(19|20)\d{2}$/.test(m[1]!.replace(/[,\s]/g, "")) || matches.length === 1);
   if (meaningful.length !== 1) return null;
   const m = meaningful[0]!;
-  const n = Number(m[1]!.replace(/[,\s]/g, ""));
+  const tok = m[1]!;
+  const decimalComma = /^-?\d+,\d{1,2}$/.test(tok);
+  const n = Number(decimalComma ? tok.replace(",", ".") : tok.replace(/[,\s]/g, ""));
   if (!Number.isFinite(n)) return null;
-  const scale = m[2] ? (SCALE[m[2].toLowerCase()] ?? 1) : 1;
-  return n * scale;
+  const scale = m[2] ? scaleOf(m[2]) : 1;
+  return { value: n * scale, scaled: !!m[2], commaGroup: /\d,\d{3}/.test(tok) };
 }
 
 /** Conversion factor from the unit named in raw text to the dictionary's time unit. */
@@ -74,9 +91,12 @@ export function timeFactor(raw: string, target: "DAYS" | "MONTHS"): number {
   return target === "DAYS" ? inDays : inDays / 30.44;
 }
 
+const CURRENCY_SYMBOLS: Record<string, string> = { $: "USD", US$: "USD", "US $": "USD", "€": "EUR", EURO: "EUR", EUROS: "EUR", "£": "GBP", "¥": "JPY", "CHF.": "CHF", "C$": "CAD", CA$: "CAD", A$: "AUD", AU$: "AUD", "₹": "INR" };
+
 export function toUsd(amount: number, currency: string | null | undefined): { usd: number; converted: boolean; rate: number } | null {
-  const cur = (currency ?? "USD").toUpperCase().trim();
-  if (cur === "USD" || cur === "$") return { usd: amount, converted: false, rate: 1 };
+  const raw = (currency ?? "USD").toUpperCase().trim();
+  const cur = CURRENCY_SYMBOLS[raw] ?? raw;
+  if (cur === "USD") return { usd: amount, converted: false, rate: 1 };
   const rate = FX_TABLE.rates[cur];
   if (!rate) return null;
   return { usd: amount * rate, converted: true, rate };
@@ -127,6 +147,19 @@ const SUB_TEAM = /\b(aes?|account executives?|sales ?reps?|sdrs?|bdrs?|salespeop
 const WHOLE_COMPANY = /\b(total|company|employees|ftes?|full[- ]time|team of \d+\s*(people|employees)?\s*[.,;]?$|headcount|staff of)\b/i;
 
 /** "7 AEs" or "sales team of 12" describes a function, not the company's headcount. */
+const MONTHLY_MARKER = /\b(mrr|monthly|per month|a month|each month|every month|par mois|mensuel(?:le)?s?)\b|\/\s*mo(?:nth)?\b/i;
+
+/**
+ * True when the figure's own words state a monthly amount (never inferred from the period type alone).
+ * The excerpt is not read: a slide often states other monthly figures ("net burn $480k / month").
+ */
+export function statesMonthly(o: { label?: string | null; rawText?: string | null; definitionAsStated?: string | null }): boolean {
+  const t = [o.label, o.rawText, o.definitionAsStated].filter(Boolean).join(" ");
+  // "ARR (MRR × 12)", "annualized", "run-rate": the figure is already annual.
+  if (/(?:×|\bx)\s*12\b|annuali[sz]ed|run[- ]?rate/i.test(t)) return false;
+  return MONTHLY_MARKER.test(t);
+}
+
 export function isSubTeamCount(text: string): boolean {
   const t = text.replace(/\s+/g, " ").trim();
   if (!SUB_TEAM.test(t)) return false;
@@ -154,7 +187,28 @@ export interface NormalizeContext {
 }
 
 /** Normalize one observation. Returns null for OTHER metrics (kept only in the raw audit trail). */
-export function normalizeObservation(obs: MetricObservation, ctx: NormalizeContext): MetricInstance | null {
+/**
+ * Deterministic key corrections from the figure's own label (label_key_rules_v1). Extraction
+ * sometimes files a figure under a neighbouring key; these rules only fire on unambiguous
+ * wording and never read the surrounding excerpt. Returns the corrected key, null to keep the
+ * figure only in the raw audit trail, or undefined when no rule applies.
+ */
+export function keyFromLabel(o: Pick<MetricObservation, "metricKey" | "label" | "rawText" | "unit" | "value">): { key: string | null; reason: string } | undefined {
+  const label = `${o.label ?? ""}`.toLowerCase();
+  const text = `${o.label ?? ""} ${o.rawText ?? ""}`.toLowerCase();
+  const k = o.metricKey as string;
+  if ((k === "grr" || k === "nrr") && /\blogo\b.*\bretention\b|\bretention\b.*\blogos?\b/.test(label)) return { key: "logo_retention", reason: `"${o.label}" is logo retention, not ${k.toUpperCase()}` };
+  if (k === "paying_customers" && /\bpilots?\b/.test(text) && !/\b(customers?|clients?|logos?|accounts?)\b/.test(label)) return { key: "pilots", reason: `"${o.label}" counts pilots, not paying customers` };
+  if (k === "pilots" && /\b(completed|past|finished|concluded|ended|converted|to date|since)\b/.test(label)) return { key: null, reason: `"${o.label}" is a historical pilot count, not active pilots` };
+  if (k === "founder_led_revenue_share" && /\b(partners?|channels?|resellers?|marketplaces?|alliances?)\b/.test(label) && !/\bfounders?\b/.test(label)) return { key: null, reason: `"${o.label}" is a channel share, not founder-led revenue` };
+  if (k === "OTHER" && o.unit === "PERCENT" && /\bfill rate\b|\bsell[- ]through\b|\bliquidity\b|\blistings?\b.*\b(sold|sell|sells|filled|transact(ed)?)\b/.test(label)) return { key: "fill_rate", reason: `"${o.label}" is a marketplace fill rate` };
+  return undefined;
+}
+
+export function normalizeObservation(input: MetricObservation, ctx: NormalizeContext): MetricInstance | null {
+  const corrected = keyFromLabel(input);
+  if (corrected && corrected.key === null) return null;
+  const obs: MetricObservation = corrected ? { ...input, metricKey: corrected.key as MetricObservation["metricKey"] } : input;
   if (obs.metricKey === "OTHER") return null;
   // Chronology: forecasts, targets and pipeline are never current metrics (kept in the raw audit trail).
   if ((FORWARD_BASES as readonly string[]).includes(obs.basis)) return null;
@@ -170,6 +224,10 @@ export function normalizeObservation(obs: MetricObservation, ctx: NormalizeConte
     { step: "EXTRACTED", detail: `"${obs.rawText}"${obs.page !== null ? ` on p. ${obs.page}` : ""} (${obs.sourceKind.toLowerCase()}, basis ${obs.basis.toLowerCase()}) → model value ${obs.value ?? "null"} ${obs.unit.toLowerCase()}${obs.currency ? ` ${obs.currency}` : ""}` },
   ];
 
+  if (corrected) {
+    flags.push(`KEY_FROM_LABEL: ${corrected.reason} (extracted as ${input.metricKey})`);
+    lineage.push({ step: "RECLASSIFIED", detail: `${input.metricKey} → ${obs.metricKey}: ${corrected.reason}` });
+  }
   // Signed / booked revenue is not ARR: reclassify to contracted ARR.
   let key: string = obs.metricKey;
   if ((obs.basis === "SIGNED" || obs.basis === "BOOKED") && (key === "arr" || key === "mrr" || key === "revenue_ttm")) {
@@ -189,8 +247,16 @@ export function normalizeObservation(obs: MetricObservation, ctx: NormalizeConte
 
   // 1. Cross-check model value against deterministic parse of the raw text.
   if (def.unit !== "PERCENT" && def.unit !== "MULTIPLE" && def.unit !== "RATIO") {
-    const parsed = parseScaledNumber(obs.rawText);
-    if (parsed !== null && value !== null && parsed !== 0) {
+    const detail = parseScaledDetail(obs.rawText);
+    const parsed = detail?.value ?? null;
+    // A 1000× disagreement is a scale question: the parse wins only when it read a scale word
+    // unambiguously; "15 millions d'euros" parsed without its scale, or "1,250 M€" (decimal comma?), keep the model's value.
+    const ratio = parsed !== null && value !== null && parsed !== 0 ? value / parsed : null;
+    const powerOf1000 = ratio !== null && ratio !== 0 && [1e3, 1e6, 1e9, 1e-3, 1e-6, 1e-9].some((f) => Math.abs(ratio / f - 1) < 0.02);
+    if (powerOf1000 && (!detail!.scaled || detail!.commaGroup)) {
+      flags.push(`SCALE_AMBIGUOUS: model=${value} parsed=${parsed}; model value kept`);
+      lineage.push({ step: "PARSE_CHECK", detail: `parse of raw text (${parsed}) differs by a power of 1000 and its scale is not unambiguous; model value kept` });
+    } else if (parsed !== null && value !== null && parsed !== 0) {
       const rel = Math.abs(value - parsed) / Math.abs(parsed);
       if (rel > 0.02) {
         flags.push(`EXTRACTION_MISMATCH: model=${value} parsed=${parsed}; parsed value used`);
@@ -205,8 +271,13 @@ export function normalizeObservation(obs: MetricObservation, ctx: NormalizeConte
   }
 
   // 1b. Time units: "5 minutes" is not 5 days; "6 weeks" is not 6 months.
+  // The model is asked for the dictionary unit; the raw unit is applied only when the value is still in raw units
+  // (it lies within the numbers written in the raw text), so "2 to 3 months" given as 75 days is not converted twice.
   if ((def.unit === "DAYS" || def.unit === "MONTHS") && value !== null) {
-    const factor = timeFactor(obs.rawText, def.unit);
+    const rawNums = [...obs.rawText.matchAll(/\d+(?:[.,]\d+)?/g)].map((x) => Number(x[0].replace(",", "."))).filter((x) => Number.isFinite(x) && !(x >= 1900 && x <= 2100));
+    const inRawUnits = !rawNums.length || (value >= Math.min(...rawNums) * 0.98 && value <= Math.max(...rawNums) * 1.02);
+    const factor = inRawUnits ? timeFactor(obs.rawText, def.unit) : 1;
+    if (!inRawUnits) lineage.push({ step: "TIME_UNIT", detail: `value ${value} is not in the raw text's units (${rawNums.join(", ")}); already in ${def.unit.toLowerCase()}` });
     if (factor !== 1) {
       flags.push(`TIME_UNIT_CONVERTED ×${+factor.toFixed(6)} from raw text`);
       lineage.push({ step: "TIME_UNIT", detail: `${value} × ${+factor.toFixed(6)} → ${def.unit.toLowerCase()}` });
@@ -245,10 +316,16 @@ export function normalizeObservation(obs: MetricObservation, ctx: NormalizeConte
   }
 
   // 4. Periodization: ARR must be annualized; cumulative figures are not run-rates.
+  // A monthly period type is trusted only when the materials themselves state a monthly figure
+  // ("$400k/month", "MRR"); "ARR (Aug 2026) $5.6M" tagged MONTHLY by extraction is not multiplied.
   if (key === "arr" && obs.periodType === "MONTHLY" && value !== null) {
-    flags.push("MONTHLY_FIGURE_LABELLED_ARR: annualized ×12, treat as run-rate");
-    lineage.push({ step: "ANNUALIZED", detail: `monthly ${value} × 12 = ${value * 12}` });
-    value = value * 12;
+    if (statesMonthly(obs)) {
+      flags.push("MONTHLY_FIGURE_LABELLED_ARR: annualized ×12, treat as run-rate");
+      lineage.push({ step: "ANNUALIZED", detail: `monthly ${value} × 12 = ${value * 12}` });
+      value = value * 12;
+    } else {
+      flags.push("PERIOD_TYPE_NOT_STATED_MONTHLY: extraction marked the figure monthly but the materials state it as ARR; not annualized");
+    }
   }
   if ((key === "arr" || key === "revenue_ttm" || key === "gmv") && obs.periodType === "CUMULATIVE") {
     flags.push("CUMULATIVE_NOT_RUN_RATE: figure is cumulative since inception, not a current run-rate");

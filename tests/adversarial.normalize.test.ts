@@ -165,3 +165,155 @@ describe("sub-team counts are never company headcount", () => {
     expect(N("headcount", 38, { unit: "COUNT", currency: null, rawText: raw, excerpt })).not.toBeNull();
   });
 });
+
+describe("ARR tagged MONTHLY is annualized only when the materials state a monthly figure", () => {
+  it("does not multiply 'ARR (Aug 2026) $5.6M' by 12 because extraction tagged it MONTHLY", () => {
+    const r = N("arr", 5_600_000, { label: "ARR (Aug 2026)", rawText: "$5.6M", periodType: "MONTHLY", excerpt: "ARR (Aug 2026) $5.6M · Net burn $480k / month" })!;
+    expect(r.normalizedValue).toBe(5_600_000);
+    expect(r.qualityFlags.join(" ")).toContain("PERIOD_TYPE_NOT_STATED_MONTHLY");
+  });
+  it.each([
+    ["ARR", "$400k/month"],
+    ["ARR", "$400k per month"],
+    ["MRR", "$400k"],
+    ["ARR", "400 k€ par mois"],
+  ])("annualizes %s %s", (label, rawText) => {
+    const r = N("arr", 400_000, { label, rawText, periodType: "MONTHLY" })!;
+    expect(r.normalizedValue).toBe(4_800_000);
+    expect(r.qualityFlags.join(" ")).toContain("MONTHLY_FIGURE_LABELLED_ARR");
+  });
+});
+
+describe("key corrections from the figure's own label (label_key_rules_v1)", () => {
+  it("files 'Gross logo retention' under logo retention, not GRR", () => {
+    const r = N("grr", 94, { label: "Gross logo retention", rawText: "94%", unit: "PERCENT", currency: null })!;
+    expect(r.metricKey).toBe("logo_retention");
+    expect(r.qualityFlags.join(" ")).toContain("KEY_FROM_LABEL");
+  });
+  it("keeps gross revenue retention as GRR", () => {
+    expect(N("grr", 91, { label: "Gross revenue retention", rawText: "91%", unit: "PERCENT", currency: null })!.metricKey).toBe("grr");
+  });
+  it("files '27 paid pilots' under pilots, not paying customers", () => {
+    expect(N("paying_customers", 27, { label: "Paid pilots", rawText: "27 paid pilots", unit: "COUNT", currency: null })!.metricKey).toBe("pilots");
+  });
+  it("keeps 'Customers (incl. pilots)' as paying customers (flagged elsewhere)", () => {
+    expect(N("paying_customers", 41, { label: "Customers (incl. pilots)", rawText: "41", unit: "COUNT", currency: null })!.metricKey).toBe("paying_customers");
+  });
+  it("never files completed pilots as active pilots", () => {
+    expect(N("pilots", 11, { label: "Completed pilots", rawText: "11", unit: "COUNT", currency: null })).toBeNull();
+  });
+  it("never files a partner-channel share as founder-led revenue", () => {
+    expect(N("founder_led_revenue_share", 34, { label: "Share of new ARR from NetSuite partners", rawText: "34%", unit: "PERCENT", currency: null })).toBeNull();
+  });
+  it("reads 'Listings that sell within 30 days' as a fill rate", () => {
+    const r = N("OTHER", 58, { label: "Listings sold within 30 days", rawText: "58%", unit: "PERCENT", currency: null })!;
+    expect(r.metricKey).toBe("fill_rate");
+    expect(r.normalizedValue).toBe(58);
+  });
+  it("leaves unrelated OTHER figures out of the metrics", () => {
+    expect(N("OTHER", 210, { label: "Active sellers", rawText: "210", unit: "COUNT", currency: null })).toBeNull();
+  });
+});
+
+describe("gross volume reported as revenue (take-rate business)", () => {
+  const crateroute = () => [
+    obs("revenue_ttm", 8_200_000, { label: "Revenue", rawText: "$8.2M revenue in 2025", periodType: "ANNUAL", periodEnd: "2025-12", basis: "ACTUAL" }),
+    obs("gmv", 8_200_000, { label: "Revenue 2025 / gross order value", rawText: "$8.2M", periodType: "ANNUAL", periodEnd: "2025-12", basis: "ACTUAL" }),
+    obs("take_rate", 11, { label: "Take rate", rawText: "11%", unit: "PERCENT", currency: null, periodEnd: "2026-06" }),
+  ];
+
+  it("never scores the gross figure as revenue; net revenue is estimated as GMV × take rate", () => {
+    const d = pipelineDeal(crateroute());
+    const primary = d.metrics.find((x) => x.metricKey === "revenue_ttm" && x.isPrimary)!;
+    expect(primary.normalizedValue).toBeCloseTo(902_000, -2);
+    expect(primary.calculationMethod).toBe("DERIVED");
+    expect(primary.qualityFlags).toContain("NET_REVENUE_ESTIMATED_FROM_GMV");
+    const gross = d.metrics.find((x) => x.metricKey === "revenue_ttm" && x.calculationMethod === "REPORTED")!;
+    expect(gross.state).toBe("CONTRADICTED");
+    expect(kinds(run(d))).toContain("GMV_AS_REVENUE");
+  });
+
+  it("leaves real net revenue alone", () => {
+    const o = crateroute();
+    o[0] = obs("revenue_ttm", 900_000, { label: "Net revenue", rawText: "$0.9M", periodType: "ANNUAL", periodEnd: "2025-12", basis: "ACTUAL" });
+    const d = pipelineDeal(o);
+    const primary = d.metrics.find((x) => x.metricKey === "revenue_ttm" && x.isPrimary)!;
+    expect(primary.calculationMethod).toBe("REPORTED");
+    expect(primary.state).not.toBe("CONTRADICTED");
+  });
+
+  it("without a take rate nothing is demoted (the integrity finding still asks)", () => {
+    const d = pipelineDeal(crateroute().slice(0, 2));
+    expect(d.metrics.find((x) => x.metricKey === "revenue_ttm" && x.isPrimary)!.state).not.toBe("CONTRADICTED");
+  });
+});
+
+describe("scale words, decimal commas and currency symbols", () => {
+  it.each([
+    ["ARR de 15 millions d'euros", 15e6, "EUR"],
+    ["ARR 4.2 MEUR", 4.2e6, "EUR"],
+    ["850 KEUR", 850e3, "EUR"],
+    ["$4.2 millions", 4.2e6, "USD"],
+    ["1,5 Md€", 1.5e9, "EUR"],
+  ])("'%s' keeps its scale", (rawText, v, currency) => {
+    const r = N("arr", v, { rawText, currency })!;
+    const usd = currency === "EUR" ? r.normalizedValue! / v : r.normalizedValue! / v;
+    expect(usd).toBeGreaterThan(0.9);
+    expect(usd).toBeLessThan(1.3);
+  });
+  it("'1,250 M€' (decimal comma or thousands?) keeps the model's value, flagged", () => {
+    const r = N("revenue_ttm", 1.25e6, { rawText: "CA 1,250 M€", currency: "EUR" })!;
+    expect(r.qualityFlags.join(" ")).toContain("SCALE_AMBIGUOUS");
+    expect(r.normalizedValue! / 1.25e6).toBeLessThan(1.3);
+  });
+  it("a model scale mistake with an unambiguous scale word is still corrected", () => {
+    expect(N("arr", 4200, { rawText: "$4.2M" })!.normalizedValue).toBe(4_200_000);
+  });
+  it.each(["€", "£", "US$"])("currency symbol %s converts instead of dropping the value", (currency) => {
+    const r = N("arr", 4_200_000, { rawText: "4.2M", currency })!;
+    expect(r.normalizedValue).not.toBeNull();
+    expect(r.state).not.toBe("UNKNOWN");
+  });
+});
+
+describe("durations are converted once", () => {
+  it.each([
+    ["Sales cycle: 2 to 3 months", 75, 75],
+    ["6-8 weeks sales cycle", 49, 49],
+    ["6 weeks", 42, 42],
+    ["6 weeks", 6, 42],
+    ["2 to 3 months", 2.5, 76.1],
+  ])("sales cycle '%s' with model value %d → %d days", (rawText, v, days) => {
+    expect(N("sales_cycle_days", v, { rawText, unit: "DAYS", currency: null })!.normalizedValue).toBeCloseTo(days, 0);
+  });
+  it("CAC payback '1-2 years' given as 18 months stays 18", () => {
+    expect(N("cac_payback_months", 18, { rawText: "CAC payback 1-2 years", unit: "MONTHS", currency: null })!.normalizedValue).toBeCloseTo(18, 1);
+  });
+});
+
+it("ARR described as 'MRR × 12' is not annualized again", () => {
+  expect(N("arr", 5_600_000, { label: "ARR (MRR × 12)", rawText: "$5.6M", periodType: "MONTHLY" })!.normalizedValue).toBe(5_600_000);
+});
+
+describe("period-over-period derivations are annualized", () => {
+  it("ARR growth over 14 months is compounded to 12 months; burn multiple scales net new ARR", () => {
+    const d = pipelineDeal([
+      obs("arr", 1_000_000, { label: "ARR", rawText: "$1M", periodEnd: "2025-06" }),
+      obs("arr", 3_000_000, { label: "ARR", rawText: "$3M", periodEnd: "2026-08" }),
+      obs("monthly_net_burn", 400_000, { label: "Net burn", rawText: "$400k", periodEnd: "2026-08" }),
+    ]);
+    const g = d.metrics.find((x) => x.metricKey === "arr_growth_yoy" && x.isPrimary)!;
+    expect(g.normalizedValue).toBeCloseTo((Math.pow(3, 12 / 14) - 1) * 100, 1);
+    expect(g.qualityFlags).toContain("ANNUALIZED_FROM_14_MONTHS");
+    const bm = d.metrics.find((x) => x.metricKey === "burn_multiple" && x.isPrimary)!;
+    expect(bm.normalizedValue).toBeCloseTo((400_000 * 12) / ((2_000_000 * 12) / 14), 2);
+  });
+  it("exactly 12 months is unchanged", () => {
+    const d = pipelineDeal([obs("arr", 1_000_000, { rawText: "$1M", periodEnd: "2025-08" }), obs("arr", 3_000_000, { rawText: "$3M", periodEnd: "2026-08" })]);
+    expect(d.metrics.find((x) => x.metricKey === "arr_growth_yoy" && x.isPrimary)!.normalizedValue).toBeCloseTo(200, 5);
+  });
+  it("DAU/MAU is not invented when MAU is zero", () => {
+    const d = pipelineDeal([obs("dau", 100, { unit: "COUNT", currency: null, rawText: "100" }), obs("mau", 0, { unit: "COUNT", currency: null, rawText: "0" })]);
+    expect(d.metrics.some((x) => x.metricKey === "dau_mau")).toBe(false);
+  });
+});
