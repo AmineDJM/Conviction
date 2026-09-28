@@ -556,8 +556,11 @@ async function main() {
     const { eq } = await import("drizzle-orm");
     const rows = getDb().select({ v: schema.companyVersions }).from(schema.companies).innerJoin(schema.companyVersions, eq(schema.companyVersions.id, schema.companies.currentVersionId)).where(eq(schema.companies.workspaceId, workspaceId)).all();
     const fund = repo.getDefaultFund(workspaceId);
+    const { ANALYSIS_ENGINE_VERSION: ENGINE } = await import("../src/domain/canonical");
     let drift = 0;
     const lines: string[] = [];
+    let changed = 0;
+    const changedLines: string[] = [];
     for (const { v } of rows) {
       const lv = repo.loadVersion(v);
       const now = derive(lv.canonical, getRegistry(v.registryId), fund, { now: new Date(lv.derived.computedAt) });
@@ -568,14 +571,20 @@ async function main() {
         was.recommendation.status !== now.recommendation.status && `status ${was.recommendation.status} → ${now.recommendation.status}`,
         Math.abs((base(was) ?? 0) - (base(now) ?? 0)) > 0.005 && `base MOIC ${base(was)?.toFixed(2)} → ${base(now)?.toFixed(2)}`,
       ].filter(Boolean);
-      if (diffs.length) {
+      if (!diffs.length) continue;
+      // Same engine version → a real regression. An older engine → an expected, reviewable effect of a deliberate change.
+      const sameEngine = lv.canonical.analysis.provenance?.engineVersion === ENGINE;
+      if (sameEngine) {
         drift++;
         lines.push(`${lv.canonical.identity.name}: ${diffs.join("; ")}`);
+      } else {
+        changed++;
+        changedLines.push(`${lv.canonical.identity.name} (engine ${lv.canonical.analysis.provenance?.engineVersion ?? "?"}): ${diffs.join("; ")}`);
       }
     }
-    // Drift is expected after a deliberate engine change; it must be reviewed, not hidden.
     record("regression", "stored versions re-derived", true, `${rows.length} version(s)`);
-    record("regression", "engine drift vs stored results", drift === 0, drift ? lines.slice(0, 8).join(" | ") : "none", false);
+    record("regression", "engine drift on versions computed by this engine", drift === 0, drift ? lines.slice(0, 8).join(" | ") : "none");
+    record("regression", `re-derivation of versions computed by an older engine (expected after a deliberate change, listed for review)`, true, changed ? `${changed}: ${changedLines.slice(0, 6).join(" | ")}` : "none");
 
     // Corpus drift: the current pipeline (prompts + engine) on every corpus deck vs the stored baseline.
     const { PROMPT_VERSIONS } = await import("../src/ai/prompts");
