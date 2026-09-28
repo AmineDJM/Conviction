@@ -175,3 +175,37 @@ describe("applyOverrides", () => {
     expect(res.stale).toHaveLength(1);
   });
 });
+
+describe("anchors and carry-over state (one correction model)", () => {
+  it("every new override stores the stable anchor of its target", () => {
+    const { override } = withNrrOverride();
+    expect(override.anchor).toEqual({ kind: "METRIC", metricKey: "nrr", label: "nrr", periodEnd: "2026-08", periodType: "POINT_IN_TIME", basis: "CURRENT" });
+    expect(override.legacy).toBeNull();
+  });
+
+  it("an UNANCHORED override stays in the list, is reported with its reason and is never applied", () => {
+    const { deal } = withNrrOverride();
+    const note = "not re-applied: target not found in the new analysis — nrr (2026-08) is not in the new analysis";
+    const unanchored = { ...deal, overrides: deal.overrides.map((o) => ({ ...o, carry: { status: "UNANCHORED" as const, match: null, fromRef: "MET-003", fromVersionId: "ver_x", note, at: AT } })) };
+    const res = resolveOverrides(unanchored);
+    expect(res.applied).toHaveLength(0);
+    expect(res.stale).toEqual([{ override: unanchored.overrides[0], reason: note }]);
+    expect(applyOverrides(unanchored).metrics.find((m) => m.id === "MET-003")!.normalizedValue).toBe(118);
+    // Reverting it works like any other override (the analyst decides).
+    expect(removeOverride(unanchored, unanchored.overrides[0]!.id).deal.overrides).toHaveLength(0);
+  });
+
+  it("stored canonical objects without anchor / carry / legacy fields still parse (defaults)", () => {
+    const { deal } = withNrrOverride();
+    const old = JSON.parse(JSON.stringify(deal));
+    for (const o of old.overrides) {
+      delete o.anchor;
+      delete o.carry;
+      delete o.legacy;
+    }
+    const parsed = CanonicalDeal.parse(old);
+    expect(parsed.overrides[0]).toMatchObject({ anchor: null, carry: null, legacy: null });
+    // Without an anchor there is no guard: applied by id, as before.
+    expect(applyOverrides(parsed).metrics.find((m) => m.id === "MET-003")!.normalizedValue).toBe(92);
+  });
+});

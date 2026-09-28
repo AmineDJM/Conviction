@@ -2,8 +2,9 @@
 const REASON: Record<string, string> = {
   DECK_ANALYSIS: "Deck analysis",
   RESEARCH: "Research",
+  RESEARCH_REFRESH: "Stale data refresh",
   FOUNDER_CALL: "Founder call",
-  METRIC_CORRECTION: "Metric correction",
+  METRIC_CORRECTION: "Metric correction (legacy)",
   BENCHMARK_RECALC: "Benchmark recalculation",
   QUESTION_UPDATE: "Question update",
   STATUS_CHANGE: "Status change",
@@ -27,6 +28,11 @@ export const HISTORY_TYPE_TEXT: Record<string, string> = {
   REPORT_EXPORTED: "Report exported",
   OVERRIDE_ADDED: "Override added",
   OVERRIDE_REVERTED: "Override reverted",
+  OVERRIDES_CARRIED_OVER: "Overrides carried over",
+  DECK_VERSION_ADDED: "New deck version",
+  DOCUMENTS_ADDED: "Documents added",
+  COMPANY_MERGED: "Merged",
+  DUPLICATE_DISMISSED: "Different company confirmed",
 };
 
 export const RUN_KIND_TEXT: Record<string, string> = { DECK: "Deck analysis", FOUNDER_CALL: "Founder call", RESEARCH: "Research", RECALC: "Recalculation" };

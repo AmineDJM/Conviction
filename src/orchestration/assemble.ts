@@ -130,7 +130,8 @@ export function applyMetricsExtraction(c: CanonicalDeal, out: MetricsExtractionO
   const instances = out.metrics
     .map((o) => normalizeObservation(o, { asOf, nextId: metId, sourceIdForPage: () => src, claimIdForExcerpt: findClaimByExcerpt }))
     .filter((m): m is NonNullable<typeof m> => m !== null);
-  next.metrics = deriveMetrics([...next.metrics.filter((m) => m.calculationMethod === "USER_CORRECTED"), ...instances], metId);
+  // Analyst corrections are overrides (canonical.overrides), re-anchored after extraction — never metric copies.
+  next.metrics = deriveMetrics(instances, metId);
   return next;
 }
 
@@ -241,6 +242,11 @@ export interface ResearchContext {
 }
 
 export function applyResearch(c: CanonicalDeal, out: ResearchOutput, ctx: ResearchContext, asOf = new Date()): CanonicalDeal {
+  return applyResearchDetailed(c, out, ctx, asOf).deal;
+}
+
+/** applyResearch, also returning finding ref → claim id (the confirmed claim, or the claim created). */
+export function applyResearchDetailed(c: CanonicalDeal, out: ResearchOutput, ctx: ResearchContext, asOf = new Date()): { deal: CanonicalDeal; refMap: Map<string, string> } {
   const next = structuredClone(c);
   const srcId = seqIdFactory("SRC", next.sources.map((x) => x.id));
   const clmId = seqIdFactory("CLM", next.claims.map((x) => x.id));
@@ -396,7 +402,7 @@ export function applyResearch(c: CanonicalDeal, out: ResearchOutput, ctx: Resear
 
   const flags = out.suspectedInstructions.map((s) => ({ location: s.url, excerpt: s.excerpt }));
   next.analysis.securityFlags = dedupeFlags([...next.analysis.securityFlags, ...flags]);
-  return next;
+  return { deal: next, refMap };
 }
 
 export const NEGATIVE_FINDING = /\b(no|not any|could not|couldn't|unable to|did not|didn't)\b[^.]{0,60}\b(evidence|record|information|mention|trace|result|verif|find|found|locate|confirm)/i;

@@ -7,6 +7,8 @@ import { CanonicalDeal, upgradeCanonical } from "@/domain/canonical";
 import { DEFAULT_FUND_PROFILE, FundProfile } from "@/domain/fund";
 import type { DerivedAnalysis } from "@/engine/derive";
 import { applyOverrides } from "@/engine/overrides";
+import { upgradeLegacyCorrections } from "@/engine/override-carry";
+import { registrableDomain } from "@/engine/company-match";
 import { newId, normName, nowIso, slugify } from "./ids";
 import type { CostEntry } from "@/ai/cost";
 import { resolveStages, type VersionStage } from "@/domain/meetings";
@@ -102,8 +104,13 @@ export interface LoadedVersion {
   derived: DerivedAnalysis;
 }
 
+/**
+ * Stored rows are immutable; reading upgrades them to the current model: schema upgrades
+ * (upgradeCanonical) and legacy USER_CORRECTED metric instances represented as analyst
+ * overrides (same values, author, note and date — see engine/override-carry.ts).
+ */
 export function loadVersion(row: VersionRow): LoadedVersion {
-  return { row, canonical: upgradeCanonical(row.canonical), derived: row.derived as DerivedAnalysis };
+  return { row, canonical: upgradeLegacyCorrections(upgradeCanonical(row.canonical)).deal, derived: row.derived as DerivedAnalysis };
 }
 
 export function getCurrentVersion(company: CompanyRow, db: DB = getDb()): LoadedVersion | null {
@@ -234,6 +241,9 @@ function projection(c: CanonicalDeal, d: DerivedAnalysis, versionId: string, pre
     baseMoic: base?.grossMoic ?? null,
     analysisDepth: c.analysis.depth,
     analysisMode: c.analysis.mode,
+    // Identity projection for duplicate detection (engine/company-match.ts).
+    websiteDomain: registrableDomain(c.identity.website),
+    founderNames: [...new Set((c.founders.length ? c.founders : c.foundersFromDeck).map((f) => f.name).filter((n) => n.trim()))],
     ...(preliminary ? {} : { status: "READY" as const }),
     updatedAt: nowIso(),
   };
@@ -330,7 +340,20 @@ export function costSummary(workspaceId: string, db: DB = getDb()) {
 /* ------------------------------ Documents ------------------------------ */
 
 export function saveDocument(
-  v: { workspaceId: string; companyId: string; filename: string; mime: string; kind: typeof s.documents.$inferInsert.kind; sizeBytes: number; sha256: string; storagePath: string; pages: { pageNo: number; text: string }[] },
+  v: {
+    workspaceId: string;
+    companyId: string;
+    filename: string;
+    mime: string;
+    kind: typeof s.documents.$inferInsert.kind;
+    sizeBytes: number;
+    sha256: string;
+    storagePath: string;
+    pages: { pageNo: number; text: string }[];
+    /** Deck lineage (set once): this document is deck v{deckVersion} of the company, superseding `supersedesDocumentId`. */
+    deckVersion?: number | null;
+    supersedesDocumentId?: string | null;
+  },
   db: DB = getDb(),
 ) {
   const id = newId("doc");
@@ -348,6 +371,8 @@ export function saveDocument(
         storagePath: v.storagePath,
         pages: v.pages.length,
         textChars: v.pages.reduce((a, p) => a + p.text.length, 0),
+        deckVersion: v.deckVersion ?? null,
+        supersedesDocumentId: v.supersedesDocumentId ?? null,
         createdAt: nowIso(),
       })
       .run();
@@ -360,10 +385,53 @@ export function listDocuments(companyId: string, db: DB = getDb()) {
   return db.select().from(s.documents).where(eq(s.documents.companyId, companyId)).all();
 }
 
-/** Documents already ingested in this workspace with the given content hashes (re-upload detection). */
+/** Documents already ingested in this workspace with the given content hashes (re-upload detection). Documents of deleted or merged companies are excluded. */
 export function findDocumentsBySha(workspaceId: string, sha256s: string[], db: DB = getDb()) {
   if (!sha256s.length) return [];
-  return db.select().from(s.documents).where(and(eq(s.documents.workspaceId, workspaceId), inArray(s.documents.sha256, sha256s))).orderBy(desc(s.documents.createdAt)).all();
+  return db
+    .select({ doc: s.documents })
+    .from(s.documents)
+    .innerJoin(s.companies, eq(s.companies.id, s.documents.companyId))
+    .where(and(eq(s.documents.workspaceId, workspaceId), inArray(s.documents.sha256, sha256s), isNull(s.companies.deletedAt)))
+    .orderBy(desc(s.documents.createdAt))
+    .all()
+    .map((r) => r.doc);
+}
+
+/* ------------------------------ Company identity & merges ------------------------------ */
+
+/** Live companies of a workspace with their identity projection (duplicate detection). */
+export function listCompanyIdentities(workspaceId: string, db: DB = getDb()) {
+  return db
+    .select({
+      id: s.companies.id,
+      name: s.companies.name,
+      slug: s.companies.slug,
+      websiteDomain: s.companies.websiteDomain,
+      founderNames: s.companies.founderNames,
+      currentVersionId: s.companies.currentVersionId,
+      status: s.companies.status,
+      createdAt: s.companies.createdAt,
+      updatedAt: s.companies.updatedAt,
+    })
+    .from(s.companies)
+    .where(and(eq(s.companies.workspaceId, workspaceId), isNull(s.companies.deletedAt)))
+    .all();
+}
+
+/** The company a merged (soft-deleted) company now lives in, for redirects. */
+export function mergedTarget(workspaceId: string, idOrSlug: string, db: DB = getDb()): CompanyRow | undefined {
+  const row = db
+    .select({ mergedIntoId: s.companies.mergedIntoId })
+    .from(s.companies)
+    .where(and(eq(s.companies.workspaceId, workspaceId), sql`(${s.companies.id} = ${idOrSlug} or ${s.companies.slug} = ${idOrSlug})`, sql`${s.companies.mergedIntoId} is not null`))
+    .get();
+  return row?.mergedIntoId ? getCompany(workspaceId, row.mergedIntoId, db) : undefined;
+}
+
+/** Soft-deletes a company merged into another one. Its versions, documents and history are kept (audit); it leaves the pipeline. */
+export function markCompanyMerged(sourceId: string, targetId: string, db: DB = getDb()) {
+  db.update(s.companies).set({ mergedIntoId: targetId, deletedAt: nowIso(), updatedAt: nowIso() }).where(eq(s.companies.id, sourceId)).run();
 }
 
 export function getDocumentPages(documentId: string, db: DB = getDb()) {

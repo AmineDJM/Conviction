@@ -2,6 +2,7 @@
 import type { Claim, MetricInstance, Source } from "@/domain/canonical";
 import type { EvidenceLabel } from "@/domain/enums";
 import type { Tone } from "@/lib/format";
+import { isOverridden } from "@/engine/override-marks";
 
 export type EvidenceClaim = Claim & { label: EvidenceLabel };
 
@@ -75,7 +76,13 @@ export const HISTORY_TEXT: Record<Claim["history"][number]["change"], string> = 
   CORRECTED: "Corrected",
 };
 
-export const METHOD_TEXT: Record<MetricInstance["calculationMethod"], string> = { REPORTED: "Reported", DERIVED: "Derived", USER_CORRECTED: "User-corrected" };
+export const METHOD_TEXT: Record<MetricInstance["calculationMethod"], string> = { REPORTED: "Reported", DERIVED: "Derived", USER_CORRECTED: "Analyst-corrected (legacy)" };
+
+/** Method label of a metric as displayed: an analyst override reads as such whatever the underlying method. */
+export function methodText(m: Pick<MetricInstance, "calculationMethod" | "lineage" | "qualityFlags">): string {
+  if (m.calculationMethod !== "USER_CORRECTED" && isOverridden(m)) return m.calculationMethod === "REPORTED" ? "Reported · analyst override" : `${METHOD_TEXT[m.calculationMethod]} · analyst override`;
+  return METHOD_TEXT[m.calculationMethod];
+}
 
 export const STATE_TEXT: Record<MetricInstance["state"], string> = {
   OBSERVED: "Observed",

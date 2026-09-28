@@ -15,6 +15,11 @@ import { embed, stream, structured, type Effort } from "@/ai/openai";
 import { wrapUntrusted } from "@/ai/untrusted";
 import { BrainPlan, BRAIN_ANSWER, BRAIN_PLANNER, answerInstructions, plannerInstructions } from "@/ai/prompts/brain";
 import { getDefaultFund, recordCost, getCompany, getCurrentVersion, type LoadedVersion } from "@/server/repo";
+import { deckChangeLines, deckComparisonForVersion } from "@/server/deck-versions";
+import { applyOverrides } from "@/engine/overrides";
+
+/** Questions about how the pitch evolved between two decks (EN/FR). */
+export const DECK_CHANGE_QUESTION = /(since the (last|previous|prior|first) deck|(new|latest|previous|last|old|first|second) deck|deck v?\d|deck.{0,20}(chang|differ|compar)|(chang|differ|restat|compar).{0,40}deck|restat|stopped (talking|mentioning)|no longer (report|mention)|dernier deck|nouveau deck|ancien deck|pr[ée]c[ée]dent deck|deck pr[ée]c[ée]dent|entre les (deux )?decks|a chang[ée].{0,30}deck|ne parle plus)/i;
 import { getRegistry } from "@/engine/benchmarks";
 import { answerFact, detectFactQuestion, detectLanguage } from "./fast-path";
 import { detectCompute, economicsContext, runCompute } from "./compute";
@@ -209,7 +214,9 @@ export async function* askBrain(inp: AskInput): AsyncGenerator<BrainEvent> {
   const loadScope = () => {
     if (scopeVersion === undefined) {
       const row = scopeCompanyId ? getCompany(inp.workspaceId, scopeCompanyId) : undefined;
-      scopeVersion = row ? getCurrentVersion(row) : null;
+      const v = row ? getCurrentVersion(row) : null;
+      // The effective deal (raw extraction + analyst overrides): the same object every view renders and derive() scored.
+      scopeVersion = v ? { ...v, canonical: applyOverrides(v.canonical) } : null;
     }
     return scopeVersion;
   };
@@ -223,6 +230,9 @@ export async function* askBrain(inp: AskInput): AsyncGenerator<BrainEvent> {
       const [n, name, date] = homonymNote.split("|");
       a.text += lang === "fr" ? `\n\n_${n} dossiers portent le nom « ${name} » ; réponse sur le plus récent (mis à jour le ${date})._` : `\n\n_${n} dossiers are named “${name}”; answering on the most recent (updated ${date})._`;
     }
+    // Entity resolution: a former name / linked dossier is said explicitly, never silently substituted.
+    for (const al of mentions.aliases.filter((x) => x.companyId === scopeEntry.id))
+      a.text += lang === "fr" ? `\n\n_« ${al.mention} » renvoie à ${al.name} (${al.relation === "FORMER_NAME" ? "ancien nom" : "dossier lié"})._` : `\n\n_“${al.mention}” resolves to ${al.name} (${al.relation === "FORMER_NAME" ? "former name" : "linked dossier"})._`;
     yield { type: "citations", items: a.citations };
     yield { type: "delta", text: a.text };
     const messageId = newId("msg");
@@ -270,6 +280,17 @@ export async function* askBrain(inp: AskInput): AsyncGenerator<BrainEvent> {
       });
     } catch (e) {
       log.warn({ err: (e as Error).message }, "computation failed");
+    }
+  }
+  // Deck v2+: "what changed since the last deck" is computed from the two stored analyses and handed over as COMPUTED.
+  if (scopeEntry && DECK_CHANGE_QUESTION.test(inp.question) && loadScope()) {
+    const v = loadScope()!;
+    try {
+      const lines = deckChangeLines(deckComparisonForVersion(scopeCompanyId!, v.row.id), 14);
+      if (lines.length)
+        extraItems.push({ kind: "TABLE", title: `${scopeEntry.name} — what changed since the last deck`, text: lines.join("\n"), href: `/deals/${scopeEntry.slug}/history#deck`, label: "COMPUTED", companyId: scopeCompanyId });
+    } catch (e) {
+      log.warn({ err: (e as Error).message }, "deck comparison failed");
     }
   }
   const premortem = !!scopeEntry && ((PREMORTEM_QUESTION.test(inp.question) && IC_WORDS.test(inp.question)) || mentions.icMemberIds.length > 0);
@@ -323,6 +344,7 @@ export async function* askBrain(inp: AskInput): AsyncGenerator<BrainEvent> {
                   companyIds: mentions.companyIds,
                   people: mentions.people,
                   icMemberIds: mentions.icMemberIds,
+                  aliases: mentions.aliases.map((x) => `${x.mention} → ${x.name} (${x.relation === "FORMER_NAME" ? "former name" : "linked dossier"})`),
                 },
                 recentTurns: history.map((h) => `${h.role}: ${h.content.slice(0, 400)}`),
                 question: inp.question,
@@ -405,6 +427,8 @@ export async function* askBrain(inp: AskInput): AsyncGenerator<BrainEvent> {
   ];
 
   const items: ContextItem[] = [...extraItems];
+  if (mentions.aliases.length)
+    items.push({ kind: "GRAPH", title: "Name resolution (entity graph)", text: mentions.aliases.map((x) => `“${x.mention}” resolves to ${x.name} — ${x.relation === "FORMER_NAME" ? "former name" : "linked dossier"}: ${x.evidence.slice(0, 240)}`).join("\n"), href: null, label: "STRUCTURED", companyId: mentions.aliases[0]!.companyId });
   if (structuredItem) items.push(structuredItem);
   items.push(...packs);
   if (plan.needsFundBrain || plan.intent === "IC_PERSPECTIVE" || plan.intent === "FUND_STRATEGY" || plan.icMemberIds.length) items.push(...fundMemory(inp.workspaceId, plan.icMemberIds, true));

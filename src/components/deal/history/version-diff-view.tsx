@@ -172,7 +172,7 @@ export function VersionDiffView({ diff, slug }: { diff: VersionDiff; slug: strin
                       )}
                     </td>
                     <td className="border-t border-line px-3 py-2 text-[12.5px] text-ink-2">
-                      {m.kind === "ADDED" ? "New metric" : m.kind === "REMOVED" ? "No longer reported" : [m.from!.value !== m.to!.value && "value", m.from!.method !== m.to!.method && `${m.from!.method.toLowerCase().replace("_", "-")} → ${m.to!.method.toLowerCase().replace("_", "-")}`, m.from!.state !== m.to!.state && `${m.from!.state.toLowerCase()} → ${m.to!.state.toLowerCase()}`].filter(Boolean).join(" · ")}
+                      {m.kind === "ADDED" ? "New metric" : m.kind === "REMOVED" ? "No longer reported" : [m.from!.value !== m.to!.value && "value", m.from!.method !== m.to!.method && `${m.from!.method.toLowerCase().replace("_", "-")} → ${m.to!.method.toLowerCase().replace("_", "-")}`, !m.from!.corrected && m.to!.corrected && "analyst override", m.from!.corrected && !m.to!.corrected && "override removed", m.from!.state !== m.to!.state && `${m.from!.state.toLowerCase()} → ${m.to!.state.toLowerCase()}`].filter(Boolean).join(" · ")}
                     </td>
                   </tr>
                 ))}

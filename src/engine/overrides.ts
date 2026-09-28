@@ -13,12 +13,21 @@
  *
  * Idempotent: applying twice yields the same object (each override leaves a
  * marker carrying its id). Never mutates its input.
+ *
+ * Ids change when a company is re-analysed, so every override also stores a
+ * stable `anchor` (engine/override-anchors.ts); carry-over re-anchors it
+ * (engine/override-carry.ts). An override is applied only when its target still
+ * matches its anchor; an UNANCHORED override is kept and reported, never applied.
  */
 import { z } from "zod";
 import type { CanonicalDeal, MetricInstance } from "@/domain/canonical";
 import { Classification, Identity } from "@/domain/sections";
 import { VerificationStatus } from "@/domain/enums";
 import { deriveMetrics } from "./metrics/derive";
+import { OVERRIDE_FLAG, OVERRIDE_PROPAGATED_STEP, OVERRIDE_STEP, isOverridden } from "./override-marks";
+import { anchorFor, anchorHolds, describeAnchor } from "./override-anchors";
+
+export { OVERRIDE_FLAG, OVERRIDE_PROPAGATED_STEP, OVERRIDE_STEP, isOverridden };
 
 export type Override = CanonicalDeal["overrides"][number];
 export type OverrideTarget = Override["target"];
@@ -34,10 +43,6 @@ export const OVERRIDE_FIELDS: Record<OverrideTarget, readonly string[]> = {
 /** Refs for the singleton targets. */
 export const CLASSIFICATION_REF = "classification";
 export const ENTITY_REF = "identity";
-
-export const OVERRIDE_FLAG = "ANALYST_OVERRIDE";
-export const OVERRIDE_STEP = "OVERRIDE";
-export const OVERRIDE_PROPAGATED_STEP = "OVERRIDE_PROPAGATED";
 
 const marker = (id: string) => `[${id}]`;
 
@@ -182,9 +187,18 @@ export function resolveOverrides(deal: CanonicalDeal): OverrideResolution {
   let needsRederive = false;
 
   for (const o of list) {
+    if (o.carry?.status === "UNANCHORED") {
+      stale.push({ override: o, reason: o.carry.note });
+      continue;
+    }
     const rawValue = currentValue(deal, o.target, o.ref, o.field);
     if (rawValue === undefined || !OVERRIDE_FIELDS[o.target].includes(o.field)) {
       stale.push({ override: o, reason: `${o.target.toLowerCase()} ${o.ref}.${o.field} is not present in this version` });
+      continue;
+    }
+    // Never apply an override to a different target that happens to carry the same id.
+    if (o.anchor && !anchorHolds(deal, o.target, o.ref, o.anchor)) {
+      stale.push({ override: o, reason: `not applied: ${o.ref} no longer designates ${describeAnchor(o.anchor)}` });
       continue;
     }
     const tag = marker(o.id);
@@ -243,19 +257,20 @@ export function applyOverrides(deal: CanonicalDeal): CanonicalDeal {
   return resolveOverrides(deal).deal;
 }
 
-/** True when the metric's current value comes from an analyst override. */
-export function isOverridden(m: Pick<MetricInstance, "lineage" | "qualityFlags">): boolean {
-  return m.qualityFlags.some((f) => f.startsWith(OVERRIDE_FLAG)) || m.lineage.some((l) => l.step === OVERRIDE_STEP);
-}
-
-/** Appends an override (new canonical object; raw data untouched). */
-export function addOverride(deal: CanonicalDeal, o: Omit<Override, "id" | "from"> & { from: unknown }): { deal: CanonicalDeal; override: Override } {
+/**
+ * Appends an override (new canonical object; raw data untouched). The stable
+ * anchor of its target is computed from `deal` unless given.
+ */
+export function addOverride(
+  deal: CanonicalDeal,
+  o: Omit<Override, "id" | "from" | "anchor" | "carry" | "legacy"> & { from: unknown; anchor?: Override["anchor"] },
+): { deal: CanonicalDeal; override: Override } {
   let max = 0;
   for (const x of deal.overrides ?? []) {
     const n = /^OVR-(\d+)$/.exec(x.id);
     if (n) max = Math.max(max, Number(n[1]));
   }
-  const override: Override = { ...o, id: `OVR-${String(max + 1).padStart(3, "0")}` };
+  const override: Override = { ...o, id: `OVR-${String(max + 1).padStart(3, "0")}`, anchor: o.anchor ?? anchorFor(deal, o), carry: null, legacy: null };
   return { deal: { ...structuredClone(deal), overrides: [...(deal.overrides ?? []), override] }, override };
 }
 

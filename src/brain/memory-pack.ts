@@ -49,7 +49,14 @@ export interface MemoryPack {
   text: string;
 }
 
-export function buildMemoryPack(company: { id: string; slug: string }, versionId: string, c: CanonicalDeal, d: DerivedAnalysis): { pack: MemoryPack; tokens: number } {
+export function buildMemoryPack(
+  company: { id: string; slug: string },
+  versionId: string,
+  c: CanonicalDeal,
+  d: DerivedAnalysis,
+  /** deckChanges: "what changed since the last deck" lines (server/deck-versions.ts#deckChangeLines), code-computed. */
+  extras: { deckChanges?: string[] } = {},
+): { pack: MemoryPack; tokens: number } {
   const L: string[] = [];
   const base = d.returns.scenarios.find((s) => s.scenario === "BASE");
   L.push(`# ${c.identity.name} (/deals/${company.slug})`);
@@ -81,6 +88,12 @@ export function buildMemoryPack(company: { id: string; slug: string }, versionId
       `## Round: ${c.financing.instrument} · raise ${c.financing.raiseAmount?.rawText ?? "n/a"} · pre ${c.financing.preMoney?.rawText ?? "n/a"} · post ${c.financing.postMoney?.rawText ?? "n/a"} · cap ${c.financing.valuationCap?.rawText ?? "n/a"} · lead ${c.financing.leadInvestor ?? "n/a"} · investors ${c.financing.existingInvestors.join(", ") || "n/a"}`,
     );
   }
+  if (extras.deckChanges?.length) {
+    L.push(`## Since the last deck (computed from the stored analyses of both decks)`);
+    for (const x of extras.deckChanges) L.push(`- ${x}`);
+  }
+  const notApplied = (c.overrides ?? []).filter((o) => o.carry?.status === "UNANCHORED");
+  if (notApplied.length) L.push(`Analyst overrides NOT re-applied after re-analysis (kept for review, not used): ${notApplied.map((o) => `${o.id} ${o.carry!.note.replace(/^not re-applied: /, "")}`).join(" | ")}`);
   if (d.returns.modelable) {
     L.push(
       `Returns (gross, check ${fmtUsd(d.returns.inputs.checkUsd)}): ${d.returns.scenarios.map((s) => `${s.scenario} ${s.grossMoic?.toFixed(1) ?? "n/a"}x`).join(" · ")}; base exit ownership ${base?.exitOwnershipPct.toFixed(2)}%`,

@@ -52,6 +52,7 @@ import { registerRun, releaseRun, acquireSlot, releaseSlot, throwIfCancelled, Ca
 import * as repo from "@/server/repo";
 import { indexCompanyForBrain } from "@/brain/indexer";
 import { applyOverrides } from "@/engine/overrides";
+import { withCarriedOverrides, type CarryOverSource } from "@/engine/override-carry";
 import { logger } from "@/lib/log";
 
 export const PIPELINE_STEPS = [
@@ -97,8 +98,12 @@ export interface RunDeckAnalysisInput {
   userId: string | null;
   companyUrl?: string | null;
   budgetUsd?: number;
-  /** Human overrides carried over from the previous version (never lost on re-analysis). */
-  carryOver?: Pick<CanonicalDeal, "overrides"> | null;
+  /**
+   * Human overrides carried over from the previous version (never lost on re-analysis). Ids change between
+   * analyses, so they are re-anchored on the new record (engine/override-carry.ts); `source` is the analysis
+   * they were made on (anchors overrides stored before anchors existed).
+   */
+  carryOver?: CarryOverSource | null;
 }
 
 export function budgetFor(mode: AnalysisMode, requested?: number) {
@@ -189,7 +194,8 @@ async function execute(inp: RunDeckAnalysisInput, signal: AbortSignal): Promise<
     startedAt: new Date(t0).toISOString(),
     durationMs: null,
   };
-  if (inp.carryOver?.overrides?.length) deal.overrides = structuredClone(inp.carryOver.overrides);
+  // Only field overrides (classification, identity) can anchor before extraction; the rest are re-anchored after it.
+  deal = withCarriedOverrides(deal, inp.carryOver, new Date(t0).toISOString());
   const skipped: { step: string; reason: string }[] = [];
   const researchNotCompleted: string[] = [];
   let identified = false;
@@ -220,8 +226,9 @@ async function execute(inp: RunDeckAnalysisInput, signal: AbortSignal): Promise<
     const extraction: InputMessage[] = [{ role: "user", content: deckContent("extraction") }];
     step("INGEST", "DONE", `${docs.length} document(s), ${docs.reduce((a, d) => a + d.pages.length, 0)} pages`);
 
-    // Reserve the T1 calls and indexing up-front so T0 and research cannot starve them.
-    const t1Reserve = (maxOut: number) => reserve(worstCaseCost(PRIMARY_MODEL, T1_INPUT_CHARS, maxOut));
+    // Reserve the T1 calls and indexing up-front so optional research cannot starve them. Without research
+    // (fast screen) nothing optional competes, so T1 calls are authorized on their real size when they start.
+    const t1Reserve = (maxOut: number) => (inp.mode === "FAST_SCREEN" ? null : reserve(worstCaseCost(PRIMARY_MODEL, T1_INPUT_CHARS, maxOut)));
     const partIds = Object.keys(ANALYSIS_PARTS) as AnalysisPartId[];
     const resParts = partIds.map(() => t1Reserve(tokens.analysisPart));
     const resCore = t1Reserve(tokens.thesis);
@@ -380,6 +387,8 @@ async function execute(inp: RunDeckAnalysisInput, signal: AbortSignal): Promise<
     // Optional: a failed divergence pass leaves the factors on computed data only (reported, never invented).
     if (divergenceR.status === "fulfilled") deal = applyDivergence(deal, divergenceR.value.data);
     else skipped.push({ step: "DIVERGENCE", reason: errReason(divergenceR.reason) });
+    // Metrics and claims now exist: re-anchor the carried overrides on their new ids.
+    deal = withCarriedOverrides(deal, inp.carryOver, new Date(t0).toISOString());
     const t0Ok = forensicsR.status === "fulfilled" && latentR.status === "fulfilled";
     if (t0Ok) deal.analysis.completedSteps.push("FORENSICS");
     step("FORENSICS", t0Ok ? "DONE" : "FAILED", t0Ok ? `${deal.forensics?.visualElements.length ?? 0} visuals read, ${deal.forensics?.crossSlideInconsistencies.length ?? 0} cross-slide inconsistencies` : "Partial: " + skipped.filter((s) => s.step === "FORENSICS" || s.step === "LATENT").map((s) => s.reason).join("; "));
@@ -432,7 +441,7 @@ async function execute(inp: RunDeckAnalysisInput, signal: AbortSignal): Promise<
       ]).then(([m, n]) => ({ data: { ...m.data, ...n.data } })),
     );
     const [partsR, coreR, bodyR, challengeR, actionsR] = await Promise.all([Promise.allSettled(partCalls), coreC, thesisC, challengeC, actionsC]);
-    for (const r of [...resParts, resCore, resThesis, resChallenge, resActions, resActions2]) cost.release(r);
+    for (const r of [...resParts, resCore, resThesis, resChallenge, resActions, resActions2]) if (r) cost.release(r);
     // The bet = decision core + thesis body; both are required for a complete thesis.
     const thesisR: Settled<{ data: import("@/ai/prompts/decision").ThesisCoreOutput }> =
       coreR.ok && bodyR.ok ? { ok: true, value: { data: { ...coreR.value.data, ...bodyR.value.data } } } : { ok: false, error: !coreR.ok ? coreR.error : (bodyR as { ok: false; error: unknown }).error };

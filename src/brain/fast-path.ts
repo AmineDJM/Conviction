@@ -7,6 +7,7 @@
  */
 import type { CanonicalDeal, MetricInstance } from "@/domain/canonical";
 import { metricDef } from "@/engine/metrics/dictionary";
+import { isAnalystCorrected } from "@/engine/override-marks";
 import { metricValue, usd } from "@/lib/format";
 
 export type Lang = "fr" | "en";
@@ -129,7 +130,7 @@ const T = {
 
 function statusLabel(m: MetricInstance, lang: Lang): string {
   const fr = lang === "fr";
-  if (m.calculationMethod === "USER_CORRECTED") return fr ? "corrigé par un analyste" : "analyst-corrected";
+  if (isAnalystCorrected(m)) return fr ? "corrigé par un analyste" : "analyst-corrected";
   if (m.calculationMethod === "DERIVED") return fr ? "calcul" : "computed";
   switch (m.verification) {
     case "VERIFIED":

@@ -4,7 +4,7 @@ import { EXTRACT_METRICS, EXTRACT_CLAIMS, EXTRACT_PROFILE } from "./extract";
 import { DECK_FORENSICS } from "./forensics";
 import { LATENT_SIGNALS } from "./latent";
 import { DIVERGENCE_SIGNALS } from "./divergence";
-import { RESEARCH } from "./research";
+import { RESEARCH, RESEARCH_REFRESH } from "./research";
 import { INVESTMENT_ANALYSIS } from "./investment-analysis";
 import { DECISION_CORE, DECISION_THESIS, DECISION_CHALLENGE, DECISION_ACTIONS } from "./decision";
 import { FOUNDER_CALL_UPDATE } from "./founder-call";
@@ -22,6 +22,7 @@ export const PROMPT_VERSIONS = {
   [LATENT_SIGNALS.id]: LATENT_SIGNALS.version,
   [DIVERGENCE_SIGNALS.id]: DIVERGENCE_SIGNALS.version,
   [RESEARCH.id]: RESEARCH.version,
+  [RESEARCH_REFRESH.id]: RESEARCH_REFRESH.version,
   [INVESTMENT_ANALYSIS.id]: INVESTMENT_ANALYSIS.version,
   [DECISION_CORE.id]: DECISION_CORE.version,
   [DECISION_THESIS.id]: DECISION_THESIS.version,

@@ -11,7 +11,7 @@
  *   fund memory → fund profile, documented knowledge, IC members & observations
  *   history     → version and decision history
  */
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, like, sql } from "drizzle-orm";
 import { getDb, schema } from "@/db/client";
 import { getDefaultFund } from "@/server/repo";
 import { metricDef } from "@/engine/metrics/dictionary";
@@ -48,13 +48,97 @@ export function icMembers(workspaceId: string) {
   return getDb().select().from(s.icMembers).where(eq(s.icMembers.workspaceId, workspaceId)).all();
 }
 
-/** Deterministic pre-resolution: company names, founder names and IC members mentioned in the question. */
+export interface AliasHit {
+  /** The name as it appears in the question. */
+  mention: string;
+  /** Dossier the mention resolved to. */
+  companyId: string;
+  name: string;
+  relation: "FORMER_NAME" | "ALIAS_OF";
+  evidence: string;
+}
+
+interface DealEntity {
+  id: string;
+  companyId: string;
+  name: string;
+  aliases: string[];
+  attributes: Record<string, unknown> | null;
+}
+
+function dealEntities(workspaceId: string, live: Set<string>): DealEntity[] {
+  return getDb()
+    .select({ id: s.entities.id, companyId: s.entities.companyId, name: s.entities.name, aliases: s.entities.aliases, attributes: s.entities.attributes })
+    .from(s.entities)
+    .where(and(eq(s.entities.workspaceId, workspaceId), eq(s.entities.type, "COMPANY"), like(s.entities.resolutionKey, "company:%")))
+    .all()
+    .filter((e): e is DealEntity => !!e.companyId && live.has(e.companyId));
+}
+
+function aliasRelations(workspaceId: string, types: ("ALIAS_OF" | "POSSIBLY_SAME_AS")[]) {
+  return getDb()
+    .select({ from: s.relations.fromEntity, to: s.relations.toEntity, type: s.relations.type, note: s.relations.note })
+    .from(s.relations)
+    .where(and(eq(s.relations.workspaceId, workspaceId), inArray(s.relations.type, types)))
+    .all();
+}
+
+/**
+ * Deterministic pre-resolution: company names (incl. former names and alias-linked
+ * dossiers), founder names and IC members mentioned in the question.
+ * A renamed company is found by its former name; dossiers linked as ALIAS_OF
+ * resolve to the most recently updated one, said explicitly (`aliases`).
+ * POSSIBLY_SAME_AS links never resolve a mention.
+ */
 export function resolveMentions(workspaceId: string, question: string, cat: CatalogEntry[]) {
   const q = normName(question);
   const qWords = question.toLowerCase();
   const companyIds = new Set<string>();
   for (const c of cat) if (c.normName.length >= 3 && q.includes(c.normName)) companyIds.add(c.id);
-  // People → companies they founded.
+  const byId = new Map(cat.map((c) => [c.id, c]));
+  const aliases: AliasHit[] = [];
+
+  // Former names recorded on the deal-company entity.
+  const deals = dealEntities(workspaceId, new Set(byId.keys()));
+  for (const e of deals)
+    for (const a of e.aliases) {
+      const n = normName(a);
+      if (n.length < 3 || !q.includes(n)) continue;
+      const former = ((e.attributes?.formerNames as { name: string; evidence: string }[] | undefined) ?? []).find((f) => normName(f.name) === n);
+      // The alias is also the current name of another dossier: that dossier is kept too (ALIAS_OF below decides).
+      companyIds.add(e.companyId);
+      if (!aliases.some((x) => x.companyId === e.companyId && normName(x.mention) === n)) aliases.push({ mention: a, companyId: e.companyId, name: byId.get(e.companyId)?.name ?? e.name, relation: "FORMER_NAME", evidence: former?.evidence ?? "recorded former name" });
+    }
+
+  // ALIAS_OF groups collapse to the most recently updated dossier (catalog order = updatedAt desc).
+  if (companyIds.size) {
+    const entityCompany = new Map(deals.map((e) => [e.id, e.companyId]));
+    const parent = new Map<string, string>();
+    const find = (x: string): string => (parent.get(x) ?? x) === x ? x : find(parent.get(x)!);
+    const notes = new Map<string, string>();
+    for (const r of aliasRelations(workspaceId, ["ALIAS_OF"])) {
+      const a = entityCompany.get(r.from);
+      const b = entityCompany.get(r.to);
+      if (!a || !b) continue;
+      const [ra, rb] = [find(a), find(b)];
+      if (ra !== rb) parent.set(ra, rb);
+      notes.set(`${a}|${b}`, r.note ?? "");
+      notes.set(`${b}|${a}`, r.note ?? "");
+    }
+    const rank = new Map(cat.map((c, i) => [c.id, i]));
+    for (const id of [...companyIds]) {
+      const root = find(id);
+      const group = cat.filter((c) => find(c.id) === root).map((c) => c.id);
+      if (group.length < 2) continue;
+      const rep = [...group].sort((x, y) => (rank.get(x) ?? 1e9) - (rank.get(y) ?? 1e9))[0]!;
+      if (rep === id) continue;
+      companyIds.delete(id);
+      companyIds.add(rep);
+      aliases.push({ mention: byId.get(id)?.name ?? id, companyId: rep, name: byId.get(rep)?.name ?? rep, relation: "ALIAS_OF", evidence: notes.get(`${id}|${rep}`) || notes.get(`${rep}|${id}`) || "linked dossiers" });
+    }
+  }
+
+  // People → companies they founded. Homonyms stay separate entities, each shown with its own company.
   const people = getDb()
     .select({ id: s.entities.id, name: s.entities.name, normName: s.entities.normName })
     .from(s.entities)
@@ -64,20 +148,52 @@ export function resolveMentions(workspaceId: string, question: string, cat: Cata
     const last = p.name.split(/\s+/).pop()!.toLowerCase();
     return (p.normName.length >= 5 && q.includes(p.normName)) || (last.length >= 4 && new RegExp(`\\b${last}\\b`, "i").test(qWords));
   });
+  const personLabels: string[] = [];
   if (personHits.length) {
     const rels = getDb()
-      .select({ companyId: s.relations.companyId })
+      .select({ from: s.relations.fromEntity, companyId: s.relations.companyId })
       .from(s.relations)
       .where(and(inArray(s.relations.fromEntity, personHits.map((p) => p.id)), eq(s.relations.type, "FOUNDED")))
       .all();
-    for (const r of rels) if (r.companyId) companyIds.add(r.companyId);
+    for (const r of rels) if (r.companyId && byId.has(r.companyId)) companyIds.add(r.companyId);
+    const sameName = new Map<string, number>();
+    for (const p of personHits) sameName.set(p.normName, (sameName.get(p.normName) ?? 0) + 1);
+    for (const p of personHits) {
+      const cos = [...new Set(rels.filter((r) => r.from === p.id && r.companyId).map((r) => byId.get(r.companyId!)?.name).filter(Boolean))];
+      const homonym = (sameName.get(p.normName) ?? 0) > 1 ? " — a different person from the other(s) of that name (no shared profile)" : "";
+      personLabels.push(cos.length ? `${p.name} (${cos.join(", ")})${homonym}` : p.name);
+    }
   }
   const members = icMembers(workspaceId).filter((m) => {
     const last = m.name.split(/\s+/).pop()!.toLowerCase();
     return q.includes(m.normName) || (last.length >= 3 && new RegExp(`\\b${last}\\b`, "i").test(qWords));
   });
-  return { companyIds: [...companyIds], people: personHits.map((p) => p.name), icMemberIds: members.map((m) => m.id) };
+  return { companyIds: [...companyIds], people: [...new Set(personLabels)], icMemberIds: members.map((m) => m.id), aliases };
 }
+
+/** "Also known as / formerly" for a deal: former names stated about it and dossiers linked to it. */
+export function companyAliases(workspaceId: string, companyId: string) {
+  const cat = catalog(workspaceId);
+  const byId = new Map(cat.map((c) => [c.id, c]));
+  const deals = dealEntities(workspaceId, new Set(byId.keys()));
+  const self = deals.find((e) => e.companyId === companyId);
+  if (!self) return { formerNames: [] as { name: string; evidence: string }[], linked: [] as { companyId: string; slug: string; name: string; type: "ALIAS_OF" | "POSSIBLY_SAME_AS"; reasons: string }[] };
+  const formerNames = ((self.attributes?.formerNames as { name: string; evidence: string }[] | undefined) ?? []).slice(0, 5);
+  const entityCompany = new Map(deals.map((e) => [e.id, e.companyId]));
+  const linked = new Map<string, { companyId: string; slug: string; name: string; type: "ALIAS_OF" | "POSSIBLY_SAME_AS"; reasons: string }>();
+  for (const r of aliasRelations(workspaceId, ["ALIAS_OF", "POSSIBLY_SAME_AS"])) {
+    const other = r.from === self.id ? entityCompany.get(r.to) : r.to === self.id ? entityCompany.get(r.from) : undefined;
+    const c = other ? byId.get(other) : undefined;
+    if (!c || c.id === companyId) continue;
+    const type = r.type as "ALIAS_OF" | "POSSIBLY_SAME_AS";
+    const prev = linked.get(c.id);
+    // A strong link from either side wins over a possible one.
+    if (!prev || (prev.type === "POSSIBLY_SAME_AS" && type === "ALIAS_OF")) linked.set(c.id, { companyId: c.id, slug: c.slug, name: c.name, type, reasons: r.note ?? "" });
+  }
+  return { formerNames, linked: [...linked.values()] };
+}
+
+export type CompanyAliases = ReturnType<typeof companyAliases>;
 
 /* ------------------------------ Context items ------------------------------ */
 

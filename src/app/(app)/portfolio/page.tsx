@@ -156,7 +156,7 @@ export default async function PortfolioPage() {
                   <td className="num py-2 pr-3 text-right">{c.runs}</td>
                   <td className="num py-2 pr-3 text-right">${(c.avgUsd ?? 0).toFixed(3)}</td>
                   <td className="num py-2 pr-3 text-right">${(c.maxUsd ?? 0).toFixed(3)}</td>
-                  <td className="py-2 text-ink-3">{c.mode === "STANDARD" ? "target ≤ $0.25 · hard cap $0.50 (enforced in code)" : c.mode === "FAST_SCREEN" ? "hard cap $0.10" : "explicit cap $3"}</td>
+                  <td className="py-2 text-ink-3">{c.mode === "STANDARD" ? "target ≤ $0.25 · hard cap $0.50 (enforced in code)" : c.mode === "FAST_SCREEN" ? "target ≤ $0.08 · hard cap $0.15" : "explicit cap $3"}</td>
                 </tr>
               ))}
               <tr className="border-t border-line">

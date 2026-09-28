@@ -1,5 +1,7 @@
+import { integrationErrorMessage } from "@/lib/integration-errors";
 import Link from "next/link";
 import path from "node:path";
+import { headers } from "next/headers";
 import { requireSession } from "@/server/session";
 import { auditActions, listAudit, listMembers, ROLE_DESCRIPTION } from "@/server/members";
 import { backupDir, backupScheduleDescription, listBackups, offsiteDescription, RETENTION } from "@/server/backup";
@@ -17,7 +19,8 @@ import { DataPolicy } from "@/components/settings/data-policy";
 import { BackupPanel } from "@/components/settings/backup-panel";
 import { AccountForm } from "@/components/settings/account-form";
 import { IntegrationsPanel } from "@/components/settings/integrations-panel";
-import { connectorStatuses } from "@/server/connectors/meeting-connectors";
+import { appOrigin, connectorStatuses, isConnectorId, SPECS } from "@/server/connectors/meeting-connectors";
+import { viewerConnections } from "@/server/connectors/oauth";
 import { TRANSCRIBE_MODEL } from "@/ai/transcribe";
 
 export const metadata = { title: "Settings" };
@@ -25,7 +28,7 @@ export const dynamic = "force-dynamic";
 
 type Tab = "members" | "audit" | "data" | "integrations" | "account";
 
-export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ tab?: string; action?: string; user?: string; q?: string }> }) {
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ tab?: string; action?: string; user?: string; q?: string; integration?: string; integration_result?: string; integration_error?: string }> }) {
   const s = await requireSession();
   const sp = await searchParams;
   const isOwner = s.role === "OWNER";
@@ -67,7 +70,18 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           />
         )}
         {tab === "data" && <DataTab isOwner={isOwner} canAudit={canAudit} workspaceId={s.workspaceId} />}
-        {tab === "integrations" && <IntegrationsPanel connectors={connectorStatuses()} transcriptionModel={TRANSCRIBE_MODEL} />}
+        {tab === "integrations" && (
+          <IntegrationsPanel
+            connectors={connectorStatuses(process.env, { origin: appOrigin(await headers()), connection: viewerConnections(s.workspaceId, s.userId) })}
+            transcriptionModel={TRANSCRIBE_MODEL}
+            canConnect={s.role !== "VIEWER"}
+            flash={
+              isConnectorId(sp.integration) && (sp.integration_error || sp.integration_result === "connected")
+                ? { provider: sp.integration, ok: !sp.integration_error, message: sp.integration_error ? integrationErrorMessage(sp.integration_error, SPECS[sp.integration].name) : `${SPECS[sp.integration].name} connected.` }
+                : null
+            }
+          />
+        )}
         {tab === "account" && <AccountForm name={s.name} email={s.email} />}
       </div>
     </main>

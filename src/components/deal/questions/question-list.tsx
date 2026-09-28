@@ -6,6 +6,7 @@ import type { FounderQuestion } from "@/domain/canonical";
 import { Badge, Button, cx } from "@/components/ui";
 import { date, titleCase } from "@/lib/format";
 import { QUESTION_STATUS_TEXT, questionStatusTone } from "./labels";
+import { QuestionFeedback, type GivenFeedback } from "./question-feedback";
 
 
 const TIERS: { tier: FounderQuestion["tier"]; label: string; note: string }[] = [
@@ -14,7 +15,23 @@ const TIERS: { tier: FounderQuestion["tier"]; label: string; note: string }[] = 
   { tier: "OPTIONAL", label: "Optional", note: "Ask if time allows" },
 ];
 
-export function QuestionList({ questions, companyId, versionId, canWrite }: { questions: FounderQuestion[]; companyId: string; versionId: string; canWrite: boolean }) {
+export function QuestionList({
+  questions,
+  companyId,
+  versionId,
+  canWrite,
+  feedback = {},
+  meetingId = null,
+}: {
+  questions: FounderQuestion[];
+  companyId: string;
+  versionId: string;
+  canWrite: boolean;
+  /** The viewer's usefulness judgements, by question id. */
+  feedback?: Record<string, GivenFeedback>;
+  /** Latest processed founder meeting, if any: feedback on asked questions is then recorded against it. */
+  meetingId?: string | null;
+}) {
   if (!questions.length) return <p className="text-ink-3">No founder questions passed the decision test (each must change something depending on the answer).</p>;
   return (
     <div className="space-y-10">
@@ -33,7 +50,7 @@ export function QuestionList({ questions, companyId, versionId, canWrite }: { qu
             </div>
             <ol className="divide-y divide-line">
               {qs.map((q) => (
-                <QuestionItem key={q.id} q={q} companyId={companyId} versionId={versionId} canWrite={canWrite} />
+                <QuestionItem key={q.id} q={q} companyId={companyId} versionId={versionId} canWrite={canWrite} feedback={feedback[q.id] ?? null} meetingId={meetingId} />
               ))}
             </ol>
           </section>
@@ -43,7 +60,7 @@ export function QuestionList({ questions, companyId, versionId, canWrite }: { qu
   );
 }
 
-function QuestionItem({ q, companyId, versionId, canWrite }: { q: FounderQuestion; companyId: string; versionId: string; canWrite: boolean }) {
+function QuestionItem({ q, companyId, versionId, canWrite, feedback, meetingId }: { q: FounderQuestion; companyId: string; versionId: string; canWrite: boolean; feedback: GivenFeedback | null; meetingId: string | null }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [answer, setAnswer] = useState(q.answer ?? "");
@@ -171,6 +188,9 @@ function QuestionItem({ q, companyId, versionId, canWrite }: { q: FounderQuestio
               {error && <span className="text-[12px] text-risk">{error}</span>}
             </div>
           )}
+          <div className="mt-2.5">
+            <QuestionFeedback companyId={companyId} versionId={versionId} questionId={q.id} meetingId={q.status !== "OPEN" ? meetingId : null} initial={feedback} />
+          </div>
         </div>
       )}
     </li>

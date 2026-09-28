@@ -5,7 +5,8 @@ import type { MetricInstance } from "@/domain/canonical";
 import { Badge, cx } from "@/components/ui";
 import { metricValue } from "@/lib/format";
 import { PlainTh, SearchInput, SortTh, TableFrame, Toggle, useSort } from "./table-kit";
-import { METHOD_TEXT, STATE_TEXT, VERIFICATION_TEXT, stateTone, verificationTone, type MetricDefLite, type Selection } from "./labels";
+import { STATE_TEXT, VERIFICATION_TEXT, methodText, stateTone, verificationTone, type MetricDefLite, type Selection } from "./labels";
+import { isAnalystCorrected } from "@/engine/override-marks";
 
 type Key = "metric" | "normalized" | "period" | "state" | "verification" | "method";
 
@@ -116,7 +117,7 @@ export function MetricsTable({ metrics, defs, selectedId, onOpen }: { metrics: M
                     <Badge tone={verificationTone(m.verification)}>{VERIFICATION_TEXT[m.verification]}</Badge>
                   </td>
                   <td className="border-t border-line px-3 py-2 align-top">
-                    <span className={cx("text-[12.5px]", m.calculationMethod === "USER_CORRECTED" ? "font-medium text-accent-text" : "text-ink-2")}>{METHOD_TEXT[m.calculationMethod]}</span>
+                    <span className={cx("text-[12.5px]", isAnalystCorrected(m) ? "font-medium text-accent-text" : "text-ink-2")}>{methodText(m)}</span>
                     {m.derivation && (
                       <div className="max-w-[160px] truncate text-[11px] text-ink-3" title={m.derivation}>
                         {m.derivation}

@@ -2,6 +2,7 @@ import type { Claim, Founder } from "@/domain/canonical";
 import { loadDeal } from "@/server/deal";
 import { Badge, Bullets, Section, Td, Th, cx } from "@/components/ui";
 import { titleCase, type Tone } from "@/lib/format";
+import { contextFor, isPlaceholderOrg, resolveOrg } from "@/brain/entities";
 import { ClaimList, DimensionDetail, Prose, Quiet, TabMain, TableFrame, ratingLabel, ratingTone } from "@/components/deal/tabs/shared";
 
 const OBSERVABILITY: Record<string, { text: string; tone: Tone }> = {
@@ -16,6 +17,30 @@ const CAPABILITY_LABEL: Record<string, string> = {
 };
 
 const WORK_KIND: Record<string, string> = { CODE: "Code", PAPER: "Paper", PATENT: "Patent", TALK: "Talk", PRODUCT: "Product", WRITING: "Writing", OTHER: "Other" };
+
+/** Prior employers as resolved for the entity graph: aliases normalized, shared short names flagged, never guessed. */
+function PriorOrganizations({ orgs, background }: { orgs: string[]; background: string }) {
+  return (
+    <div className="mt-2 flex max-w-[680px] flex-wrap items-center gap-1.5 text-[12px]">
+      <span className="text-ink-3">Prior organizations:</span>
+      {orgs.map((raw) => {
+        if (isPlaceholderOrg(raw)) return <Badge key={raw} tone="unknown" title="A description, not a named organization — not linked to anything">{raw}</Badge>;
+        const r = resolveOrg(raw, contextFor(raw, [background]));
+        if (r.status === "AMBIGUOUS")
+          return (
+            <Badge key={raw} tone="warn" title={`Could be: ${r.candidates.join(" / ")}. ${r.evidence}`}>
+              {r.name} · ambiguous
+            </Badge>
+          );
+        return (
+          <Badge key={raw} tone="neutral" title={r.status === "RESOLVED" && r.name !== raw ? `Resolved from "${raw}"` : undefined}>
+            {r.name}
+          </Badge>
+        );
+      })}
+    </div>
+  );
+}
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
 
@@ -87,6 +112,7 @@ export default async function FoundersTab({ params }: { params: Promise<{ slug: 
                     <span className="font-medium text-ink-2">As stated in the deck:</span> {f.backgroundFromDeck}
                   </p>
                 )}
+                {f.priorOrganizations.length > 0 && <PriorOrganizations orgs={f.priorOrganizations} background={f.backgroundFromDeck} />}
               </div>
               <div className="space-y-4">
                 <div>

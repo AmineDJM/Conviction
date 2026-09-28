@@ -12,6 +12,7 @@ import { getDb, schema } from "@/db/client";
 import { deleteStoredFile } from "@/server/storage";
 import { invalidateVectors } from "@/brain/vectors";
 import { indexCompanyForBrain } from "@/brain/indexer";
+import { applyOverrides } from "@/engine/overrides";
 import { IcDecision, ExecutionStatus } from "@/domain/enums";
 import { refreshPatterns } from "@/server/fund-brain";
 
@@ -48,7 +49,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (parsed.data.icDecision) repo.addHistory({ workspaceId: s.workspaceId, companyId: company.id, type: "IC_DECISION", versionId: version.id, summary, userId: s.userId });
   if (parsed.data.executionStatus) repo.addHistory({ workspaceId: s.workspaceId, companyId: company.id, type: "EXECUTION_STATUS", versionId: version.id, summary, userId: s.userId });
   repo.audit(s.workspaceId, s.userId, "DECISION_RECORDED", company.id, summary);
-  await indexCompanyForBrain({ workspaceId: s.workspaceId, companyId: company.id, versionId: version.id, canonical, derived });
+  // The Fund Brain indexes the effective deal (raw extraction + analyst overrides), like every view.
+  await indexCompanyForBrain({ workspaceId: s.workspaceId, companyId: company.id, versionId: version.id, canonical: applyOverrides(canonical), derived });
   // Decision associations are part of the INFERRED fund memory.
   if (parsed.data.icDecision) refreshPatterns(s.workspaceId);
   return Response.json({ ok: true });

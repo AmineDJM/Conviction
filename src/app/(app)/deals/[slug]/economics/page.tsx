@@ -4,6 +4,7 @@ import { metricDef, type MetricDefinition } from "@/engine/metrics/dictionary";
 import { loadDeal } from "@/server/deal";
 import { Badge, Section, Td, Th, cx } from "@/components/ui";
 import { metricValue, titleCase } from "@/lib/format";
+import { isOverridden, isOverridePropagated } from "@/engine/override-marks";
 import { metricEvidence } from "@/components/deal/metric";
 import { CausalModelView } from "@/components/deal/causal-model";
 import { DimensionDetail, FlagList, Layers, Prose, Quiet, TabMain, TableFrame, instancesOf, periodText, primaryOf } from "@/components/deal/tabs/shared";
@@ -23,7 +24,8 @@ const ECONOMICS = [
 /** Inputs that the economics metrics are derived from — shown compactly for traceability. */
 const INPUTS = ["acv", "ltv", "cash_balance", "headcount", "magic_number", "arpu_monthly"];
 
-const METHOD_TEXT: Record<string, string> = { REPORTED: "Reported by company", DERIVED: "Derived by code", USER_CORRECTED: "Corrected by user" };
+const METHOD_TEXT: Record<string, string> = { REPORTED: "Reported by company", DERIVED: "Derived by code", USER_CORRECTED: "Analyst override (legacy correction)" };
+const methodLabel = (m: MetricInstance) => (isOverridden(m) ? "Analyst override" : isOverridePropagated(m) ? "Derived by code · overridden input" : (METHOD_TEXT[m.calculationMethod] ?? titleCase(m.calculationMethod)));
 
 /** Keyword stems used to read the company's own definition against each dictionary checklist item. */
 const TOPICS: [RegExp, RegExp][] = [
@@ -153,7 +155,7 @@ function MetricRow({ m, def, others, slug }: { m: MetricInstance; def: MetricDef
       <div className="space-y-3">
         <div>
           <div className="t-eyebrow mb-1">Calculation</div>
-          <div className="text-[12.5px] text-ink-2">{METHOD_TEXT[m.calculationMethod] ?? titleCase(m.calculationMethod)}</div>
+          <div className="text-[12.5px] text-ink-2">{methodLabel(m)}</div>
           {m.derivation && <code className="mt-1 inline-block rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-ink-2">{m.derivation}</code>}
         </div>
         <div>

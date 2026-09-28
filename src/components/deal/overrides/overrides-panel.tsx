@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Badge, Button } from "@/components/ui";
+import { Badge, Button, cx } from "@/components/ui";
 import { FINANCING_STAGES, GTM_MOTIONS, INDUSTRIES, OPERATIONAL_MATURITY, PRODUCT_TYPES, REVENUE_MODELS, TECHNOLOGIES, VERIFICATION_STATUSES } from "@/domain/enums";
 import { titleCase } from "@/lib/format";
 
@@ -18,7 +18,14 @@ export interface OverrideRow {
   by: string | null;
   at: string;
   propagatedTo: string[];
+  /** Why the override is not applied in this version (target not found after a re-analysis, …); null when applied. */
   stale: string | null;
+  /** Stable description of the target ("ARR · period 2025-12 · basis CURRENT"). */
+  target_label: string | null;
+  /** Carried over from an earlier analysis: where it landed, or why it could not be re-applied. */
+  carry: { status: "REANCHORED" | "UNANCHORED"; match: string | null; fromRef: string; note: string } | null;
+  /** Id of the legacy USER_CORRECTED instance this override was upgraded from. */
+  legacyCorrection: string | null;
 }
 
 export interface OverridesPanelProps {
@@ -75,6 +82,21 @@ export function OverridesPanel(p: OverridesPanelProps) {
 
   return (
     <div className="space-y-5">
+      {stale.length > 0 && (
+        <div className="rounded-lg border border-warn/30 bg-warn-soft/40 px-3 py-2 text-[12.5px]">
+          <div className="font-medium text-warn">
+            {stale.length} override{stale.length === 1 ? "" : "s"} not applied in this version
+          </div>
+          <ul className="mt-1 space-y-0.5 text-ink-2">
+            {stale.map((r) => (
+              <li key={r.id}>
+                <span className="font-mono text-[11px]">{r.id}</span> {r.target_label ?? `${r.ref}.${r.field}`} → {showValue(r.to)}: {r.stale!.replace(/^not re-applied: /, "")}
+              </li>
+            ))}
+          </ul>
+          <div className="mt-1 text-ink-3">Kept for review, never applied to another target. Re-create it on the right value, or remove it.</div>
+        </div>
+      )}
       {active.length === 0 && stale.length === 0 ? (
         <p className="text-[13px] text-ink-3">No analyst overrides. Every value shown is the company&apos;s or the engine&apos;s.</p>
       ) : (
@@ -88,8 +110,15 @@ export function OverridesPanel(p: OverridesPanelProps) {
                   <span className="font-medium text-ink">
                     {r.target === "METRIC" || r.target === "CLAIM" ? r.ref : titleCase(r.target)} · {r.target === "CLASSIFICATION" ? (CLASS_FIELDS[r.field]?.label ?? r.field) : r.target === "ENTITY" ? (ENTITY_FIELDS[r.field] ?? r.field) : r.field}
                   </span>
-                  {r.stale && <Badge tone="unknown">Not applied: {r.stale}</Badge>}
+                  {r.stale && <Badge tone="warn">Not applied</Badge>}
+                  {r.carry?.status === "REANCHORED" && r.carry.fromRef !== r.ref && (
+                    <Badge tone="neutral" title={r.carry.note}>
+                      Carried over: {r.carry.fromRef} → {r.ref}
+                    </Badge>
+                  )}
+                  {r.legacyCorrection && <Badge tone="neutral" title={`Upgraded from the legacy corrected instance ${r.legacyCorrection}`}>From “Correct this metric”</Badge>}
                 </div>
+                {r.target_label && <div className="text-[11.5px] text-ink-3">{r.target_label}</div>}
                 <div className="mt-0.5 text-ink-2">
                   {r.target === "METRIC" || r.target === "CLAIM" ? "Company / engine value" : "Extracted"} <b className="font-medium">{showValue(r.rawValue ?? r.from)}</b> · analyst override <b className="font-medium text-accent-text">{showValue(r.to)}</b>
                   {JSON.stringify(r.from) !== JSON.stringify(r.rawValue) && r.rawValue !== undefined && <span className="text-ink-3"> (replaced {showValue(r.from)})</span>}
@@ -98,11 +127,12 @@ export function OverridesPanel(p: OverridesPanelProps) {
                   “{r.reason}” — {r.by ?? "unknown"} · {r.at.slice(0, 10)}
                   {r.propagatedTo.length > 0 && <span> · recomputed {r.propagatedTo.join(", ")}</span>}
                 </div>
+                {r.carry && <div className={cx("text-[11.5px]", r.carry.status === "UNANCHORED" ? "text-warn" : "text-ink-3")}>{r.carry.note}</div>}
               </div>
               {p.canWrite && (
                 <div>
                   <Button size="sm" variant="ghost" onClick={() => revert(r.id)} disabled={busy !== null}>
-                    {busy === r.id ? "Reverting…" : "Revert"}
+                    {busy === r.id ? "Reverting…" : r.stale ? "Remove" : "Revert"}
                   </Button>
                 </div>
               )}

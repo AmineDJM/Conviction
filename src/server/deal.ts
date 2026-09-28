@@ -1,6 +1,6 @@
 import "server-only";
 import { cache } from "react";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { requireSession } from "./session";
 import * as repo from "./repo";
 import { getRegistry } from "@/engine/benchmarks";
@@ -10,7 +10,12 @@ import { applyOverrides } from "@/engine/overrides";
 export const loadDeal = cache(async (slug: string) => {
   const session = await requireSession();
   const company = repo.getCompany(session.workspaceId, decodeURIComponent(slug));
-  if (!company) notFound();
+  if (!company) {
+    // A dossier merged into another company (as a new deck version) redirects there.
+    const target = repo.mergedTarget(session.workspaceId, decodeURIComponent(slug));
+    if (target) redirect(`/deals/${target.slug}?merged=1`);
+    notFound();
+  }
   const stored = repo.getCurrentVersion(company);
   // Pages display the effective deal (raw extraction + analyst overrides) — the same object derive() scored.
   // `rawCanonical` keeps the untouched extraction for "company reported X · override Y". Display only: never persist it back.

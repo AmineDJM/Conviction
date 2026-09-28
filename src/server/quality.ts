@@ -10,7 +10,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { and, eq, isNull } from "drizzle-orm";
 import { getDb, schema, type DB } from "@/db/client";
+import type { CanonicalDeal } from "@/domain/canonical";
+import { resolveOverrides } from "@/engine/overrides";
 import { loadVersion } from "./repo";
+import { feedbackReport } from "./question-feedback";
 
 const s = schema;
 
@@ -47,9 +50,23 @@ export interface QualityReport {
     contradictionRate: Stat;
     integrityFindingsPerDeal: Stat;
     humanCorrectionRate: Stat;
+    /** Classification / identity / claim overrides in force per deal (not metric corrections). */
+    otherOverridesPerDeal: Stat;
     webCitationRetrievedRate: Stat;
     verifiedClaimsWithIndependentSource: Stat;
     securityFlaggedDeals: Stat;
+  };
+  feedback: {
+    usefulQuestionRate: Stat;
+    usefulAfterMeetingRate: Stat;
+    alreadyKnownRate: Stat;
+    meetingAnsweredRate: Stat;
+    analysisAnyValue: Stat;
+    analysisBetterQuestions: Stat;
+    analysisImportantRisks: Stat;
+    analysisMissingEvidence: Stat;
+    analysisMarketInsight: Stat;
+    minutesSavedMedian: Stat;
   };
   evals: {
     file: string | null;
@@ -59,6 +76,10 @@ export interface QualityReport {
     warnings: number;
     spentUsd: number | null;
     extractionAccuracy: Stat;
+    extractionPerDeck: { deck: string; archetype: string | null; ok: number; total: number }[];
+    trapDetection: Stat;
+    retrieval: { hit5: Stat; precision5: Stat; recall5: Stat; recall10: Stat; mrr: Stat; unscopedHit10: Stat; chatPathHit5: Stat } | null;
+    citationSupport: (Stat & { ci95: { low: number; high: number } | null; judged: Stat; byOrigin: { origin: string; value: number | null; n: number }[] }) | null;
     suites: { suite: string; passed: number; total: number }[];
     failures: { suite: string; check: string; detail: string }[];
   };
@@ -95,11 +116,97 @@ export function latestEvalFile(dir = path.join(process.cwd(), "evals", "results"
 
 type EvalResult = { suite: string; check: string; pass: boolean; detail: string; hard: boolean };
 
+function evalMeasurements(m: any): Pick<QualityReport["evals"], "extractionPerDeck" | "trapDetection" | "retrieval" | "citationSupport"> & { extraction: Stat | null } {
+  const num = (x: unknown) => (typeof x === "number" && Number.isFinite(x) ? x : null);
+  const ex = m?.extraction;
+  const it = m?.integrity;
+  const rt = m?.retrieval?.modes;
+  const cs = m?.citationSupport;
+  const retrievalStat = (mode: any, key: string, basis: string): Stat => ({ value: num(mode?.[key]), n: (mode?.queries ?? 0) - (mode?.unanswerable?.length ?? 0), basis });
+  return {
+    extraction: ex && num(ex.total) ? { value: num(ex.accuracy), n: ex.total, basis: `primary metrics within 1% of ground truth over ${ex.decks} fictional decks` } : null,
+    extractionPerDeck: Array.isArray(ex?.perDeck) ? ex.perDeck.map((d: any) => ({ deck: String(d.deck), archetype: d.archetype ?? null, ok: Number(d.ok) || 0, total: Number(d.total) || 0 })) : [],
+    trapDetection: { value: it ? num(it.detectionRate) : null, n: it ? Number(it.expected) || 0 : 0, basis: it ? `deliberate deck traps detected by the integrity engine (${it.decks} decks)` : "deliberate deck traps detected by the integrity engine" },
+    retrieval: rt?.hybridScoped
+      ? {
+          hit5: retrievalStat(rt.hybridScoped, "hit5", "labelled questions with a relevant passage in the top 5 (hybrid, company-scoped)"),
+          precision5: retrievalStat(rt.hybridScoped, "p5", "share of the top 5 passages that are relevant (hybrid, company-scoped)"),
+          recall5: retrievalStat(rt.hybridScoped, "r5", "share of all relevant passages found in the top 5"),
+          recall10: retrievalStat(rt.hybridScoped, "r10", "share of all relevant passages found in the top 10"),
+          mrr: retrievalStat(rt.hybridScoped, "mrr", "mean reciprocal rank of the first relevant passage"),
+          unscopedHit10: retrievalStat(rt.hybridUnscoped, "hit10", "relevant passage in the top 10 when searching the whole fund"),
+          chatPathHit5: retrievalStat(rt.chatSingleDeal, "hit5", "single-deal chat path (lexical only) — relevant passage in the top 5"),
+        }
+      : null,
+    citationSupport: cs?.overall
+      ? {
+          value: num(cs.overall.supportRate),
+          n: Number(cs.overall.checkable) || 0,
+          basis: "sampled citations whose cited text supports the statement (LLM judge, verbatim excerpt checked by code)",
+          ci95: cs.overall.ci95 ?? null,
+          judged: { value: num(cs.overall.judgedSupportRate), n: Number(cs.overall.checkable) || 0, basis: "SUPPORTS as judged, before the verbatim-excerpt check" },
+          byOrigin: Object.entries(cs.byOrigin ?? {}).map(([origin, v]: [string, any]) => ({ origin, value: num(v?.supportRate), n: Number(v?.checkable) || 0 })),
+        }
+      : null,
+  };
+}
+
+/**
+ * Human correction counts for one version. The correction path is analyst
+ * overrides (engine/overrides.ts); older versions may also carry USER_CORRECTED
+ * metric copies. Counted once per corrected metric key:
+ *   - only overrides actually in force (resolveOverrides → applied): stale or
+ *     unanchored overrides and reverted ones (removed from the list) do not count;
+ *   - stacked overrides on the same metric count once;
+ *   - denominator = extracted (non-derived) primary observed metrics, the ones a
+ *     human can correct; classification / identity / claim overrides are counted
+ *     separately (`otherOverrides`) so the rate stays a metric rate (≤ 100%).
+ */
+export function correctionStats(c: CanonicalDeal): { primary: number; corrected: number; otherOverrides: number; staleOverrides: number } {
+  const primary = c.metrics.filter((m) => m.isPrimary && m.state === "OBSERVED" && m.calculationMethod !== "DERIVED");
+  const primaryKeys = new Set(primary.map((m) => m.metricKey));
+  const keyOf = new Map(c.metrics.map((m) => [m.id, m.metricKey]));
+  const corrected = new Set(primary.filter((m) => m.calculationMethod === "USER_CORRECTED").map((m) => m.metricKey));
+  let applied: ReturnType<typeof resolveOverrides>["applied"] = [];
+  let stale = 0;
+  try {
+    const r = resolveOverrides(c);
+    applied = r.applied;
+    stale = r.stale.length;
+  } catch {
+    /* malformed legacy overrides: counted as none rather than guessed */
+  }
+  const other = new Set<string>();
+  for (const a of applied) {
+    const o = a.override;
+    if (o.target === "METRIC") {
+      const k = keyOf.get(o.ref);
+      if (k && primaryKeys.has(k)) corrected.add(k);
+    } else other.add(`${o.target}|${o.ref}|${o.field}`);
+  }
+  return { primary: primaryKeys.size, corrected: corrected.size, otherOverrides: other.size, staleOverrides: stale };
+}
+
 export function evalSummary(file: string | null): QualityReport["evals"] {
-  const empty: QualityReport["evals"] = { file: null, at: null, passed: 0, failed: 0, warnings: 0, spentUsd: null, extractionAccuracy: { value: null, n: 0, basis: "metric accuracy checks on fictional ground-truth decks" }, suites: [], failures: [] };
+  const empty: QualityReport["evals"] = {
+    file: null,
+    at: null,
+    passed: 0,
+    failed: 0,
+    warnings: 0,
+    spentUsd: null,
+    extractionAccuracy: { value: null, n: 0, basis: "metric accuracy checks on fictional ground-truth decks" },
+    extractionPerDeck: [],
+    trapDetection: { value: null, n: 0, basis: "deliberate deck traps detected by the integrity engine" },
+    retrieval: null,
+    citationSupport: null,
+    suites: [],
+    failures: [],
+  };
   if (!file) return empty;
   try {
-    const j = JSON.parse(fs.readFileSync(file, "utf8")) as { at: string; spentUsd: number; results: EvalResult[] };
+    const j = JSON.parse(fs.readFileSync(file, "utf8")) as { at: string; spentUsd: number; results: EvalResult[]; measurements?: unknown };
+    const m = evalMeasurements(j.measurements);
     const suites = new Map<string, { passed: number; total: number }>();
     for (const r of j.results) {
       const x = suites.get(r.suite) ?? { passed: 0, total: 0 };
@@ -124,7 +231,11 @@ export function evalSummary(file: string | null): QualityReport["evals"] {
       failed: j.results.filter((r) => !r.pass && r.hard).length,
       warnings: j.results.filter((r) => !r.pass && !r.hard).length,
       spentUsd: j.spentUsd ?? null,
-      extractionAccuracy: rate(ok, total, "primary metrics matching ground truth within 1% on fictional decks"),
+      extractionAccuracy: m.extraction ?? rate(ok, total, "primary metrics matching ground truth within 1% on fictional decks"),
+      extractionPerDeck: m.extractionPerDeck,
+      trapDetection: m.trapDetection,
+      retrieval: m.retrieval,
+      citationSupport: m.citationSupport,
       suites: [...suites.entries()].map(([suite, v]) => ({ suite, ...v })),
       failures: j.results.filter((r) => !r.pass).map((r) => ({ suite: r.suite, check: r.check, detail: r.detail })),
     };
@@ -165,6 +276,8 @@ export function qualityReport(workspaceId: string, db: DB = getDb()): QualityRep
   let primary = 0;
   let verified = 0;
   let corrected = 0;
+  let correctable = 0;
+  let otherOverrides = 0;
   let gaps = 0;
   let openGaps = 0;
   let material = 0;
@@ -186,9 +299,11 @@ export function qualityReport(workspaceId: string, db: DB = getDb()): QualityRep
     for (const m of c.metrics.filter((x) => x.isPrimary && x.state === "OBSERVED")) {
       primary++;
       if (m.verification === "VERIFIED" || m.verification === "PARTIALLY_VERIFIED") verified++;
-      if (m.calculationMethod === "USER_CORRECTED") corrected++;
     }
-    corrected += c.overrides?.length ?? 0;
+    const cs = correctionStats(c);
+    correctable += cs.primary;
+    corrected += cs.corrected;
+    otherOverrides += cs.otherOverrides;
     gaps += c.informationGaps.length;
     openGaps += c.informationGaps.filter((g) => g.status !== "RESOLVED").length;
     for (const cl of c.claims.filter((x) => x.material)) {
@@ -239,11 +354,32 @@ export function qualityReport(workspaceId: string, db: DB = getDb()): QualityRep
       unknownRate: rate(openGaps, gaps, "information gaps still open ÷ all gaps identified"),
       contradictionRate: rate(contradicted, material, "material claims contradicted by evidence"),
       integrityFindingsPerDeal: { value: rows.length ? findings / rows.length : null, n: rows.length, basis: "deterministic integrity findings per current version" },
-      humanCorrectionRate: rate(corrected, primary, "analyst corrections/overrides ÷ primary metrics"),
+      humanCorrectionRate: rate(corrected, correctable, "extracted primary metrics an analyst corrected (overrides in force, counted once per metric) ÷ extracted primary metrics"),
+      otherOverridesPerDeal: { value: rows.length ? otherOverrides / rows.length : null, n: rows.length, basis: "classification, identity and claim overrides in force per current version" },
       webCitationRetrievedRate: rate(retrieved, web, "web sources actually returned by the search tool"),
       verifiedClaimsWithIndependentSource: rate(verifiedIndependent, verifiedClaims, "VERIFIED claims backed by a retrieved non-company source"),
       securityFlaggedDeals: rate(flaggedDeals, rows.length, "deals whose materials contained instruction-like text"),
     },
+    feedback: feedbackStats(workspaceId, db),
     evals: evalSummary(latestEvalFile()),
+  };
+}
+
+function feedbackStats(workspaceId: string, db: DB): QualityReport["feedback"] {
+  const f = feedbackReport(workspaceId, db);
+  const q = f.questions;
+  const a = f.analyses;
+  const share = (v: number | null, basis: string): Stat => ({ value: v, n: a.n, basis });
+  return {
+    usefulQuestionRate: { value: q.usefulRate, n: q.n, basis: "founder questions judged useful ÷ questions judged (already known counts as not useful)" },
+    usefulAfterMeetingRate: { value: f.questionsAfterMeeting.usefulRate, n: f.questionsAfterMeeting.n, basis: "same, judged after a founder meeting" },
+    alreadyKnownRate: { value: q.n ? q.alreadyKnown / q.n : null, n: q.n, basis: "questions whose answer the team already knew" },
+    meetingAnsweredRate: { value: f.meetingSignal.answeredRate, n: f.meetingSignal.asked, basis: `open pre-meeting questions the meeting answered (automatic, ${f.meetingSignal.meetings} meeting(s); answered ≠ useful)` },
+    analysisAnyValue: share(a.anyValue, "analyses where the reviewer ticked at least one kind of value"),
+    analysisBetterQuestions: share(a.betterQuestions, "analyses that surfaced better questions"),
+    analysisImportantRisks: share(a.importantRisks, "analyses that surfaced important risks"),
+    analysisMissingEvidence: share(a.missingEvidence, "analyses that showed missing evidence"),
+    analysisMarketInsight: share(a.marketInsight, "analyses that gave useful market insight"),
+    minutesSavedMedian: { value: a.minutesSavedMedian, n: a.minutesSavedN, basis: "preparation minutes saved per analysis, as stated by the reviewer (median)" },
   };
 }

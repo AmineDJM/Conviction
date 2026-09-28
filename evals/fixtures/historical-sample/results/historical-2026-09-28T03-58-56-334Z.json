@@ -1,0 +1,180 @@
+{
+  "at": "2026-09-28T03:58:56.334Z",
+  "folder": "/home/user/Conviction/evals/fixtures/historical-sample",
+  "mode": "FAST_SCREEN (no web research)",
+  "asOf": "metrics re-normalised and engine reference date set to each deck date; claim freshness labels are from extraction time",
+  "probe": true,
+  "fastScreenCapOverrideUsd": 0.25,
+  "spentUsd": 0.19633619999999996,
+  "csvErrors": [],
+  "rows": [
+    {
+      "company": "Tallowbrook",
+      "deckDate": "2021-06",
+      "deckFile": "tallowbrook-2021-06.pdf",
+      "outcome": "SHUT_DOWN",
+      "outcomeClass": "NEGATIVE",
+      "outcomeDate": "2023-04",
+      "source": "FICTIONAL sample outcome (no real company) — for harness testing only",
+      "status": "ANALYSED",
+      "recommendation": "NEEDS_FOUNDER_CALL",
+      "stance": "DILIGENCE",
+      "recommendationNowVsAsOf": "same",
+      "oqi": 40.5,
+      "powerLaw": 11,
+      "baseMoic": 4.182449494949337,
+      "staleMetricsAtAsOf": 0,
+      "runCostUsd": 0.060983680000000005,
+      "probe": {
+        "recognizes": false,
+        "whatYouKnow": "",
+        "statedOutcome": null
+      },
+      "contaminated": false,
+      "contaminationReasons": []
+    },
+    {
+      "company": "Quillfern",
+      "deckDate": "2022-02",
+      "deckFile": "quillfern-2022-02.pdf",
+      "outcome": "RAISED_UP_ROUND",
+      "outcomeClass": "POSITIVE",
+      "outcomeDate": "2024-01",
+      "source": "FICTIONAL sample outcome (no real company) — for harness testing only",
+      "status": "ANALYSED",
+      "recommendation": "NEEDS_FOUNDER_CALL",
+      "stance": "DILIGENCE",
+      "recommendationNowVsAsOf": "same",
+      "oqi": 47.6,
+      "powerLaw": 29.6,
+      "baseMoic": 1.2707070707070707,
+      "staleMetricsAtAsOf": 0,
+      "runCostUsd": 0.06760213999999999,
+      "probe": {
+        "recognizes": false,
+        "whatYouKnow": "",
+        "statedOutcome": null
+      },
+      "contaminated": false,
+      "contaminationReasons": []
+    },
+    {
+      "company": "Mistlecourt",
+      "deckDate": "2021-11",
+      "deckFile": "mistlecourt-2021-11.pdf",
+      "outcome": "ACQUIHIRE",
+      "outcomeClass": "NEUTRAL",
+      "outcomeDate": "2023-09",
+      "source": "FICTIONAL sample outcome (no real company) — for harness testing only",
+      "status": "ANALYSED",
+      "recommendation": "NEEDS_FOUNDER_CALL",
+      "stance": "DILIGENCE",
+      "recommendationNowVsAsOf": "same",
+      "oqi": 36.5,
+      "powerLaw": 67.1,
+      "baseMoic": 2.9207516339869293,
+      "staleMetricsAtAsOf": 0,
+      "runCostUsd": 0.06754037999999998,
+      "probe": {
+        "recognizes": false,
+        "whatYouKnow": "",
+        "statedOutcome": null
+      },
+      "contaminated": false,
+      "contaminationReasons": []
+    }
+  ],
+  "calibration": {
+    "all": {
+      "n": 3,
+      "confusion": {
+        "ADVANCE": {
+          "POSITIVE": 0,
+          "NEUTRAL": 0,
+          "NEGATIVE": 0,
+          "UNKNOWN": 0
+        },
+        "DILIGENCE": {
+          "POSITIVE": 1,
+          "NEUTRAL": 1,
+          "NEGATIVE": 1,
+          "UNKNOWN": 0
+        },
+        "PASS": {
+          "POSITIVE": 0,
+          "NEUTRAL": 0,
+          "NEGATIVE": 0,
+          "UNKNOWN": 0
+        }
+      },
+      "positiveRateByStance": {
+        "ADVANCE": null,
+        "DILIGENCE": 0.3333333333333333,
+        "PASS": null
+      },
+      "advanceRateByOutcome": {
+        "POSITIVE": 0,
+        "NEUTRAL": 0,
+        "NEGATIVE": 0,
+        "UNKNOWN": null
+      },
+      "oqiByOutcome": {
+        "POSITIVE": 47.6,
+        "NEUTRAL": 36.5,
+        "NEGATIVE": 40.5,
+        "UNKNOWN": null
+      },
+      "oqiAuc": 1,
+      "baseRatePositive": 0.3333333333333333,
+      "warning": "n = 3: descriptive only — far too few companies for any statistical claim about calibration."
+    },
+    "uncontaminated": {
+      "n": 3,
+      "confusion": {
+        "ADVANCE": {
+          "POSITIVE": 0,
+          "NEUTRAL": 0,
+          "NEGATIVE": 0,
+          "UNKNOWN": 0
+        },
+        "DILIGENCE": {
+          "POSITIVE": 1,
+          "NEUTRAL": 1,
+          "NEGATIVE": 1,
+          "UNKNOWN": 0
+        },
+        "PASS": {
+          "POSITIVE": 0,
+          "NEUTRAL": 0,
+          "NEGATIVE": 0,
+          "UNKNOWN": 0
+        }
+      },
+      "positiveRateByStance": {
+        "ADVANCE": null,
+        "DILIGENCE": 0.3333333333333333,
+        "PASS": null
+      },
+      "advanceRateByOutcome": {
+        "POSITIVE": 0,
+        "NEUTRAL": 0,
+        "NEGATIVE": 0,
+        "UNKNOWN": null
+      },
+      "oqiByOutcome": {
+        "POSITIVE": 47.6,
+        "NEUTRAL": 36.5,
+        "NEGATIVE": 40.5,
+        "UNKNOWN": null
+      },
+      "oqiAuc": 1,
+      "baseRatePositive": 0.3333333333333333,
+      "warning": "n = 3: descriptive only — far too few companies for any statistical claim about calibration."
+    }
+  },
+  "caveats": [
+    "Hindsight contamination: the model may know famous companies' outcomes. Contaminated rows are flagged and calibration is also reported without them.",
+    "A later valuation or round is not proof of investment quality; outcomes are coarse classes.",
+    "Small samples: descriptive only (see calibration.warning)."
+  ]
+}

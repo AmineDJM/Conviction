@@ -1,5 +1,6 @@
 import type { CanonicalDeal } from "@/domain/canonical";
 import { resolveOverrides } from "@/engine/overrides";
+import { describeAnchor } from "@/engine/override-anchors";
 import type { OverrideRow } from "./overrides-panel";
 
 /** Rows for the overrides panel / lineage drawer, from the RAW canonical object. */
@@ -20,5 +21,8 @@ export function overrideRows(raw: CanonicalDeal): OverrideRow[] {
     at: o.at,
     propagatedTo: applied.get(o.id)?.propagatedTo ?? [],
     stale: stale.get(o.id) ?? null,
+    target_label: o.anchor ? describeAnchor(o.anchor) : null,
+    carry: o.carry ? { status: o.carry.status, match: o.carry.match, fromRef: o.carry.fromRef, note: o.carry.note } : null,
+    legacyCorrection: o.legacy ? o.legacy.correctedInstanceId : null,
   }));
 }

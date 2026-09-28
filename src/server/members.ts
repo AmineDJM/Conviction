@@ -12,6 +12,7 @@ import { getDb, schema as s, type DB } from "@/db/client";
 import { hashPassword, verifyPassword } from "./auth";
 import { newId, nowIso } from "./ids";
 import { audit } from "./repo";
+import { prepareRevokeForMember } from "./connectors/oauth";
 
 export const ROLES = ["OWNER", "PARTNER", "ANALYST", "VIEWER"] as const;
 export const Role = z.enum(ROLES);
@@ -116,6 +117,8 @@ export function removeMember(workspaceId: string, actorUserId: string, userId: s
   if (!m) throw new MemberError("Not a member of this workspace", 404);
   if (m.role === "OWNER" && ownerCount(workspaceId, db) <= 1) throw new MemberError("The last owner cannot be removed", 409);
   const user = db.select().from(s.users).where(eq(s.users.id, userId)).get();
+  // Integration grants are withdrawn at the provider too, not only deleted locally by the cascade.
+  const revokeIntegrations = prepareRevokeForMember(workspaceId, userId, db);
   db.transaction((tx) => {
     tx.delete(s.sessions).where(and(eq(s.sessions.userId, userId), eq(s.sessions.workspaceId, workspaceId))).run();
     tx.delete(s.memberships).where(and(eq(s.memberships.workspaceId, workspaceId), eq(s.memberships.userId, userId))).run();
@@ -124,6 +127,7 @@ export function removeMember(workspaceId: string, actorUserId: string, userId: s
     if (!other) tx.delete(s.users).where(eq(s.users.id, userId)).run();
   });
   audit(workspaceId, actorUserId, "MEMBER_REMOVED", userId, user ? `${user.email} (${m.role})` : m.role, db);
+  void revokeIntegrations().catch(() => undefined);
 }
 
 /** Issue a new one-time temporary password and sign the member out everywhere. */

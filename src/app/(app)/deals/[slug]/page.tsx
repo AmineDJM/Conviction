@@ -9,16 +9,25 @@ import { RichText } from "@/components/deal/rich-text";
 import { DecisionCore, RealityCheck } from "@/components/deal/decision-core";
 import { DecisionFocusPanel } from "@/components/deal/decision-focus";
 import { IntegrityGlance } from "@/components/deal/integrity/glance";
+import { overrideRows } from "@/components/deal/overrides/rows";
+import { deckComparison } from "@/server/deck-versions";
+import { DeckChanges } from "@/components/deal/deck/deck-changes";
 
 export default async function DealOverview({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { company, version } = await loadDeal(slug);
+  const { company, version, run } = await loadDeal(slug);
   // Pages render alongside the layout; while the first analysis is running there is no version yet.
   if (!version) return null;
   const c = version!.canonical;
   const d = version!.derived;
   const metrics = coreMetrics(c.metrics, 10);
   const rec = d.recommendation;
+  const ovr = overrideRows(version.rawCanonical);
+  const activeOvr = ovr.filter((o) => !o.stale);
+  const staleOvr = ovr.filter((o) => o.stale);
+  // Deck v2+: what changed since the previous deck (computed from the two stored analyses). Not while a run is writing.
+  const running = run && (run.status === "RUNNING" || run.status === "QUEUED");
+  const decks = running ? null : deckComparison(company.id, { id: version.row.id, versionNo: version.row.versionNo, documentIds: c.documents.map((x) => x.id) });
 
   return (
     <main className="mx-auto max-w-[1180px] space-y-10 px-4 py-8 sm:px-8">
@@ -45,14 +54,32 @@ export default async function DealOverview({ params }: { params: Promise<{ slug:
           )}
         </div>
       )}
-      {version.rawCanonical.overrides.length > 0 && (
+      {activeOvr.length > 0 && (
         <p className="rounded-md border border-accent/25 bg-accent-soft/40 px-3 py-2 text-[12.5px] text-ink-2">
-          <span className="font-medium text-accent-text">{version.rawCanonical.overrides.length} analyst override{version.rawCanonical.overrides.length === 1 ? "" : "s"} active</span> —{" "}
-          {version.rawCanonical.overrides.map((o) => `${o.target === "METRIC" || o.target === "CLAIM" ? o.ref : o.target.toLowerCase()}.${o.field}`).join(", ")}. Scores use the overridden values; the raw extraction is kept.{" "}
+          <span className="font-medium text-accent-text">{activeOvr.length} analyst override{activeOvr.length === 1 ? "" : "s"} active</span> —{" "}
+          {activeOvr.map((o) => `${o.target === "METRIC" || o.target === "CLAIM" ? o.ref : o.target.toLowerCase()}.${o.field}`).join(", ")}. Scores use the overridden values; the raw extraction is kept.{" "}
           <Link href={`/deals/${slug}/integrity#overrides`} className="text-accent-text hover:underline">
             Review →
           </Link>
         </p>
+      )}
+      {staleOvr.length > 0 && (
+        <div className="rounded-md border border-warn/30 bg-warn-soft/40 px-3 py-2 text-[12.5px] text-ink-2">
+          <span className="font-medium text-warn">
+            {staleOvr.length} override{staleOvr.length === 1 ? "" : "s"} not re-applied
+          </span>{" "}
+          — kept for review, not used in any score:
+          <ul className="mt-1 list-disc pl-5">
+            {staleOvr.map((o) => (
+              <li key={o.id}>
+                {o.id} {o.target_label ?? `${o.ref}.${o.field}`}: {o.stale!.replace(/^not re-applied: /, "")}
+              </li>
+            ))}
+          </ul>
+          <Link href={`/deals/${slug}/integrity#overrides`} className="text-accent-text hover:underline">
+            Review overrides →
+          </Link>
+        </div>
       )}
       {/* 30-second read: what it is, what it actually is, what decides it. */}
       <section className="max-w-[860px] space-y-5">
@@ -62,6 +89,8 @@ export default async function DealOverview({ params }: { params: Promise<{ slug:
         </div>
         <RealityCheck text={c.realityCheck} />
       </section>
+
+      {decks && <DeckChanges comparison={decks} slug={slug} compact />}
 
       <DecisionCore c={c} slug={slug} />
 

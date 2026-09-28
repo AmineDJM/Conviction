@@ -3,6 +3,7 @@
  * (and the current fund profile) as NEW versions. Historical versions and
  * their scores are preserved untouched.
  */
+import { applyOverrides } from "@/engine/overrides";
 import { getRegistry } from "@/engine/benchmarks";
 import { derive } from "@/engine/derive";
 import { indexCompanyForBrain } from "@/brain/indexer";
@@ -54,7 +55,7 @@ export async function recalculatePortfolio(workspaceId: string, userId: string, 
     repo.addHistory({ workspaceId, companyId: company.id, type: "BENCHMARK_RECALCULATED", versionId: version.id, summary, userId, payload: row });
     if (before.recommendation.status !== derived.recommendation.status)
       repo.addHistory({ workspaceId, companyId: company.id, type: "RECOMMENDATION_CHANGED", versionId: version.id, summary: `${before.recommendation.status} → ${derived.recommendation.status} (recalculation)`, userId });
-    await indexCompanyForBrain({ workspaceId, companyId: company.id, versionId: version.id, canonical: current.canonical, derived });
+    await indexCompanyForBrain({ workspaceId, companyId: company.id, versionId: version.id, canonical: applyOverrides(current.canonical), derived });
   }
   repo.audit(workspaceId, userId, "PORTFOLIO_RECALCULATED", registry.id, `${out.filter((r) => r.changed).length} changed`);
   return out;

@@ -6,6 +6,7 @@
  */
 import type { CanonicalDeal, Claim, FounderQuestion, MetricInstance } from "@/domain/canonical";
 import type { DerivedAnalysis } from "@/engine/derive";
+import { isAnalystCorrected } from "@/engine/override-marks";
 
 export interface VersionSide {
   id: string;
@@ -42,8 +43,19 @@ export interface MetricChange {
   label: string;
   unit: string;
   kind: "ADDED" | "REMOVED" | "CHANGED";
-  from: { id: string; value: number | null; raw: string; method: MetricInstance["calculationMethod"]; state: string; periodEnd: string | null } | null;
-  to: { id: string; value: number | null; raw: string; method: MetricInstance["calculationMethod"]; state: string; periodEnd: string | null } | null;
+  from: MetricSide | null;
+  to: MetricSide | null;
+}
+
+/** `corrected`: the value was set by an analyst (override, or a legacy correction). Pass effective deals (applyOverrides) to see overrides. */
+export interface MetricSide {
+  id: string;
+  value: number | null;
+  raw: string;
+  method: MetricInstance["calculationMethod"];
+  state: string;
+  periodEnd: string | null;
+  corrected: boolean;
 }
 
 export interface ClaimVerificationChange {
@@ -99,7 +111,7 @@ function primaryByKey(ms: MetricInstance[]) {
   return map;
 }
 
-const metricSide = (m: MetricInstance | undefined) => (m ? { id: m.id, value: m.normalizedValue, raw: m.rawValue, method: m.calculationMethod, state: m.state, periodEnd: m.periodEnd } : null);
+const metricSide = (m: MetricInstance | undefined): MetricSide | null => (m ? { id: m.id, value: m.normalizedValue, raw: m.rawValue, method: m.calculationMethod, state: m.state, periodEnd: m.periodEnd, corrected: isAnalystCorrected(m) } : null);
 
 export function diffVersions(a: VersionSide, b: VersionSide): VersionDiff {
   const da = a.derived;
@@ -131,7 +143,7 @@ export function diffVersions(a: VersionSide, b: VersionSide): VersionDiff {
     else if (x && !y) metrics.push({ ...base, kind: "REMOVED", from: metricSide(x), to: null });
     else if (x && y) {
       const valueChanged = num(x.normalizedValue, y.normalizedValue, 4).changed;
-      if (valueChanged || x.calculationMethod !== y.calculationMethod || x.state !== y.state) metrics.push({ ...base, kind: "CHANGED", from: metricSide(x), to: metricSide(y) });
+      if (valueChanged || x.calculationMethod !== y.calculationMethod || x.state !== y.state || isAnalystCorrected(x) !== isAnalystCorrected(y)) metrics.push({ ...base, kind: "CHANGED", from: metricSide(x), to: metricSide(y) });
     }
   }
 

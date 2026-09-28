@@ -3,11 +3,14 @@ import { loadDeal } from "@/server/deal";
 import * as repo from "@/server/repo";
 import { listRunsWithCost } from "@/server/runs";
 import { defaultComparison, diffVersions } from "@/reports/version-diff";
+import { applyOverrides } from "@/engine/overrides";
 import { Badge, Section, cx } from "@/components/ui";
 import { date } from "@/lib/format";
 import { VersionPicker } from "@/components/deal/history/version-picker";
 import { VersionDiffView } from "@/components/deal/history/version-diff-view";
 import { HISTORY_TYPE_TEXT, RUN_KIND_TEXT, reasonText } from "@/components/deal/history/labels";
+import { deckAnalysisRow, deckComparisonForVersion, deckLineage } from "@/server/deck-versions";
+import { DeckChanges } from "@/components/deal/deck/deck-changes";
 
 type SP = Record<string, string | string[] | undefined>;
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? null;
@@ -24,6 +27,10 @@ function duration(a: string, b: string | null) {
 const TYPE_TONE: Record<string, "neutral" | "accent" | "ok" | "warn" | "risk"> = {
   FOUNDER_CALL_ADDED: "accent",
   METRIC_CORRECTED: "accent",
+  OVERRIDE_ADDED: "accent",
+  OVERRIDES_CARRIED_OVER: "accent",
+  DECK_VERSION_ADDED: "accent",
+  COMPANY_MERGED: "warn",
   RECOMMENDATION_CHANGED: "warn",
   ANALYSIS_COMPLETED: "ok",
   BENCHMARK_RECALCULATED: "neutral",
@@ -41,7 +48,8 @@ export default async function HistoryPage({ params, searchParams }: { params: Pr
   const toId = one(sp.to) && byId.has(one(sp.to)!) ? one(sp.to)! : def?.toId;
   const a = fromId ? repo.getVersion(company.id, fromId) : null;
   const b = toId ? repo.getVersion(company.id, toId) : null;
-  const diff = a && b && a.row.id !== b.row.id ? diffVersions({ ...a.row, canonical: a.canonical, derived: a.derived }, { ...b.row, canonical: b.canonical, derived: b.derived }) : null;
+  // Compare the effective deals (raw extraction + analyst overrides), the same objects derive() scored.
+  const diff = a && b && a.row.id !== b.row.id ? diffVersions({ ...a.row, canonical: applyOverrides(a.canonical), derived: a.derived }, { ...b.row, canonical: applyOverrides(b.canonical), derived: b.derived }) : null;
   const isDefault = fromId === def?.fromId && toId === def?.toId;
 
   // Timeline: history events plus versions no event points to (e.g. preliminary versions).
@@ -57,11 +65,63 @@ export default async function HistoryPage({ params, searchParams }: { params: Pr
     return v ? versions.find((x) => x.versionNo === v.versionNo - 1) : undefined;
   };
 
+  // Deck lineage (v1 → v2 → v3) and, for each deck from v2, what changed since the previous one.
+  const decks = deckLineage(company.id).map((e) => {
+    const row = deckAnalysisRow(company.id, e.documentId, Number.MAX_SAFE_INTEGER);
+    return { e, row, comparison: row && e.seq > 1 ? deckComparisonForVersion(company.id, row.id) : null };
+  });
+
   const runs = listRunsWithCost(session.workspaceId, company.id);
   const totalSpent = runs.reduce((s, r) => s + r.run.spentUsd, 0);
 
   return (
     <main className="mx-auto max-w-[1180px] space-y-14 px-4 py-8 sm:px-8">
+      {decks.length > 0 && (
+        <Section id="decks" eyebrow="Deck versions" title={decks.length > 1 ? `${decks.length} decks from this company` : "One deck so far"}>
+          <ol className="divide-y divide-line rounded-lg border border-line bg-surface text-[13px]">
+            {[...decks].reverse().map(({ e, row }) => (
+              <li key={e.seq} className="grid gap-x-4 gap-y-0.5 px-3 py-2 sm:grid-cols-[70px_1fr_auto]">
+                <Badge tone={e.seq === decks.at(-1)!.e.seq ? "accent" : "neutral"}>Deck v{e.seq}</Badge>
+                <span className="min-w-0 truncate text-ink">
+                  {e.filename}
+                  <span className="text-ink-3">
+                    {" "}
+                    · uploaded {time(e.createdAt)}
+                    {e.inferred ? " · first deck on record" : ""}
+                  </span>
+                </span>
+                <span className="text-[12px] text-ink-3">
+                  {row ? (
+                    <Link href={`/deals/${company.slug}/history?to=${row.id}#compare`} className="hover:text-accent-text">
+                      analysed in v{row.versionNo}
+                    </Link>
+                  ) : (
+                    "not analysed yet"
+                  )}
+                </span>
+              </li>
+            ))}
+          </ol>
+          {decks.length < 2 && <p className="mt-2 text-[12.5px] text-ink-3">Upload the founder&apos;s next deck with “New deck version” in the header: it is analysed on this company and compared with this one.</p>}
+        </Section>
+      )}
+      {[...decks]
+        .reverse()
+        .filter((x) => x.comparison)
+        .map((x, i) =>
+          i === 0 ? (
+            <DeckChanges key={x.e.seq} comparison={x.comparison!} slug={company.slug} />
+          ) : (
+            <details key={x.e.seq} className="rounded-lg border border-line px-4 py-3">
+              <summary className="cursor-pointer text-[13px] text-ink-2">
+                Deck v{x.e.seq - 1} → deck v{x.e.seq}
+              </summary>
+              <div className="mt-4">
+                <DeckChanges comparison={x.comparison!} slug={company.slug} />
+              </div>
+            </details>
+          ),
+        )}
       <Section
         id="compare"
         eyebrow="Version comparison"

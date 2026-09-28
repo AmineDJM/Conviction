@@ -10,6 +10,7 @@
  */
 import type { MetricInstance } from "@/domain/canonical";
 import { metricDef } from "../metrics/dictionary";
+import { isAnalystCorrected } from "../override-marks";
 import { reconstructMarket } from "../market";
 import type { IntegrityContext } from "./context";
 import { claimSupport } from "./evidence-debt";
@@ -53,7 +54,7 @@ function metricConfidence(m: MetricInstance, implied: ImpliedMetric[], cross: Cr
   if (m.state === "CONTRADICTED" || m.verification === "CONTRADICTED") return { field: `metric:${m.metricKey}`, label, ref: m.id, confidence: "NONE", score: 0, reasons: ["contradicted"] };
   let score = m.verification === "VERIFIED" ? 3 : m.verification === "PARTIALLY_VERIFIED" ? 2.5 : 2;
   reasons.push(m.verification === "VERIFIED" ? "independently verified" : m.verification === "PARTIALLY_VERIFIED" ? "partially verified" : "company-reported, unverified");
-  if (m.calculationMethod === "USER_CORRECTED") {
+  if (isAnalystCorrected(m)) {
     score = Math.min(3, score + 0.5);
     reasons.push("corrected by a reviewer");
   }

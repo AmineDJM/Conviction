@@ -8,6 +8,9 @@ import { titleCase } from "@/lib/format";
 import { QuestionList } from "@/components/deal/questions/question-list";
 import { FounderCallForm } from "@/components/deal/questions/founder-call-form";
 import { WhatChanged } from "@/components/deal/questions/what-changed";
+import { AnalysisFeedback } from "@/components/deal/questions/analysis-feedback";
+import { analysisFeedbackForUser, questionFeedbackForUser } from "@/server/question-feedback";
+import { listMeetings } from "@/server/meetings";
 
 const CHANNEL_TEXT = { WEB: "Web research", FOUNDER: "Founder", DATA_ROOM: "Data room" } as const;
 const GAP_STATUS_TEXT: Record<string, string> = { OPEN: "Open", NEEDS_FOUNDER: "Needs founder", RESEARCHED: "Researched", RESOLVED: "Resolved" };
@@ -46,6 +49,9 @@ export default async function QuestionsPage({ params }: { params: Promise<{ slug
   const activeCallRun = run && run.kind === "FOUNDER_CALL" && (run.status === "RUNNING" || run.status === "QUEUED") ? run.id : null;
 
   const qs = c.questions;
+  // Usefulness feedback on asked questions is attributed to the latest processed founder meeting.
+  const latestMeetingId = listMeetings(company.id).filter((m) => m.status === "READY").sort((a, b) => b.seq - a.seq)[0]?.id ?? null;
+  const myAnalysisFeedback = analysisFeedbackForUser(company.id, version!.row.id, session.userId);
   const count = (s: string) => qs.filter((q) => q.status === s).length;
   const priority = d.researchPriority;
   const gapById = new Map(c.informationGaps.map((g) => [g.id, g]));
@@ -89,7 +95,14 @@ export default async function QuestionsPage({ params }: { params: Promise<{ slug
         </div>
       </div>
 
-      <QuestionList questions={qs} companyId={company.id} versionId={version!.row.id} canWrite={writable} />
+      <QuestionList
+        questions={qs}
+        companyId={company.id}
+        versionId={version!.row.id}
+        canWrite={writable}
+        feedback={questionFeedbackForUser(company.id, session.userId, qs)}
+        meetingId={latestMeetingId}
+      />
 
       <Section id="call" eyebrow="Founder call update" title="Update the analysis from a call — without restarting it">
         <p className="mb-4 max-w-[820px] text-[13px] leading-relaxed text-ink-2">
@@ -98,6 +111,27 @@ export default async function QuestionsPage({ params }: { params: Promise<{ slug
         </p>
         {whatChanged && <div className="mb-6">{whatChanged}</div>}
         <FounderCallForm companyId={company.id} canWrite={writable} activeRunId={activeCallRun} />
+      </Section>
+
+      <Section id="feedback" eyebrow="Analysis feedback" title="Was this analysis useful?">
+        <AnalysisFeedback
+          companyId={company.id}
+          versionId={version!.row.id}
+          versionNo={version!.row.versionNo}
+          canWrite={writable}
+          initial={
+            myAnalysisFeedback
+              ? {
+                  betterQuestions: myAnalysisFeedback.betterQuestions,
+                  importantRisks: myAnalysisFeedback.importantRisks,
+                  missingEvidence: myAnalysisFeedback.missingEvidence,
+                  marketInsight: myAnalysisFeedback.marketInsight,
+                  minutesSaved: myAnalysisFeedback.minutesSaved,
+                  note: myAnalysisFeedback.note,
+                }
+              : null
+          }
+        />
       </Section>
 
       <Section

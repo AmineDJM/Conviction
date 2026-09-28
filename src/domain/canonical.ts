@@ -238,8 +238,69 @@ export const AnalysisState = z.object({
     .nullable()
     .default(null),
   cancelled: z.boolean().default(false),
+  /** Targeted refreshes of stale items (orchestration/refresh.ts), oldest first. Absent on versions before the feature. */
+  refreshes: z.array(z.lazy(() => RefreshRecord)).optional(),
 });
 export type AnalysisState = z.infer<typeof AnalysisState>;
+
+/** One "refresh only stale data" pass: which items were re-researched, and what happened to each. */
+export const RefreshRecord = z.object({
+  at: z.string(),
+  /** Reference date used to decide staleness. */
+  asOf: z.string(),
+  runId: z.string().nullable(),
+  promptVersion: z.string(),
+  items: z.array(
+    z.object({
+      /** Stable selection key, e.g. CLAIM:CLM-004, SOURCE:SRC-007, METRIC:MET-012, GAP:GAP-03. */
+      key: z.string(),
+      kind: z.enum(["CLAIM", "SOURCE", "METRIC", "GAP"]),
+      ref: z.string(),
+      reason: z.string(),
+      /** CONFIRMED / UPDATED (newer information) / CONTRADICTED / RESOLVED (gap) / NOT_FOUND / NO_RESULT (nothing returned). */
+      outcome: z.enum(["CONFIRMED", "UPDATED", "CONTRADICTED", "RESOLVED", "NOT_FOUND", "NO_RESULT"]),
+      note: z.string().nullable(),
+      /** Claims created from newer information about this item. */
+      newClaimIds: z.array(z.string()),
+      freshnessBefore: z.string().nullable(),
+      freshnessAfter: z.string().nullable(),
+    }),
+  ),
+  searches: z.number(),
+  costUsd: z.number(),
+  /** Model output about items outside the stale set, discarded by code. */
+  discardedOutOfScope: z.number(),
+});
+export type RefreshRecord = z.infer<typeof RefreshRecord>;
+
+/* ---------------------------------------------------------------- */
+/* Override anchors (stable target identity across re-analyses)       */
+/* ---------------------------------------------------------------- */
+
+/**
+ * What an override points at, independently of ids: a metric is identified by
+ * key + period + basis, a claim by the hash of its normalized statement (and
+ * proposition), a classification / identity field by its path.
+ */
+export const OverrideAnchor = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("METRIC"), metricKey: z.string(), label: z.string(), periodEnd: z.string().nullable(), periodType: z.string(), basis: z.string() }),
+  z.object({ kind: z.literal("CLAIM"), category: z.string(), statement: z.string(), statementHash: z.string(), propositionHash: z.string().nullable() }),
+  z.object({ kind: z.literal("FIELD"), path: z.string() }),
+]);
+export type OverrideAnchor = z.infer<typeof OverrideAnchor>;
+
+export const OverrideCarry = z.object({
+  /** REANCHORED: applied to the matching target of the new analysis. UNANCHORED: kept, visible, NOT applied. */
+  status: z.enum(["REANCHORED", "UNANCHORED"]),
+  /** How the target was found: same key + period + basis, same key + period, same statement, similar statement, field path. */
+  match: z.enum(["EXACT", "PERIOD", "STATEMENT", "SIMILAR", "FIELD"]).nullable(),
+  fromRef: z.string(),
+  fromVersionId: z.string().nullable(),
+  /** Human-readable account ("re-applied to MET-012 (ARR, 2025-12)" / "not re-applied: target not found in the new deck"). */
+  note: z.string(),
+  at: z.string(),
+});
+export type OverrideCarry = z.infer<typeof OverrideCarry>;
 
 /* ---------------------------------------------------------------- */
 /* The canonical object                                               */
@@ -324,6 +385,7 @@ export const CanonicalDeal = z.object({
       z.object({
         id: z.string(),
         target: z.enum(["METRIC", "CLASSIFICATION", "ENTITY", "CLAIM"]),
+        /** Id of the target in THIS version (MET-007, CLM-012, "classification", "identity"). Ids change on re-analysis. */
         ref: z.string(),
         field: z.string(),
         from: z.unknown(),
@@ -331,6 +393,12 @@ export const CanonicalDeal = z.object({
         reason: z.string(),
         by: z.string().nullable(),
         at: z.string(),
+        /** Stable identity of the target, used to re-anchor the override when a re-analysis renumbers ids. */
+        anchor: OverrideAnchor.nullable().default(null),
+        /** Set when the override was carried over from an earlier analysis (re-anchored, or not re-applied). */
+        carry: OverrideCarry.nullable().default(null),
+        /** Set when the override was upgraded from a legacy USER_CORRECTED metric instance (no data loss). */
+        legacy: z.object({ correctedInstanceId: z.string(), rawValue: z.string(), notes: z.string().nullable() }).nullable().default(null),
       }),
     )
     .default([]),

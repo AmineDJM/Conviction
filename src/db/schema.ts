@@ -6,7 +6,7 @@
  * into relational tables at write time (metric_facts, entities, relations,
  * chunks) so the Fund Brain can answer with structured queries first.
  */
-import { sqliteTable, text, integer, real, blob, index, uniqueIndex, primaryKey } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, blob, index, uniqueIndex, primaryKey, foreignKey } from "drizzle-orm/sqlite-core";
 
 const ts = (name: string) => text(name).notNull();
 
@@ -168,6 +168,11 @@ export const companies = sqliteTable(
     analysisDepth: text("analysis_depth"),
     analysisMode: text("analysis_mode"),
     status: text("status", { enum: ["PROCESSING", "READY", "FAILED"] }).notNull().default("PROCESSING"),
+    /** Identity projection for duplicate detection (registrable domain of identity.website, founder names). */
+    websiteDomain: text("website_domain"),
+    founderNames: text("founder_names", { mode: "json" }).$type<string[]>(),
+    /** Set when this company was merged into another one as a new deck version (soft-deleted, kept for audit). */
+    mergedIntoId: text("merged_into_id"),
     createdAt: ts("created_at"),
     updatedAt: ts("updated_at"),
     deletedAt: text("deleted_at"),
@@ -187,7 +192,7 @@ export const companyVersions = sqliteTable(
     canonical: text("canonical", { mode: "json" }).notNull(),
     derived: text("derived", { mode: "json" }).notNull(),
     reason: text("reason", {
-      enum: ["DECK_ANALYSIS", "RESEARCH", "FOUNDER_CALL", "METRIC_CORRECTION", "BENCHMARK_RECALC", "QUESTION_UPDATE", "STATUS_CHANGE", "FUND_PROFILE_CHANGE", "USER_OVERRIDE"],
+      enum: ["DECK_ANALYSIS", "RESEARCH", "RESEARCH_REFRESH", "FOUNDER_CALL", "METRIC_CORRECTION", "BENCHMARK_RECALC", "QUESTION_UPDATE", "STATUS_CHANGE", "FUND_PROFILE_CHANGE", "USER_OVERRIDE"],
     }).notNull(),
     summary: text("summary"),
     createdBy: text("created_by"),
@@ -215,6 +220,14 @@ export const documents = sqliteTable("documents", {
   storagePath: text("storage_path").notNull(),
   pages: integer("pages"),
   textChars: integer("text_chars"),
+  /**
+   * Deck lineage: 1, 2, 3… for the pitch deck of each deck version of the company; null for supporting
+   * documents (financials, one-pagers) and for rows written before deck versions existed (resolved at read
+   * time, see engine/deck-lineage.ts). Set once at insert.
+   */
+  deckVersion: integer("deck_version"),
+  /** The deck document this one supersedes (deck v(n-1)); null for v1 and supporting documents. */
+  supersedesDocumentId: text("supersedes_document_id"),
   createdAt: ts("created_at"),
 });
 
@@ -300,6 +313,11 @@ export const historyEvents = sqliteTable(
         "REPORT_EXPORTED",
         "OVERRIDE_ADDED",
         "OVERRIDE_REVERTED",
+        "OVERRIDES_CARRIED_OVER",
+        "DECK_VERSION_ADDED",
+        "DOCUMENTS_ADDED",
+        "COMPANY_MERGED",
+        "DUPLICATE_DISMISSED",
       ],
     }).notNull(),
     summary: text("summary").notNull(),
@@ -366,8 +384,16 @@ export const entities = sqliteTable(
     normName: text("norm_name").notNull(),
     companyId: text("company_id"),
     aliases: text("aliases", { mode: "json" }).$type<string[]>().notNull(),
+    /**
+     * Identity key (src/brain/entities.ts): person:<name>:<companyId>, company:<companyId>,
+     * org:<canonical>, org:ambiguous:<short>, <type>:<normName>. Null on rows written before
+     * entity resolution; those are rebuilt on the next index and pruned when orphaned.
+     */
+    resolutionKey: text("resolution_key"),
+    /** Resolution evidence (per-company person evidence, former names, domain, ambiguity candidates). */
+    attributes: text("attributes", { mode: "json" }).$type<Record<string, unknown>>(),
   },
-  (t) => [index("entities_norm_idx").on(t.workspaceId, t.normName), uniqueIndex("entities_unique_idx").on(t.workspaceId, t.type, t.normName)],
+  (t) => [index("entities_norm_idx").on(t.workspaceId, t.normName), uniqueIndex("entities_key_idx").on(t.workspaceId, t.type, t.resolutionKey)],
 );
 
 export const relations = sqliteTable(
@@ -378,7 +404,9 @@ export const relations = sqliteTable(
     fromEntity: text("from_entity").notNull().references(() => entities.id, { onDelete: "cascade" }),
     toEntity: text("to_entity").notNull().references(() => entities.id, { onDelete: "cascade" }),
     type: text("type", {
-      enum: ["FOUNDED", "WORKED_AT", "COMPETES_WITH", "INVESTED_IN", "OPERATES_IN", "CUSTOMER_OF", "SIMILAR_TO"],
+      // ALIAS_OF: the same company under another name (explicit rename, same domain, same founding team).
+      // POSSIBLY_SAME_AS: partial founder overlap — shown, never used to resolve a mention.
+      enum: ["FOUNDED", "WORKED_AT", "COMPETES_WITH", "INVESTED_IN", "OPERATES_IN", "CUSTOMER_OF", "SIMILAR_TO", "ALIAS_OF", "POSSIBLY_SAME_AS"],
     }).notNull(),
     companyId: text("company_id"),
     sourceRef: text("source_ref"),
@@ -544,6 +572,85 @@ export const meetingBriefs = sqliteTable(
   (t) => [index("meeting_briefs_version_idx").on(t.versionId, t.kind), index("meeting_briefs_company_idx").on(t.companyId, t.createdAt)],
 );
 
+/* ------------------------------ Meeting integrations (Zoom, Google Meet) ------------------------------ */
+/*
+ * Optional OAuth connections, one per (workspace, user, provider): only the
+ * connecting user's tokens are ever used, and removing the member from the
+ * workspace deletes them (composite FK → memberships, cascade). Tokens are an
+ * AES-256-GCM blob (src/server/crypto.ts) whose plaintext also carries the row
+ * binding; they are never logged, exported or sent to the browser.
+ */
+
+export const integrationConnections = sqliteTable(
+  "integration_connections",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull(),
+    userId: text("user_id").notNull(),
+    provider: text("provider", { enum: ["zoom", "google_meet"] }).notNull(),
+    /** NEEDS_REAUTH: the refresh token was rejected; the user must connect again. */
+    status: text("status", { enum: ["CONNECTED", "NEEDS_REAUTH"] }).notNull(),
+    accountId: text("account_id"),
+    accountEmail: text("account_email"),
+    /** Scopes actually granted (space-separated), as reported by the token endpoint. */
+    scopes: text("scopes").notNull(),
+    tokens: blob("tokens", { mode: "buffer" }).notNull(),
+    accessExpiresAt: text("access_expires_at"),
+    refreshedAt: text("refreshed_at"),
+    lastError: text("last_error"),
+    createdAt: ts("created_at"),
+    updatedAt: ts("updated_at"),
+  },
+  (t) => [
+    uniqueIndex("integration_connections_user_idx").on(t.workspaceId, t.userId, t.provider),
+    foreignKey({ columns: [t.userId, t.workspaceId], foreignColumns: [memberships.userId, memberships.workspaceId], name: "integration_connections_membership_fk" }).onDelete("cascade"),
+  ],
+);
+
+/** Pending OAuth authorizations: single-use, 10-minute, bound to the browser session that started them. `id` = sha256(state). */
+export const integrationOauthStates = sqliteTable(
+  "integration_oauth_states",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull(),
+    userId: text("user_id").notNull(),
+    provider: text("provider", { enum: ["zoom", "google_meet"] }).notNull(),
+    /** sha256 of the session id that started the flow. */
+    sessionHash: text("session_hash").notNull(),
+    /** PKCE code_verifier, encrypted. */
+    verifier: blob("verifier", { mode: "buffer" }).notNull(),
+    redirectUri: text("redirect_uri").notNull(),
+    returnTo: text("return_to").notNull(),
+    expiresAt: ts("expires_at"),
+    createdAt: ts("created_at"),
+  },
+  (t) => [
+    index("integration_oauth_states_exp_idx").on(t.expiresAt),
+    foreignKey({ columns: [t.userId, t.workspaceId], foreignColumns: [memberships.userId, memberships.workspaceId], name: "integration_oauth_states_membership_fk" }).onDelete("cascade"),
+  ],
+);
+
+/** One row per imported recording / transcript (provenance, "already imported" and "last import"). */
+export const integrationImports = sqliteTable(
+  "integration_imports",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull(),
+    userId: text("user_id").notNull(),
+    provider: text("provider", { enum: ["zoom", "google_meet"] }).notNull(),
+    /** Zoom meeting UUID / Meet conference record name. */
+    externalId: text("external_id").notNull(),
+    /** Zoom recording file id / Meet transcript name. */
+    itemId: text("item_id").notNull(),
+    kind: text("kind", { enum: ["TRANSCRIPT", "AUDIO", "TRANSCRIPT_ENTRIES", "TRANSCRIPT_DOC"] }).notNull(),
+    companyId: text("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    meetingId: text("meeting_id").notNull(),
+    title: text("title").notNull(),
+    createdAt: ts("created_at"),
+  },
+  (t) => [index("integration_imports_ext_idx").on(t.workspaceId, t.provider, t.externalId), index("integration_imports_user_idx").on(t.workspaceId, t.userId, t.provider, t.createdAt)],
+);
+
 /* ------------------------------ Formation (investor training) ------------------------------ */
 /*
  * Deliberate practice on the workspace's real deals. Attempts belong to a USER
@@ -608,4 +715,59 @@ export const formationMistakes = sqliteTable(
     createdAt: ts("created_at"),
   },
   (t) => [index("formation_mistakes_user_idx").on(t.workspaceId, t.userId, t.kind), uniqueIndex("formation_mistakes_attempt_kind_idx").on(t.attemptId, t.kind)],
+);
+
+/* ------------------------------ Human feedback (evaluation §129) ------------------------------ */
+/*
+ * Measured usefulness, never asserted. Rows are written by people (or, for
+ * `source = MEETING`, recorded when a founder meeting answered the question)
+ * and summarized read-only on /quality. One row per (version, question, user):
+ * a later answer from the same user replaces the earlier one.
+ */
+
+/** "Was this founder question useful?" — per question, per analysis version. */
+export const questionFeedback = sqliteTable(
+  "question_feedback",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    companyId: text("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    versionId: text("version_id").notNull(),
+    /** Q-01 … within that version. */
+    questionId: text("question_id").notNull(),
+    /** Snapshot of the question text (ids are per version). */
+    questionText: text("question_text").notNull(),
+    tier: text("tier").notNull(),
+    verdict: text("verdict", { enum: ["USEFUL", "NOT_USEFUL", "ALREADY_KNOWN"] }).notNull(),
+    note: text("note"),
+    /** MANUAL (any time) · AFTER_MEETING (given from a founder meeting context). */
+    source: text("source", { enum: ["MANUAL", "AFTER_MEETING"] }).notNull(),
+    meetingId: text("meeting_id"),
+    userId: text("user_id").notNull(),
+    createdAt: ts("created_at"),
+    updatedAt: ts("updated_at"),
+  },
+  (t) => [uniqueIndex("question_feedback_unique_idx").on(t.versionId, t.questionId, t.userId), index("question_feedback_ws_idx").on(t.workspaceId, t.createdAt)],
+);
+
+/** Per-analysis utility feedback: what the analysis surfaced and the preparation time it saved. */
+export const analysisFeedback = sqliteTable(
+  "analysis_feedback",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    companyId: text("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    versionId: text("version_id").notNull(),
+    betterQuestions: integer("better_questions", { mode: "boolean" }).notNull(),
+    importantRisks: integer("important_risks", { mode: "boolean" }).notNull(),
+    missingEvidence: integer("missing_evidence", { mode: "boolean" }).notNull(),
+    marketInsight: integer("market_insight", { mode: "boolean" }).notNull(),
+    /** Preparation time saved, minutes (negative = cost time); null = not stated. */
+    minutesSaved: integer("minutes_saved"),
+    note: text("note"),
+    userId: text("user_id").notNull(),
+    createdAt: ts("created_at"),
+    updatedAt: ts("updated_at"),
+  },
+  (t) => [uniqueIndex("analysis_feedback_unique_idx").on(t.versionId, t.userId), index("analysis_feedback_ws_idx").on(t.workspaceId, t.createdAt)],
 );

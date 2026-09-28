@@ -3,12 +3,13 @@ import type { MetricInstance } from "@/domain/canonical";
 import { metricDef } from "@/engine/metrics/dictionary";
 import { Badge, cx } from "@/components/ui";
 import { metricValue } from "@/lib/format";
+import { isAnalystCorrected, isOverridePropagated } from "@/engine/override-marks";
 
 /** The evidence status of a metric, as a quiet label (§86). */
 export function metricEvidence(m: MetricInstance): { text: string; tone: "ok" | "neutral" | "warn" | "risk" | "unknown" | "accent" } {
   // Analyst overrides are marked wherever the value renders (the raw extraction stays in the lineage drawer).
-  if (m.qualityFlags.some((f) => f.startsWith("ANALYST_OVERRIDE")) || m.lineage.some((l) => l.step === "OVERRIDE")) return { text: "Analyst override", tone: "accent" };
-  if (m.lineage.some((l) => l.step === "OVERRIDE_PROPAGATED")) return { text: "Derived · override input", tone: "accent" };
+  if (isAnalystCorrected(m)) return { text: "Analyst override", tone: "accent" };
+  if (isOverridePropagated(m)) return { text: "Derived · override input", tone: "accent" };
   if (m.state === "CONTRADICTED" || m.verification === "CONTRADICTED") return { text: "Contradicted", tone: "risk" };
   if (m.verification === "VERIFIED") return { text: "Verified", tone: "ok" };
   if (m.state === "WITHHELD") return { text: "Withheld", tone: "unknown" };
@@ -16,7 +17,6 @@ export function metricEvidence(m: MetricInstance): { text: string; tone: "ok" | 
   if (m.state === "STALE") return { text: "Stale", tone: "warn" };
   if (m.calculationMethod === "DERIVED") return { text: "Derived", tone: "neutral" };
   if (m.state === "INFERRED") return { text: "Inferred", tone: "warn" };
-  if (m.calculationMethod === "USER_CORRECTED") return { text: "Corrected", tone: "neutral" };
   return { text: "Company-reported", tone: "neutral" };
 }
 

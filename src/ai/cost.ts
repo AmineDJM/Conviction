@@ -34,7 +34,8 @@ export class BudgetExceededError extends Error {
 }
 
 export const MODE_BUDGETS = {
-  FAST_SCREEN: { targetUsd: 0.08, hardCapUsd: 0.1 },
+  // Hard caps bound the worst case (every call using its full output allowance); real fast screens cost ~$0.05.
+  FAST_SCREEN: { targetUsd: 0.08, hardCapUsd: 0.15 },
   STANDARD: { targetUsd: 0.25, hardCapUsd: 0.5 },
   /** Deep DD is launched intentionally; it has a larger, explicit cap. */
   DEEP_DD: { targetUsd: 1.5, hardCapUsd: 3 },

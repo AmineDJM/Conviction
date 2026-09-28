@@ -5,6 +5,12 @@ import { RunProgress } from "@/components/deal/run-progress";
 import { stageOfVersion } from "@/server/meetings";
 import { LineageProvider } from "@/components/deal/lineage/lineage-provider";
 import { lineageData } from "@/components/deal/lineage/data";
+import { canWrite } from "@/server/session";
+import { deckLineage } from "@/server/deck-versions";
+import { deckOfDocuments } from "@/engine/deck-lineage";
+import { duplicateSuggestions } from "@/server/company-merge";
+import { DuplicateBanner } from "@/components/deal/deck/duplicate-banner";
+import { companyAliases } from "@/brain/retrieval";
 
 export default async function DealLayout({ children, params }: { children: React.ReactNode; params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -13,6 +19,11 @@ export default async function DealLayout({ children, params }: { children: React
   const lineage = lineageData(loaded);
   const running = run && (run.status === "RUNNING" || run.status === "QUEUED");
   const stage = version ? stageOfVersion(company.id, version.row.id) : null;
+  const decks = deckLineage(company.id);
+  const deck = version ? deckOfDocuments(decks, version.canonical.documents.map((d) => d.id)) : null;
+  // After triage (identity known): does this dossier duplicate an older one? Asked, never merged silently.
+  const duplicates = version ? duplicateSuggestions(loaded.session.workspaceId, company.id) : [];
+  const aliases = companyAliases(loaded.session.workspaceId, company.id);
   return (
     <div>
       <div className="no-print sticky top-0 z-30 border-b border-line bg-bg/90 backdrop-blur-md">
@@ -34,10 +45,20 @@ export default async function DealLayout({ children, params }: { children: React
         depth={version?.canonical.analysis.depth ?? null}
         mode={version?.canonical.analysis.mode ?? null}
         versionStage={stage ? { stage: stage.stage, label: stage.label, code: stage.code } : null}
+        companyId={company.id}
+        deck={deck ? { seq: deck.seq, filename: deck.filename, total: decks.at(-1)?.seq ?? deck.seq } : null}
+        canWrite={canWrite(loaded.session)}
+        running={!!running}
+        aliases={aliases}
       />
       {version && <DealTabs slug={company.slug} />}
       </div>
-      {running && <RunProgress runId={run.id} initial={run.progress} hasVersion={!!version} />}
+      {duplicates.length > 0 && (
+        <div className="px-4 pt-4 sm:px-8">
+          <DuplicateBanner companyId={company.id} name={company.name} matches={duplicates.map((m) => ({ companyId: m.companyId, name: m.name, slug: m.slug, verdict: m.verdict, reasons: m.reasons }))} canWrite={canWrite(loaded.session)} running={!!running} />
+        </div>
+      )}
+      {running && <RunProgress runId={run.id} initial={run.progress} hasVersion={!!version} title={run.kind === "RESEARCH" ? "Refreshing stale data — the current version stays in place until the refresh is applied" : undefined} />}
       {!running && run?.status === "FAILED" && !version && (
         <div className="px-8 py-10">
           <div className="max-w-xl rounded-lg border border-risk/30 bg-risk-soft/50 px-4 py-3">

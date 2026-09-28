@@ -88,7 +88,14 @@ function sanitizeMetric(m: MetricInstance): MetricInstance {
 export function resolveAsOf(deal: CanonicalDeal): Date | null {
   const started = deal.analysis?.provenance?.startedAt;
   const d0 = started ? new Date(started) : null;
-  if (d0 && !Number.isNaN(d0.getTime())) return d0;
+  if (d0 && !Number.isNaN(d0.getTime())) {
+    // A stale-data refresh moves the reference date: ages are measured at the latest refresh (orchestration/refresh.ts).
+    const refreshed = arr(deal.analysis?.refreshes)
+      .map((r) => new Date(r?.asOf ?? ""))
+      .filter((d) => !Number.isNaN(d.getTime()) && d.getTime() > d0.getTime())
+      .sort((a, b) => b.getTime() - a.getTime())[0];
+    return refreshed ?? d0;
+  }
   let best: number | null = null;
   const consider = (s: string | null | undefined) => {
     if (!s) return;

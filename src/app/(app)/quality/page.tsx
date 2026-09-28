@@ -7,26 +7,28 @@ import { relative } from "@/lib/format";
 export const metadata = { title: "Quality & Reliability" };
 export const dynamic = "force-dynamic";
 
-type Fmt = "pct" | "usd" | "sec" | "ms" | "num";
+type Fmt = "pct" | "usd" | "sec" | "ms" | "num" | "min";
 
 function fmt(v: number | null, f: Fmt) {
   if (v === null || !Number.isFinite(v)) return null;
   switch (f) {
     case "pct":
-      return `${(v * 100).toFixed(v < 0.1 ? 1 : 0)}%`;
+      return `${(v * 100).toFixed(v < 0.1 || (v > 0.9 && v < 1) ? 1 : 0)}%`;
     case "usd":
       return `$${v.toFixed(3)}`;
     case "sec":
       return `${v.toFixed(0)} s`;
     case "ms":
       return v < 1000 ? `${v.toFixed(0)} ms` : `${(v / 1000).toFixed(1)} s`;
+    case "min":
+      return `${v.toFixed(0)} min`;
     default:
       return v.toFixed(1);
   }
 }
 
 /** Targets are goals the product is measured against, not claims. */
-function Metric({ label, stat, f, target, better }: { label: string; stat: Stat; f: Fmt; target?: string; better?: (v: number) => boolean }) {
+function Metric({ label, stat, f, target, better, extra }: { label: string; stat: Stat; f: Fmt; target?: string; better?: (v: number) => boolean; extra?: string }) {
   const shown = fmt(stat.value, f);
   const tone = stat.value === null || !better ? "neutral" : better(stat.value) ? "ok" : "warn";
   return (
@@ -38,6 +40,7 @@ function Metric({ label, stat, f, target, better }: { label: string; stat: Stat;
       </div>
       <div className="mt-2 text-[11.5px] leading-snug text-ink-3">
         {stat.basis} · n = {stat.n}
+        {extra && <> · {extra}</>}
         {target && <> · target {target}</>}
       </div>
     </div>
@@ -68,10 +71,63 @@ export default async function QualityPage() {
               </div>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <Metric label="Metric extraction accuracy" stat={e.extractionAccuracy} f="pct" target="≥ 98.7%" better={(v) => v >= 0.987} />
+                <Metric label="Deck traps detected" stat={e.trapDetection} f="pct" target="100%" better={(v) => v >= 0.999} />
+                <Metric
+                  label="Citation support (semantic)"
+                  stat={e.citationSupport ?? { value: null, n: 0, basis: "sampled citations whose cited text supports the statement (LLM judge)" }}
+                  f="pct"
+                  target="≥ 99.5%"
+                  better={(v) => v >= 0.995}
+                  extra={e.citationSupport?.ci95 ? `95% CI ${fmt(e.citationSupport.ci95.low, "pct")}–${fmt(e.citationSupport.ci95.high, "pct")}` : undefined}
+                />
+                <Metric label="Retrieval: relevant passage in top 5" stat={e.retrieval?.hit5 ?? { value: null, n: 0, basis: "labelled questions over the evaluation corpus" }} f="pct" target="≥ 85%" better={(v) => v >= 0.85} />
+              </div>
+              {e.retrieval && (
+                <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <Metric label="Retrieval precision@5" stat={e.retrieval.precision5} f="pct" />
+                  <Metric label="Retrieval recall@5" stat={e.retrieval.recall5} f="pct" />
+                  <Metric label="Retrieval recall@10" stat={e.retrieval.recall10} f="pct" />
+                  <Metric label="Whole-fund search: relevant in top 10" stat={e.retrieval.unscopedHit10} f="pct" target="≥ 75%" better={(v) => v >= 0.75} />
+                </div>
+              )}
+              {e.citationSupport && e.citationSupport.byOrigin.length > 0 && (
+                <p className="mt-3 text-[12px] text-ink-3">
+                  Citation support by origin: {e.citationSupport.byOrigin.map((o) => `${o.origin.toLowerCase()} ${fmt(o.value, "pct") ?? "—"} (n = ${o.n})`).join(" · ")} · as judged before the verbatim check{" "}
+                  {fmt(e.citationSupport.judged.value, "pct") ?? "—"}.
+                </p>
+              )}
+              <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 {e.suites.map((x) => (
                   <Metric key={x.suite} label={`Suite: ${x.suite}`} stat={{ value: x.total ? x.passed / x.total : null, n: x.total, basis: `${x.passed}/${x.total} checks passed` }} f="pct" better={(v) => v === 1} />
                 ))}
               </div>
+              {e.extractionPerDeck.length > 0 && (
+                <details className="mt-5 text-[12.5px]">
+                  <summary className="cursor-pointer text-ink-3 hover:text-ink">Extraction accuracy per deck ({e.extractionPerDeck.length} fictional decks)</summary>
+                  <div className="mt-2 overflow-x-auto">
+                    <table className="w-full min-w-[480px]">
+                      <thead>
+                        <tr>
+                          <Th>Deck</Th>
+                          <Th>Archetype</Th>
+                          <Th align="right">Metrics exact</Th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {e.extractionPerDeck.map((d) => (
+                          <tr key={d.deck} className="border-t border-line">
+                            <Td className="font-mono text-[11.5px]">{d.deck}</Td>
+                            <Td className="text-ink-2">{d.archetype ?? "—"}</Td>
+                            <Td align="right" className="num">
+                              {d.ok}/{d.total}
+                            </Td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+              )}
               {e.failures.length > 0 && (
                 <div className="mt-5 overflow-x-auto">
                   <table className="w-full min-w-[560px] text-[12.5px]">
@@ -112,8 +168,25 @@ export default async function QualityPage() {
             <Metric label="Contradicted material claims" stat={q.data.contradictionRate} f="pct" />
             <Metric label="Integrity findings per deal" stat={q.data.integrityFindingsPerDeal} f="num" />
             <Metric label="Human correction rate" stat={q.data.humanCorrectionRate} f="pct" />
+            <Metric label="Other analyst overrides per deal" stat={q.data.otherOverridesPerDeal} f="num" />
             <Metric label="Deals with instruction-like text detected" stat={q.data.securityFlaggedDeals} f="pct" />
           </div>
+        </Section>
+
+        <Section eyebrow="Human utility (feedback from the team)">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Metric label="Useful founder questions" stat={q.feedback.usefulQuestionRate} f="pct" target="≥ 91%" better={(v) => v >= 0.91} />
+            <Metric label="Useful, judged after a meeting" stat={q.feedback.usefulAfterMeetingRate} f="pct" target="≥ 91%" better={(v) => v >= 0.91} />
+            <Metric label="Questions already known" stat={q.feedback.alreadyKnownRate} f="pct" />
+            <Metric label="Questions answered in founder meetings" stat={q.feedback.meetingAnsweredRate} f="pct" />
+            <Metric label="Analyses with reported value" stat={q.feedback.analysisAnyValue} f="pct" />
+            <Metric label="Surfaced better questions" stat={q.feedback.analysisBetterQuestions} f="pct" />
+            <Metric label="Surfaced important risks" stat={q.feedback.analysisImportantRisks} f="pct" />
+            <Metric label="Showed missing evidence" stat={q.feedback.analysisMissingEvidence} f="pct" />
+            <Metric label="Gave market insight" stat={q.feedback.analysisMarketInsight} f="pct" />
+            <Metric label="Preparation time saved (median)" stat={q.feedback.minutesSavedMedian} f="min" />
+          </div>
+          <p className="mt-3 text-[12px] text-ink-3">Recorded on each deal&apos;s Questions tab. Feedback never feeds any score.</p>
         </Section>
 
         <Section eyebrow="Analysis runs">

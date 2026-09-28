@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui";
 import { evidenceTone, titleCase } from "@/lib/format";
 import { EvidenceExplorer } from "@/components/deal/evidence/evidence-explorer";
 import { lineageData } from "@/components/deal/lineage/data";
+import { RefreshStale } from "@/components/deal/refresh-stale";
+import { refreshPanelData } from "@/server/refresh-view";
 import type { DocLite, EvidenceClaim, MetricDefLite, Selection } from "@/components/deal/evidence/labels";
 
 type SP = Record<string, string | string[] | undefined>;
@@ -103,6 +105,8 @@ export default async function EvidencePage({ params, searchParams }: { params: P
           ))}
         </dl>
       </div>
+
+      <RefreshStale data={refreshPanelData(company, version!.rawCanonical, loaded.run)} canWrite={canWrite(session)} slug={company.slug} />
 
       <nav aria-label="Evidence sections" className="mb-6 flex flex-wrap items-center gap-x-5 gap-y-2 text-[12.5px] text-ink-3">
         <a href="#claims" className="hover:text-ink">

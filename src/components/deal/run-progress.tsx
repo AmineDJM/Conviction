@@ -7,7 +7,7 @@ import { cx } from "@/components/ui";
 type Step = { step: string; label: string; status: string; at: string; detail?: string };
 
 /** Meaningful progress (no fake loading): each step reflects a real pipeline stage. */
-export function RunProgress({ runId, initial, hasVersion }: { runId: string; initial: Step[]; hasVersion: boolean }) {
+export function RunProgress({ runId, initial, hasVersion, title }: { runId: string; initial: Step[]; hasVersion: boolean; title?: string }) {
   const router = useRouter();
   const [steps, setSteps] = useState<Step[]>(initial);
   const [spent, setSpent] = useState<number | null>(null);
@@ -51,7 +51,7 @@ export function RunProgress({ runId, initial, hasVersion }: { runId: string; ini
     <div className="no-print border-b border-line bg-surface px-8 py-4">
       <div className="mb-3 flex items-baseline justify-between">
         <div className="text-[13px] font-medium">
-          {hasVersion ? "Analysis in progress — showing preliminary understanding" : "Analyzing"}
+          {title ?? (hasVersion ? "Analysis in progress — showing preliminary understanding" : "Analyzing")}
         </div>
         <div className="flex items-baseline gap-4">
           <div className="num text-[12px] text-ink-3">

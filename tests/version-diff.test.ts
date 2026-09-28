@@ -4,7 +4,8 @@ import { getRegistry } from "@/engine/benchmarks";
 import { DEFAULT_FUND_PROFILE } from "@/domain/fund";
 import type { CanonicalDeal, Claim, FounderQuestion } from "@/domain/canonical";
 import { defaultComparison, diffVersions, founderCallChanges, type VersionSide } from "@/reports/version-diff";
-import { applyMetricCorrection, applyQuestionUpdate } from "@/orchestration/corrections";
+import { applyQuestionUpdate } from "@/orchestration/corrections";
+import { addOverride, applyOverrides } from "@/engine/overrides";
 import { makeDeal } from "./fixtures";
 
 const reg = getRegistry();
@@ -61,13 +62,16 @@ describe("diffVersions", () => {
     d.metrics = d.metrics.map((m, i) => ({ ...m, id: `MET-${String(i + 1).padStart(3, "0")}` }));
     const target = d.metrics.find((m) => m.metricKey === "nrr")!;
     expect(nrrId).toBeTruthy();
-    const { deal } = applyMetricCorrection(d, { metricId: target.id, value: 85, note: "Cohort file shows 85%", actor: "Test" }, now);
-    const diff = diffVersions(side(d, 1), side(deal, 2, "METRIC_CORRECTION"));
+    const { deal } = addOverride(d, { target: "METRIC", ref: target.id, field: "normalizedValue", from: 118, to: 85, reason: "Cohort file shows 85%", by: "Test", at: now.toISOString() });
+    // History compares the effective deals (raw extraction + overrides), like every view.
+    const diff = diffVersions(side(d, 1), side(applyOverrides(deal), 2, "USER_OVERRIDE"));
     const nrr = diff.metrics.find((m) => m.metricKey === "nrr");
     expect(nrr?.kind).toBe("CHANGED");
     expect(nrr?.from?.value).toBe(118);
     expect(nrr?.to?.value).toBe(85);
-    expect(nrr?.to?.method).toBe("USER_CORRECTED");
+    expect(nrr?.to?.id).toBe(target.id); // same instance: an override never creates a metric copy
+    expect(nrr?.from?.corrected).toBe(false);
+    expect(nrr?.to?.corrected).toBe(true);
     const changedDims = diff.dimensions.filter((x) => x.value.changed);
     expect(changedDims.length).toBeGreaterThan(0);
     expect(diff.changeCount).toBeGreaterThan(0);
@@ -144,21 +148,21 @@ describe("founderCallChanges", () => {
 });
 
 describe("analyst edits", () => {
-  it("metric correction keeps the original, makes the correction primary and re-derives", () => {
+  it("a metric correction is an override: same instance, raw value kept, one primary, re-correcting replaces nothing", () => {
     const d = makeDeal();
     d.metrics = d.metrics.map((m, i) => ({ ...m, id: `MET-${String(i + 1).padStart(3, "0")}` }));
     const arr = d.metrics.find((m) => m.metricKey === "arr")!;
-    const { deal, corrected } = applyMetricCorrection(d, { metricId: arr.id, value: 3_000_000, note: "Excludes pilots", actor: "Test" }, now);
-    expect(d.metrics.find((m) => m.id === arr.id)!.isPrimary).toBe(true); // input not mutated
-    expect(deal.metrics.find((m) => m.id === arr.id)!.isPrimary).toBe(false);
-    expect(corrected.isPrimary).toBe(true);
-    expect(corrected.calculationMethod).toBe("USER_CORRECTED");
-    expect(deal.metrics.filter((m) => m.metricKey === "arr" && m.isPrimary)).toHaveLength(1);
-    // Correcting again supersedes the earlier correction for the same period.
-    const again = applyMetricCorrection(deal, { metricId: arr.id, value: 3_100_000, note: "Final", actor: "Test" }, now);
-    const arrs = again.deal.metrics.filter((m) => m.metricKey === "arr");
-    expect(arrs.filter((m) => m.calculationMethod === "USER_CORRECTED")).toHaveLength(1);
-    expect(arrs.find((m) => m.isPrimary)?.normalizedValue).toBe(3_100_000);
+    const first = addOverride(d, { target: "METRIC", ref: arr.id, field: "normalizedValue", from: arr.normalizedValue, to: 3_000_000, reason: "Excludes pilots", by: "Test", at: now.toISOString() });
+    expect(d.overrides).toHaveLength(0); // input not mutated
+    expect(first.deal.metrics).toHaveLength(d.metrics.length); // no USER_CORRECTED copy
+    expect(first.deal.metrics.find((m) => m.id === arr.id)!.normalizedValue).toBe(arr.normalizedValue); // raw kept
+    const eff = applyOverrides(first.deal);
+    expect(eff.metrics.filter((m) => m.metricKey === "arr" && m.isPrimary)).toHaveLength(1);
+    expect(eff.metrics.find((m) => m.id === arr.id)!.normalizedValue).toBe(3_000_000);
+    // Correcting again: the later override wins, the earlier one stays in the list (audit) until reverted.
+    const again = addOverride(first.deal, { target: "METRIC", ref: arr.id, field: "normalizedValue", from: 3_000_000, to: 3_100_000, reason: "Final", by: "Test", at: now.toISOString() });
+    expect(applyOverrides(again.deal).metrics.find((m) => m.id === arr.id)!.normalizedValue).toBe(3_100_000);
+    expect(again.deal.metrics.every((m) => m.calculationMethod !== "USER_CORRECTED")).toBe(true);
   });
 
   it("question update records status and answer without mutating input", () => {

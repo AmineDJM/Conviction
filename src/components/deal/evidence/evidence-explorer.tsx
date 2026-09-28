@@ -63,11 +63,6 @@ export function EvidenceExplorer(p: EvidenceExplorerProps) {
   }, []);
   const back = useCallback(() => setStack((st) => st.slice(0, -1)), []);
   const close = useCallback(() => setStack([]), []);
-  const onCorrected = useCallback((newId: string) => {
-    const s: Selection = { kind: "metric", id: newId };
-    setStack([s]);
-    setLastShown(s);
-  }, []);
 
   // Keep the URL shareable: ?claim=CLM-004, ?source=SRC-007, ?metric=MET-003, ?doc=<id>&page=<n>.
   useEffect(() => {
@@ -122,7 +117,7 @@ export function EvidenceExplorer(p: EvidenceExplorerProps) {
       <Drawer open={!!sel} onClose={close} label={header.label} eyebrow={header.eyebrow} title={header.title} onBack={prev ? back : undefined} backLabel={prev ? `Back to ${selLabel(prev)}` : undefined}>
         {shown?.kind === "claim" && <ClaimDetail id={shown.id} idx={idx} open={openFromDrawer} />}
         {shown?.kind === "source" && <SourceDetail id={shown.id} idx={idx} open={openFromDrawer} />}
-        {shown?.kind === "metric" && <MetricDetail id={shown.id} idx={idx} open={openFromDrawer} companyId={p.companyId} versionId={p.versionId} canWrite={p.canWrite} onCorrected={onCorrected} />}
+        {shown?.kind === "metric" && <MetricDetail id={shown.id} idx={idx} open={openFromDrawer} canWrite={p.canWrite} />}
         {shown?.kind === "doc" && <DocDetail id={shown.id} page={shown.page} idx={idx} open={openFromDrawer} />}
       </Drawer>
     </>

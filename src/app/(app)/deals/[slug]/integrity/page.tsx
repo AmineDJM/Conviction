@@ -16,12 +16,14 @@ import {
 import { AlternativeExplanations, DeckForensics, PerfectSlides } from "@/components/deal/integrity/forensics";
 import { OverridesPanel } from "@/components/deal/overrides/overrides-panel";
 import { overrideRows } from "@/components/deal/overrides/rows";
+import { RefreshStale } from "@/components/deal/refresh-stale";
+import { refreshPanelData } from "@/server/refresh-view";
 
 export const metadata = { title: "Integrity" };
 
 export default async function IntegrityPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { session, company, version } = await loadDeal(slug);
+  const { session, company, version, run } = await loadDeal(slug);
   // Pages render alongside the layout; while the first analysis is running there is no version yet.
   if (!version) return null;
   const c = version.canonical;
@@ -82,7 +84,12 @@ export default async function IntegrityPage({ params }: { params: Promise<{ slug
             </Section>
           </div>
 
-          <Section id="sources" eyebrow="Source reliability & freshness" title="Tier, age and flags of every source">
+          <Section
+            id="sources"
+            eyebrow="Source reliability & freshness"
+            title="Tier, age and flags of every source"
+            action={<RefreshStale compact data={refreshPanelData(company, version.rawCanonical, run)} canWrite={canWrite(session)} slug={slug} />}
+          >
             <SourceReliabilityTable r={r} c={c} slug={slug} />
           </Section>
         </>

@@ -108,6 +108,30 @@ Object storage is used only when all three required variables are set. Documents
 
 Documents and off-site backups are then stored (encrypted by the application, AES-256-GCM) in Supabase; the SQLite database stays on the Render disk. Nothing else from Supabase is required.
 
+### Integrations (optional): Zoom and Google Meet
+
+The meetings workflow never needs an integration: a transcript can be pasted or uploaded (.txt, .md, .vtt, .srt) and a recording uploaded and transcribed. Connecting Zoom or Google Meet only adds **Import from Zoom / Google Meet** on a deal's Meetings tab. Setup is per server (client id + secret); each member then connects their **own** account under **Settings → Integrations**, which also shows the exact redirect URI to register and the scopes.
+
+| Variable | Provider |
+|---|---|
+| `ZOOM_CLIENT_ID` / `ZOOM_CLIENT_SECRET` | Zoom General app (user-managed, OAuth) |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google Cloud OAuth client (Web application) |
+| `APP_URL` | Public URL used to build the redirect URIs (default: Render's `RENDER_EXTERNAL_URL`, else the request's host) |
+
+Redirect URIs: `<APP_URL>/api/integrations/zoom/callback` and `<APP_URL>/api/integrations/google_meet/callback`.
+
+**Zoom** — Zoom App Marketplace → Develop → Build App → *General App*, user-managed. Add the redirect URI (and to the OAuth allow list) and the scopes `cloud_recording:read:list_user_recordings` (list your cloud recordings and their files) and `user:read:user` (show the connected account); classic apps use `recording:read` and `user:read`. Turn on *Cloud recording* and *Create audio transcript* in Zoom so recordings carry a VTT transcript. Import prefers that transcript (Zoom's speaker names and cue times, parsed exactly like an uploaded .vtt); without one, the audio file (M4A, else MP4) goes through the recording transcription path — M4A/MP4 cannot be split, so audio over 24 MB (≈ 20+ minutes) is refused with a clear message (convert to MP3 and upload it instead). A development app can only be authorized by users of the developer's own Zoom account.
+
+**Google Meet** — Google Cloud console: enable the *Google Meet REST API* and the *Google Drive API*; OAuth consent screen with the scopes below; Credentials → OAuth client ID → *Web application* with the redirect URI. Scopes, and why these are the minimal ones:
+- `https://www.googleapis.com/auth/meetings.space.readonly` (sensitive) — conference records, participants, transcripts and **transcript entries** (Meet REST API v2). Entries are the primary source: one per utterance with the participant and exact start/end times; speaker names come from resolving each entry's participant (signed-in, anonymous or phone user).
+- `https://www.googleapis.com/auth/drive.meet.readonly` (restricted) — only Drive files created or edited by Meet. Used solely as a fallback: Google keeps transcript entries 30 days after the meeting, after which the transcript Google Doc is exported as text (`files.export`, `text/plain`) — speaker names kept, only Meet's periodic timestamps. It is much narrower than `drive.readonly`; if the user does not grant it, recent meetings still import and older ones say why they cannot.
+- `openid email` — to show which account is connected.
+An *Internal* app (Google Workspace) needs no verification; an *External* app needs Google's verification for the sensitive and restricted scopes (Testing mode works for up to 100 listed test users). Meet only produces transcripts on Workspace editions with transcription, when it was turned on in the meeting.
+
+Security: OAuth 2.0 authorization code with PKCE (S256) and a 256-bit `state` that is single-use, expires after 10 minutes and is bound to the workspace, user and browser session that started the flow (a callback from another session is rejected and audited). Return paths are same-origin relative paths only. Tokens are stored encrypted (AES-256-GCM, `DATA_ENCRYPTION_KEY`) per workspace member in `integration_connections`, are used only for that member's own listings and imports, never logged, exported or sent to the browser, and are deleted on **Disconnect** (after revoking at the provider) or when the member is removed. Access tokens are refreshed shortly before expiry and on any 401 (refresh → retry once); Zoom's rotating refresh token is replaced atomically and refreshes are single-flight. A rejected refresh marks the connection *Reconnect needed*. Download URLs are never taken from the browser (the server re-lists and resolves the file) and the bearer token is sent only to Zoom/Google hosts, never to a redirect target on another origin. Rate limits: a short `Retry-After` is retried once, a longer one is reported. Connect, reject, disconnect, listing and every import are in the audit log; viewers cannot connect or import.
+
+Development without credentials: `npx tsx scripts/mock-integrations.ts` starts a local mock of the documented Zoom and Google endpoints (auto-consent, PKCE, token rotation, sample recordings and Meet transcripts); run the app with `CONVICTION_INTEGRATIONS_MOCK_URL=http://127.0.0.1:4020` and the printed client ids (ignored when `NODE_ENV=production`). `tests/integrations.zoom.test.ts` and `tests/integrations.google.test.ts` run against it.
+
 ### Integrity checks
 
 `GET /api/admin/consistency` (owners and partners), also shown under **Settings → Data & backups**, verifies that every company's pipeline projection, metric facts, deal memory and retrieval chunks match its current version.
@@ -126,7 +150,7 @@ Documents and off-site backups are then stored (encrypted by the application, AE
 
 ## What it does
 
-- **Upload → analysis**: PDF, PPTX, images, several documents; three depth modes: Fast screen (≈ $0.03–0.10), Standard (target ≤ $0.25, hard cap $0.50 enforced in code), Deep DD (explicit budget). Real progress steps, and a preliminary understanding appears before the full analysis finishes.
+- **Upload → analysis**: PDF, PPTX, images, several documents; three depth modes: Fast screen (≈ $0.03–0.08, hard cap $0.15), Standard (target ≤ $0.25, hard cap $0.50 enforced in code), Deep DD (explicit budget). Real progress steps, and a preliminary understanding appears before the full analysis finishes.
 - **Decision cockpit**: plain-language explanation; Operating Quality (index with bounds and coverage, peer-relative), Evidence (anchored category), Power-law potential, Fund fit (binary mandate gates plus a descriptive index), Risk (multidimensional); exceptional strength; the bet; what could break it; core metrics with evidence labels; next best action; recommendation gates.
 - **Tabs**: Quick Memo (one printable page, focus mode) · Product (before/after) · Founders (capabilities, not pedigree) · Market (reconstructed bottom-up, value capture, top-down; deck TAM never accepted) · Traction · GTM · Economics (every metric traced to definition and formula) · Competition (incumbent-copy, cost-commoditization and distribution tests; moat dynamics) · Returns (interactive model, backwards return, price sensitivity, financing path with delay scenarios) · Risks (repairable / structural / thesis-killing, falsification, symmetric red team) · Evidence (claim ledger with source extracts) · Questions (decision-tested, founder-call update) · Reports (Investment Memo, Founder Call Brief) · History (versions and diffs).
 - **Compare, IC, Portfolio, Benchmarks** (registry inspector + *Recalculate portfolio* with version-preserving re-scoring), **Fund** (profile, documented knowledge, IC members, meeting transcripts → observed statements).

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { loadDeal } from "@/server/deal";
 import * as repo from "@/server/repo";
 import * as meetings from "@/server/meetings";
@@ -11,6 +11,9 @@ import { MeetingForm } from "@/components/deal/meetings/meeting-form";
 import { PreBriefButton } from "@/components/deal/meetings/pre-brief-button";
 import { MeetingRun } from "@/components/deal/meetings/meeting-run";
 import { StageBadge } from "@/components/deal/meetings/shared";
+import { CloudImport, type ImportProvider } from "@/components/deal/meetings/cloud-import";
+import { connectorStatuses } from "@/server/connectors/meeting-connectors";
+import { viewerConnections } from "@/server/connectors/oauth";
 
 const SOURCE_TEXT: Record<string, string> = { PASTED_TRANSCRIPT: "Pasted transcript", TRANSCRIPT_FILE: "Transcript file", RECORDING_UPLOAD: "Recording (transcribed)", ZOOM: "Zoom", GOOGLE_MEET: "Google Meet" };
 const STATUS_TONE = { TRANSCRIBING: "accent", PROCESSING: "accent", READY: "ok", FAILED: "risk" } as const;
@@ -34,6 +37,10 @@ export default async function MeetingsPage({ params }: { params: Promise<{ slug:
   const vNo = (id: string | null) => (id ? (versions.get(id)?.versionNo ?? null) : null);
   const docs = repo.listDocuments(company.id);
   const hasDeck = docs.some((d) => d.kind !== "TRANSCRIPT" && d.kind !== "OTHER");
+  // Optional integrations: "Import from …" only for accounts the viewer has connected (their own tokens).
+  const importers: ImportProvider[] = writable
+    ? connectorStatuses(process.env, { connection: viewerConnections(session.workspaceId, session.userId) }).flatMap((c) => (c.connection ? [{ id: c.id, name: c.name, status: c.connection.status, accountEmail: c.connection.accountEmail }] : []))
+    : [];
 
   // Canonical workflow for the cycle in view: the latest meeting, or the meeting being prepared.
   const cycleDone = latest && latest.status === "READY" && latest.postAnalysisVersionId === version.row.id;
@@ -45,7 +52,7 @@ export default async function MeetingsPage({ params }: { params: Promise<{ slug:
     { label: "Pre-meeting analysis", state: "done", detail: m ? `v${vNo(m.preAnalysisVersionId)}` : `v${version.row.versionNo} · ${curStage?.label ?? ""}` },
     { label: "Pre-meeting brief", state: (m ? m.preBriefId : nextPreBrief) ? "done" : "current", detail: (m ? m.preBriefId : nextPreBrief) ? "ready" : "to prepare" },
     { label: "Founder meeting", state: m ? "done" : (nextPreBrief ? "current" : "pending"), detail: m ? date(m.heldAt) : "—" },
-    { label: "Transcription", state: m ? (m.status === "TRANSCRIBING" ? "current" : "done") : "pending", detail: m ? (m.source === "RECORDING_UPLOAD" ? (m.transcription ? `${m.transcription.diarized ? "speakers + " : ""}timestamps` : "running") : "transcript provided") : "—" },
+    { label: "Transcription", state: m ? (m.status === "TRANSCRIBING" ? "current" : "done") : "pending", detail: m ? (m.recordingDocumentId ? (m.transcription ? `${m.transcription.diarized ? "speakers + " : ""}timestamps` : "running") : "transcript provided") : "—" },
     { label: "Post-meeting brief", state: m?.postBriefId ? "done" : m?.status === "PROCESSING" ? "current" : "pending", detail: m?.postBriefId ? "ready" : "—" },
     { label: "Post-meeting analysis", state: m?.postAnalysisVersionId ? "done" : m?.status === "PROCESSING" ? "current" : "pending", detail: m?.postAnalysisVersionId ? (stages.get(m.postAnalysisVersionId)?.code.replace("POST_MEETING_ANALYSIS_", "") ?? "") : "—" },
     { label: "Deep DD / IC", state: "optional", detail: decision === "DEEP_DD" || decision === "IC_READY" ? DECISION_LABEL[decision] : "optional" },
@@ -120,10 +127,23 @@ export default async function MeetingsPage({ params }: { params: Promise<{ slug:
             )}
             {!nextPreBrief && writable && <PreBriefButton companyId={company.id} slug={s} />}
             <p className="text-[12px] text-ink-3">
-              Zoom and Google Meet import are optional and not required — see <Link href="/settings?tab=integrations" className="text-ink-2 hover:text-ink">Settings → Integrations</Link>. Upload the recording or its transcript here.
+              {importers.some((p) => p.status === "CONNECTED") ? (
+                <>Import a Zoom or Google Meet recording directly, or upload the recording or its transcript here.</>
+              ) : (
+                <>
+                  Zoom and Google Meet import are optional and not required — connect an account in <Link href="/settings?tab=integrations" className="text-ink-2 hover:text-ink">Settings → Integrations</Link>, or upload the recording or its transcript here.
+                </>
+              )}
             </p>
           </div>
           <div className="rounded-lg border border-line bg-surface px-5 py-4">
+            {importers.length > 0 && (
+              <div className="mb-4 border-b border-line pb-4">
+                <Suspense fallback={null}>
+                  <CloudImport companyId={company.id} slug={s} providers={importers} busy={running} />
+                </Suspense>
+              </div>
+            )}
             <MeetingForm companyId={company.id} canWrite={writable} busy={running} />
           </div>
         </div>

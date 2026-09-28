@@ -50,7 +50,7 @@ import { applyFounderCall, guardRating, recomputeVerification, type MeetingGuard
 import { parseTranscript } from "@/ingestion/transcript";
 import { meetingDiff } from "@/reports/meeting-diff";
 import { buildPreMeetingBrief, orientAnswers } from "@/reports/meeting-briefs";
-import { connectorStatuses, MEETING_CONNECTORS, ConnectorNotAvailableError } from "@/server/connectors/meeting-connectors";
+import { connectorStatuses } from "@/server/connectors/meeting-connectors";
 import { makeDeal, metric } from "./fixtures";
 
 afterAll(() => {
@@ -488,9 +488,9 @@ describe("integrations are optional", () => {
       ["zoom", "NOT_CONFIGURED", false],
       ["google_meet", "NOT_CONFIGURED", false],
     ]);
+    // Credentials alone do not enable import: the user must connect their own account (tests/integrations.*.test.ts).
     const withCreds = connectorStatuses({ ZOOM_CLIENT_ID: "x", ZOOM_CLIENT_SECRET: "y" });
-    expect(withCreds[0]).toMatchObject({ state: "CREDENTIALS_PRESENT", importEnabled: false });
-    await expect(MEETING_CONNECTORS[0]!.listRecordings()).rejects.toBeInstanceOf(ConnectorNotAvailableError);
+    expect(withCreds[0]).toMatchObject({ state: "CONFIGURED", importEnabled: false, connection: null });
     stubModel({ founderCall: extraction() });
     const ctx = setup();
     const m = await meet(ctx);

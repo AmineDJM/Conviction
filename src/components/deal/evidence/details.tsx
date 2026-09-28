@@ -6,6 +6,7 @@ import type { MetricInstance, Source } from "@/domain/canonical";
 import { Badge, Button, cx } from "@/components/ui";
 import { EVIDENCE_LABEL_TEXT, date, evidenceLabelTone, metricValue, titleCase } from "@/lib/format";
 import { DrawerSection } from "./drawer";
+import { isAnalystCorrected } from "@/engine/override-marks";
 import { LineageSections, type LineageContextData } from "@/components/deal/lineage/lineage-view";
 import type { OverrideRow } from "@/components/deal/overrides/overrides-panel";
 import {
@@ -23,10 +24,9 @@ import {
   hostOf,
   independenceTone,
   isUrl,
+  methodText,
   pageFromLocation,
-  parseAmount,
   stateTone,
-  unitHint,
   verificationTone,
   type DocLite,
   type EvidenceClaim,
@@ -290,9 +290,9 @@ export function SourceDetail({ id, idx, open }: { id: string; idx: EvidenceIndex
 /* Metric                                                              */
 /* ------------------------------------------------------------------ */
 
-export function MetricDetail({ id, idx, open, companyId, versionId, canWrite, onCorrected }: { id: string; idx: EvidenceIndex; open: (s: Selection) => void; companyId: string; versionId: string; canWrite: boolean; onCorrected: (newId: string) => void }) {
+export function MetricDetail({ id, idx, open, canWrite }: { id: string; idx: EvidenceIndex; open: (s: Selection) => void; canWrite: boolean }) {
   const m = idx.metrics.find((x) => x.id === id);
-  if (!m) return <p className="text-ink-3">Metric {id} is not in the current version. It may have been re-derived after a correction.</p>;
+  if (!m) return <p className="text-ink-3">Metric {id} is not in the current version. Ids are renumbered when a deck is re-analysed.</p>;
   const def = idx.defs[m.metricKey];
   const siblings = idx.metrics.filter((x) => x.metricKey === m.metricKey && x.id !== m.id);
   const source = m.sourceId ? idx.sources.find((s) => s.id === m.sourceId) : undefined;
@@ -309,7 +309,7 @@ export function MetricDetail({ id, idx, open, companyId, versionId, canWrite, on
         {m.isPrimary ? <Badge tone="accent">Primary — used for scoring</Badge> : <Badge tone="unknown">Not primary</Badge>}
         <Badge tone={stateTone(m.state)}>{STATE_TEXT[m.state]}</Badge>
         <Badge tone={verificationTone(m.verification)}>{VERIFICATION_TEXT[m.verification]}</Badge>
-        <Badge tone={m.calculationMethod === "USER_CORRECTED" ? "accent" : "neutral"}>{METHOD_TEXT[m.calculationMethod]}</Badge>
+        <Badge tone={isAnalystCorrected(m) ? "accent" : "neutral"}>{methodText(m)}</Badge>
       </div>
 
       <DrawerSection title="Instance">
@@ -426,66 +426,9 @@ export function MetricDetail({ id, idx, open, companyId, versionId, canWrite, on
         </DrawerSection>
       )}
 
-      {canWrite && <CorrectionForm key={m.id} m={m} companyId={companyId} versionId={versionId} onCorrected={onCorrected} />}
+      {/* Corrections are analyst overrides, made from the lineage section above (one correction path). */}
+      {canWrite && !idx.lineage && <p className="text-[11.5px] text-ink-3">Open the metric from a deal page to override its value.</p>}
     </div>
-  );
-}
-
-function CorrectionForm({ m, companyId, versionId, onCorrected }: { m: MetricInstance; companyId: string; versionId: string; onCorrected: (newId: string) => void }) {
-  const router = useRouter();
-  const [value, setValue] = useState("");
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const parsed = value.trim() ? parseAmount(value) : null;
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    if (parsed === null) return setError("Enter a number in the unit shown.");
-    if (note.trim().length < 3) return setError("Add a short note: where the corrected value comes from.");
-    setBusy(true);
-    try {
-      const r = await fetch(`/api/deals/${companyId}/metrics`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ metricId: m.id, value: parsed, note: note.trim(), versionId }) });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.error ?? `Request failed (${r.status})`);
-      setValue("");
-      setNote("");
-      onCorrected(j.metricId);
-      router.refresh();
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <DrawerSection title="Correct this metric" className="rounded-lg border border-line bg-surface-2/60 px-3 py-3">
-      <form onSubmit={submit} className="space-y-2.5">
-        <label className="block">
-          <span className="mb-1 block text-[12px] text-ink-3">Corrected value ({unitHint(m.unit)})</span>
-          <input
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            inputMode="decimal"
-            placeholder={m.normalizedValue !== null ? String(m.normalizedValue) : "value"}
-            className="num h-8 w-full rounded-md border border-line bg-surface px-2 text-[13px] outline-none focus-visible:border-accent"
-          />
-          {parsed !== null && <span className="mt-1 block text-[11.5px] text-ink-3">Will be stored as {metricValue(m.unit, parsed)}</span>}
-        </label>
-        <label className="block">
-          <span className="mb-1 block text-[12px] text-ink-3">Note — source or reason (kept in the audit trail)</span>
-          <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="e.g. Data room ARR bridge excludes $420k of pilots" className="w-full resize-y rounded-md border border-line bg-surface px-2 py-1.5 text-[13px] outline-none focus-visible:border-accent" />
-        </label>
-        {!m.isPrimary && <p className="text-[12px] text-ink-3">User corrections take precedence: the corrected value becomes the primary instance for this metric.</p>}
-        {error && <p className="text-[12px] text-risk">{error}</p>}
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-[11.5px] text-ink-3">Creates a new version; the original instance is kept. Scores are recomputed.</span>
-          <Button type="submit" variant="primary" size="sm" disabled={busy}>
-            {busy ? "Saving…" : "Save correction"}
-          </Button>
-        </div>
-      </form>
-    </DrawerSection>
   );
 }
 
