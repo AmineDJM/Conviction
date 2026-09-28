@@ -231,3 +231,28 @@ describe("divergence rules · regression on a Ledgerline-shaped model output", (
     expect(f.reading).toBe("NO_ISSUE_SHOWN");
   });
 });
+
+describe("divergence rules · a French absence is never a signal either", () => {
+  it.each([
+    "Aucun plan de recrutement n'est mentionné",
+    "Aucune donnée de rétention communiquée",
+    "Le deck ne précise pas les coûts de changement",
+    "Les coûts de changement ne sont pas chiffrés",
+    "Pas de plan d'embauche indiqué",
+    "Pas d'information disponible sur la concentration des fournisseurs",
+    "L'équipe commerciale n'a pas été présentée",
+    "Le deck n'indique pas le CAC",
+    "Coûts de changement non précisés",
+    "Délai d'implémentation : non communiqué",
+    "Plan de recrutement : à définir",
+    "Hiring plan: TBD",
+    "Néant",
+  ])("states an absence: %s", (t) => {
+    expect(statesAbsence(t)).toBe(true);
+    expect(isFact(t)).toBe(false);
+  });
+
+  it.each(["Aucun churn sur 24 mois", "Le marché n'est pas concurrentiel", "Pas de churn ; 40 clients payants", "Trois ingénieurs ML recrutés en 2025", "Prix relevé de 20 % en 2025 sans perte de clients"])("is a fact: %s", (t) => {
+    expect(isFact(t)).toBe(true);
+  });
+});

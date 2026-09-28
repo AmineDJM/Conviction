@@ -80,6 +80,7 @@ export const METHOD_TEXT: Record<MetricInstance["calculationMethod"], string> = 
 
 /** Method label of a metric as displayed: an analyst override reads as such whatever the underlying method. */
 export function methodText(m: Pick<MetricInstance, "calculationMethod" | "lineage" | "qualityFlags">): string {
+  if (m.qualityFlags.some((f) => f.startsWith("ANALYST_OVERRIDE") && f.includes("not reported by the company"))) return "Analyst-provided · not reported by the company";
   if (m.calculationMethod !== "USER_CORRECTED" && isOverridden(m)) return m.calculationMethod === "REPORTED" ? "Reported · analyst override" : `${METHOD_TEXT[m.calculationMethod]} · analyst override`;
   return METHOD_TEXT[m.calculationMethod];
 }

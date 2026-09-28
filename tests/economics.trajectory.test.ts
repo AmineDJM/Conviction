@@ -133,7 +133,8 @@ describe("trajectory targets and inputs", () => {
       [6, "USER"],
       [15, "USER"],
     ]);
-    expect(t.referenceMultiple).toBe(15);
+    // Lower middle on an even count: the conservative reference, as in the backwards analysis.
+    expect(t.referenceMultiple).toBe(6);
   });
 
   it("adds the deal's own exit multiples next to the registry's", () => {

@@ -294,7 +294,9 @@ export function backwardsReturn(
       samSharePct: samHighUsd ? (requiredRevenueUsd / samHighUsd) * 100 : null,
     };
   });
-  const mid = byMultiple[Math.floor(byMultiple.length / 2)]!;
+  // Conservative median: the lower-middle revenue multiple (→ the higher required revenue) for an even count.
+  const asc = [...byMultiple].sort((a, b) => a.revenueMultiple - b.revenueMultiple);
+  const mid = asc[Math.floor((asc.length - 1) / 2)]!;
   const share = mid.samSharePct;
   const t = registry.returns.samSharePlausibility;
   const plausibility =

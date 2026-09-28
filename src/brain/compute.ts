@@ -19,13 +19,21 @@ export type ComputeRequest =
   | { kind: "TRAJECTORY"; entryPostMoneyUsd: number | null; targetMultiple: number | null; targetContributionUsd: number | null; yearsToExit: number | null }
   | { kind: "COUNTERFACTUAL"; scenarios: BuiltInScenarioId[] };
 
-/** "$42M", "42 M$", "42m", "1,5 Md" → USD. */
+/** Money suffixes, longest first, each ending on a boundary ("Md" is 1e9, never "M" + "d"; "months" is not "m"). */
+const UNIT = String.raw`(?:md|milliards?|mds?|bn|b|millions?|mm|m|k)(?![a-zà-ÿ])`;
+/** A number: "1,250" (thousands grouping), "1,5" / "1.5" (decimal), "42". */
+const NUM = String.raw`\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:[.,]\d+)?`;
+const TIME_AHEAD = String.raw`(?!\s*(?:ans?|years?|yrs?|months?|mois)(?![a-zà-ÿ]))`;
+/** An amount that is money: a currency symbol/word or a scale suffix is required ("à 7 ans", "at 60 months" are not prices). */
+const MONEY = String.raw`(?:[$€]\s*(?:${NUM})${TIME_AHEAD}(?:\s*${UNIT})?|(?:${NUM})${TIME_AHEAD}\s*${UNIT}(?:\s*[$€])?|(?:${NUM})${TIME_AHEAD}\s*(?:[$€]|usd|eur|dollars?|euros?)(?![a-zà-ÿ]))`;
+
+/** "$42M", "42 M$", "42m", "1,5 Md", "2 milliards", "1,250M" → USD amount (currency symbols are not converted). */
 export function parseMoney(s: string): number | null {
-  const m = /\$?\s*(\d+(?:[.,]\d+)?)\s*(md|mm|milliards?|millions?|bn|b|k|m)?\s*\$?/i.exec(s);
+  const m = new RegExp(String.raw`(${NUM})\s*(${UNIT})?`, "i").exec(s);
   if (!m) return null;
-  const n = Number(m[1]!.replace(",", "."));
+  const n = Number(/^\d{1,3}(?:,\d{3})+/.test(m[1]!) ? m[1]!.replace(/,/g, "") : m[1]!.replace(",", "."));
   const u = (m[2] ?? "").toLowerCase();
-  const f = u === "k" ? 1e3 : u === "md" || u.startsWith("milliard") || u === "b" || u === "bn" ? 1e9 : u === "m" || u === "mm" || u.startsWith("million") ? 1e6 : 1;
+  const f = u === "k" ? 1e3 : u === "md" || u === "mds" || u.startsWith("milliard") || u === "b" || u === "bn" ? 1e9 : u === "m" || u === "mm" || u.startsWith("million") ? 1e6 : 1;
   return Number.isFinite(n) ? n * f : null;
 }
 
@@ -40,13 +48,15 @@ const CF: [RegExp, BuiltInScenarioId][] = [
 export function detectCompute(question: string): ComputeRequest | null {
   const q = question.replace(/ | /g, " ");
   const scenarios = CF.filter(([re]) => re.test(q)).map(([, id]) => id);
-  const multiple = /(\d+(?:[.,]\d+)?)\s*(x|×|fois)\b/i.exec(q);
-  const wantsTrajectory = /trajectoire|trajectory|what (would|must|does) .{0,40}(need|take|have to)|que faut-il|minimum|minimale|required|n[ée]cessaire|pour (que|retourner)|to return|retourne/i.test(q);
+  const multiple = /(\d+(?:[.,]\d+)?)\s*(x|×|fois)(?![\wà-ÿ])/i.exec(q);
+  const wantsTrajectory = /trajectoire|trajectory|what (would|must|does) .{0,40}(need|take|have to)|what (would|must|has to) happen|que faut-il|minimum|minimale|required|n[ée]cessaire|pour (que|retourner)|to return|retourne/i.test(q);
   if (scenarios.length && !(wantsTrajectory && multiple)) return { kind: "COUNTERFACTUAL", scenarios: [...new Set(scenarios)] };
   if (!wantsTrajectory) return null;
-  const price = /(?:à|at|@)\s*(\$?\s*\d+(?:[.,]\d+)?\s*(?:k|m|mm|md|b|bn|millions?|milliards?)?\s*\$?)\s*(?:de\s+)?(post|pre|cap|valo|valuation)?/i.exec(q);
-  const contribution = /(?:return|retourner|rapporter)\s+(\$?\s*\d+(?:[.,]\d+)?\s*(?:m|mm|md|b|bn|millions?|milliards?)\s*\$?)/i.exec(q);
-  const years = /(\d+)\s*(ans|years|yrs)\b/i.exec(q);
+  const price = new RegExp(String.raw`(?:à|\bat|@)\s*(${MONEY})`, "i").exec(q);
+  const contribution = new RegExp(String.raw`(?:return|retourner|rapporter)\s+(${MONEY})`, "i").exec(q);
+  const years = /(\d+)\s*(?:ans|years|yrs)\b/i.exec(q);
+  const months = /(\d+)\s*(?:mois|months)(?![a-zà-ÿ])/i.exec(q);
+  const yearsToExit = years ? Number(years[1]) : months && Number(months[1]) >= 12 && Number(months[1]) % 12 === 0 ? Number(months[1]) / 12 : null;
   const targetMultiple = multiple ? Number(multiple[1]!.replace(",", ".")) : null;
   if (!targetMultiple && !contribution) return null;
   return {
@@ -54,7 +64,7 @@ export function detectCompute(question: string): ComputeRequest | null {
     entryPostMoneyUsd: price ? parseMoney(price[1]!) : null,
     targetMultiple,
     targetContributionUsd: !targetMultiple && contribution ? parseMoney(contribution[1]!) : null,
-    yearsToExit: years ? Number(years[1]) : null,
+    yearsToExit,
   };
 }
 

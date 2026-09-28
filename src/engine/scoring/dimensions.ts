@@ -105,7 +105,10 @@ function primaryMetric(metrics: MetricInstance[], key: string): MetricInstance |
 function creditFor(registry: BenchmarkRegistry, m: MetricInstance): number {
   const c = registry.coverage.credit;
   let credit = m.state === "OBSERVED" ? c.OBSERVED : m.state === "INFERRED" ? c.INFERRED : m.state === "STALE" ? c.STALE : 0;
-  if (m.qualityFlags.some((f) => f.startsWith("SMALL_SAMPLE"))) credit *= c.SMALL_SAMPLE_MULTIPLIER;
+  // Withholding must never pay: an undated figure earns no more than a dated-but-stale one, and an undisclosed
+  // sample size is charged like a disclosed small sample ("SAMPLE_SIZE_UNKNOWN (min N)").
+  if (m.qualityFlags.some((f) => f.startsWith("NO_AS_OF_DATE"))) credit = Math.min(credit, c.STALE);
+  if (m.qualityFlags.some((f) => f.startsWith("SMALL_SAMPLE") || f.startsWith("SAMPLE_SIZE_UNKNOWN"))) credit *= c.SMALL_SAMPLE_MULTIPLIER;
   return credit;
 }
 

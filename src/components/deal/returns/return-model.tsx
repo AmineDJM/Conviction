@@ -97,7 +97,8 @@ export function ReturnModelView({ deal, fund, registryId, stored, samHighUsd, sa
     [outcome, targetUsd, registry, arpa, samHighUsd],
   );
   const sensitivity = useMemo(() => priceSensitivity(inputs, registry), [inputs, registry]);
-  const midIdx = Math.floor(registry.returns.backwardsRevenueMultiples.length / 2);
+  // Lower middle, as in the engine's backwards analysis (conservative on an even count).
+  const midIdx = Math.floor((registry.returns.backwardsRevenueMultiples.length - 1) / 2);
   const isSafe = inputs.entry.instrument === "SAFE" || inputs.entry.instrument === "CONVERTIBLE_NOTE";
 
   const exitRow = (s: ReturnScenarioName): ExitOverride => {

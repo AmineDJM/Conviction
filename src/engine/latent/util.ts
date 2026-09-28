@@ -2,7 +2,7 @@
 import type { CanonicalDeal, MetricInstance } from "@/domain/canonical";
 import type { MetricObservation } from "@/domain/sections";
 import type { Money } from "@/domain/money";
-import { parsePeriodDate, parseScaledNumber, toUsd } from "../metrics/normalize";
+import { parsePeriodDate, parseScaledDetail, parseScaledNumber, toUsd } from "../metrics/normalize";
 import type { LatentBasis, LatentCoverage } from "./types";
 
 export const CURRENT_BASES: ReadonlySet<string> = new Set(["ACTUAL", "CURRENT", "LTM"]);
@@ -96,6 +96,25 @@ export function parseScaled(s: string | null | undefined): number | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * A single amount in free text with what makes it money: a currency ("€5M", "5 MEUR", "$2M", "USD 3M") or a scale
+ * word ("5M", "2.5 millions"). `usd` is converted with the same FX table as every other amount (null when the
+ * currency has no rate — never the unconverted amount).
+ */
+export function amountInText(s: string | null | undefined): { value: number | null; currency: string | null; money: boolean; usd: number | null } | null {
+  if (!s) return null;
+  let d: ReturnType<typeof parseScaledDetail> = null;
+  try {
+    d = parseScaledDetail(s);
+  } catch {
+    d = null;
+  }
+  const t = lower(s);
+  const currency = /€|\beur\b|\beuros?\b|\d\s*(?:k|m|md|mds|bn)?eur\b/.test(t) ? "EUR" : /£|\bgbp\b/.test(t) ? "GBP" : /\bchf\b/.test(t) ? "CHF" : /\$|\busd\b|\bdollars?\b/.test(t) ? "USD" : null;
+  if (!d) return currency ? { value: null, currency, money: true, usd: null } : null;
+  return { value: d.value, currency, money: currency !== null || d.scaled, usd: toUsd(d.value, currency ?? "USD")?.usd ?? null };
 }
 
 export type DateGranularity = "DAY" | "MONTH" | "YEAR" | "NONE";

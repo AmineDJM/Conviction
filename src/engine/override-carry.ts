@@ -18,7 +18,8 @@
  */
 import type { CanonicalDeal, MetricInstance } from "@/domain/canonical";
 import { anchorFor, describeAnchor, findAnchorTarget } from "./override-anchors";
-import type { Override } from "./overrides";
+import { overriddenFields, type Override } from "./overrides";
+import { OVERRIDE_FLAG } from "./override-marks";
 
 export interface CarryOverSource {
   /** The overrides to carry (usually `previous.overrides`). */
@@ -117,6 +118,15 @@ function swapId(s: string, from: string, to: string) {
   return s.replace(new RegExp(`\\b${from.replace(/[-]/g, "\\-")}\\b`, "g"), to);
 }
 
+/** Metric fields that feed scoring besides the value (correction / override markers excluded). */
+function scoringDifferences(a: MetricInstance, b: MetricInstance): string[] {
+  const flags = (m: MetricInstance) => JSON.stringify(m.qualityFlags.filter((f) => !f.startsWith("USER_CORRECTED") && !f.startsWith(OVERRIDE_FLAG)).sort());
+  const out: string[] = [];
+  for (const k of ["metricKey", "state", "verification", "unit", "currency", "periodType", "periodEnd", "basis", "sampleSize"] as const) if ((a[k] ?? null) !== (b[k] ?? null)) out.push(k);
+  if (flags(a) !== flags(b)) out.push("quality flags");
+  return out;
+}
+
 /**
  * Upgrades legacy USER_CORRECTED metric instances to analyst overrides.
  * Returns the input object itself when there is nothing to upgrade.
@@ -147,6 +157,12 @@ export function upgradeLegacyCorrections(deal: CanonicalDeal): LegacyUpgrade {
     }
     if (c.normalizedValue === null) {
       kept.push({ correctedId: c.id, reason: "correction has no value" });
+      continue;
+    }
+    // The upgrade must leave every score unchanged: the original, once overridden, has to score exactly like the copy.
+    const differs = scoringDifferences(c, { ...original, ...overriddenFields(original) });
+    if (differs.length) {
+      kept.push({ correctedId: c.id, reason: `original ${original.id} differs from the correction in ${differs.join(", ")}; kept so scores are unchanged` });
       continue;
     }
     const who = /Corrected by (.+?) on (\d{4}-\d{2}-\d{2})/.exec(c.notes ?? "");

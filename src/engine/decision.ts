@@ -66,9 +66,10 @@ export function decide(inp: DecisionInputs): Recommendation {
   const aiSuggested = deal.aiRecommendation?.suggestedStatus ?? null;
   const hasRatedStrength = deal.exceptionalStrengths.some((s) => s.rating === "STRONG" || s.rating === "EXCEPTIONAL");
   const strongMechanism = deal.powerLawRatings?.nonlinearMechanism === "STRONG" || deal.powerLawRatings?.nonlinearMechanism === "EXCEPTIONAL";
-  // A big market alone is not exceptional: the override needs a rated strength or mechanism.
-  const exceptional =
-    (powerLaw.value ?? 0) >= d.exceptionalOverridePowerLaw && powerLaw.coverage >= 0.5 && (hasRatedStrength || strongMechanism);
+  // A big market alone is not exceptional: the override needs a rated strength or mechanism. The bar is tested on the
+  // conservative bound (missing Power-Law components scored at 0): the observed-only average rises when a weak component
+  // (e.g. the price-dependent outlier path) is withheld, and withholding must never unlock the override.
+  const exceptional = powerLaw.lower >= d.exceptionalOverridePowerLaw && powerLaw.coverage >= 0.5 && (hasRatedStrength || strongMechanism);
 
   // MANDATE
   if (fund.mandate === "FAIL") {
@@ -90,8 +91,8 @@ export function decide(inp: DecisionInputs): Recommendation {
   // EXCEPTIONAL_OVERRIDE and SCREEN_OUT_QUALITY
   if (exceptional) {
     remove(["SCREEN_OUT"]);
-    trace.push({ gate: "EXCEPTIONAL_OVERRIDE", outcome: "APPLIED", detail: `Power-Law ${powerLaw.value} ≥ ${d.exceptionalOverridePowerLaw}: cannot be screened out on composite quality alone` });
-  } else trace.push({ gate: "EXCEPTIONAL_OVERRIDE", outcome: "N/A", detail: `Power-Law ${powerLaw.value ?? "n/a"} < ${d.exceptionalOverridePowerLaw}` });
+    trace.push({ gate: "EXCEPTIONAL_OVERRIDE", outcome: "APPLIED", detail: `Power-Law lower bound ${powerLaw.lower} ≥ ${d.exceptionalOverridePowerLaw}: cannot be screened out on composite quality alone` });
+  } else trace.push({ gate: "EXCEPTIONAL_OVERRIDE", outcome: "N/A", detail: `Power-Law lower bound ${powerLaw.lower} (observed ${powerLaw.value ?? "n/a"}, coverage ${powerLaw.coverage}) — override needs ≥ ${d.exceptionalOverridePowerLaw} with a rated strength or mechanism` });
 
   const qualityLow = oqi.upper < d.screenOutOqiUpper;
   if (qualityLow && !exceptional && !hasRatedStrength) {

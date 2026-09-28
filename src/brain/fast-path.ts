@@ -13,7 +13,9 @@ import { metricValue, usd } from "@/lib/format";
 export type Lang = "fr" | "en";
 
 export function detectLanguage(q: string): Lang {
-  if (/[àâçéèêëîïôûùüÿœ]|\bqu['’]|\b[ldjcs]['’]\w/i.test(q)) return "fr";
+  // Accents count only outside capitalised words: a proper noun ("Hélio", "Café Inc") says nothing about the language.
+  const common = q.replace(/\p{Lu}[\p{L}\p{N}'’-]*/gu, " ");
+  if (/[àâçéèêëîïôûùüÿœ]/i.test(common) || /\bqu['’]|\b[ldjcs]['’]\w/i.test(q)) return "fr";
   const fr = (q.match(/\b(le|la|les|des|est|quel|quelle|quels|quelles|pourquoi|avons|combien|de|du|sur|dit|ce|que|qui|pour|avec|dans|une|un|il|elle|nous|vous|comment|où|ou|et|pas|sont|a|au|aux|son|sa|ses|leur)\b/gi) ?? []).length;
   const en = (q.match(/\b(the|is|are|what|why|how|which|who|did|does|do|of|on|for|with|in|and|a|an|to|say|said|their|its)\b/gi) ?? []).length;
   return fr > en ? "fr" : "en";
@@ -44,7 +46,7 @@ const FACT_PATTERNS: [RegExp, FactKey][] = [
   [/\bgmv\b/i, { kind: "METRIC", key: "gmv", related: ["take_rate"] }],
   [/take rate/i, { kind: "METRIC", key: "take_rate", related: ["gmv"] }],
   [/\bmau\b|monthly active/i, { kind: "METRIC", key: "mau", related: ["dau_mau"] }],
-  [/valuation|valo(risation)?|pre-?money|post-?money|\bcap\b/i, { kind: "VALUATION" }],
+  [/valuation|valo(risation)?|pre-?money|post-?money|\bcap\b(?![\s-]*tables?\b)/i, { kind: "VALUATION" }],
   [/how much (are they|is it) raising|montant (de la )?lev[ée]e|combien (l[eè]vent|ils l[eè]vent|l[eè]ve)|round size|taille du tour|raise\b|lev[ée]e/i, { kind: "RAISE" }],
 ];
 
@@ -128,7 +130,24 @@ const T = {
   },
 } as const;
 
+/** Why a non-OBSERVED value is still shown, stated explicitly: stale or inferred values are never presented as current facts. */
+function stateLabel(m: MetricInstance, lang: Lang): string | null {
+  const fr = lang === "fr";
+  if (m.state === "STALE") return fr ? `ancien : dernière valeur communiquée ${m.periodEnd ?? "à une date non précisée"}` : `stale: last reported ${m.periodEnd ?? "at an unstated date"}`;
+  if (m.state === "INFERRED") {
+    const from = m.inputs.length ? m.inputs.join(", ") : (m.derivation ?? m.notes ?? (fr ? "d'autres chiffres du dossier" : "other figures in the record"));
+    return fr ? `inféré par le code à partir de ${from}` : `inferred by code from ${from}`;
+  }
+  return null;
+}
+
 function statusLabel(m: MetricInstance, lang: Lang): string {
+  const state = stateLabel(m, lang);
+  const base = baseStatusLabel(m, lang);
+  return state ? `${state} · ${base}` : base;
+}
+
+function baseStatusLabel(m: MetricInstance, lang: Lang): string {
   const fr = lang === "fr";
   if (isAnalystCorrected(m)) return fr ? "corrigé par un analyste" : "analyst-corrected";
   if (m.calculationMethod === "DERIVED") return fr ? "calcul" : "computed";
@@ -169,10 +188,13 @@ function metricHref(slug: string, id: string) {
   return `/deals/${slug}/evidence?metric=${id}`;
 }
 
+/** States a fact answer may show: OBSERVED first; STALE and INFERRED values are shown with an explicit label (never as current facts). */
+const SHOWABLE: Record<string, number> = { OBSERVED: 0, INFERRED: 1, STALE: 2 };
+
 function pickInstance(ms: MetricInstance[]): MetricInstance | null {
-  const usable = ms.filter((m) => m.state === "OBSERVED" && m.normalizedValue !== null);
+  const usable = ms.filter((m) => m.state in SHOWABLE && m.normalizedValue !== null);
   if (!usable.length) return null;
-  return usable.find((m) => m.isPrimary) ?? [...usable].sort((a, b) => (b.periodEnd ?? "").localeCompare(a.periodEnd ?? ""))[0]!;
+  return usable.find((m) => m.isPrimary) ?? [...usable].sort((a, b) => SHOWABLE[a.state]! - SHOWABLE[b.state]! || (b.periodEnd ?? "").localeCompare(a.periodEnd ?? ""))[0]!;
 }
 
 export function answerFact(fact: FactKey, co: { name: string; slug: string }, deal: CanonicalDeal, lang: Lang): FastAnswer {

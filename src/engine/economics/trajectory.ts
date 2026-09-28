@@ -151,7 +151,7 @@ export function trajectoryFromState(state0: EconomicsState, opts: TrajectoryOpti
       if (e.revenueMultiple && e.revenueMultiple > 0 && !multiples.some((x) => x.m === e.revenueMultiple)) multiples.push({ m: e.revenueMultiple, source: "DEAL" });
   multiples.sort((x, y) => x.m - y.m);
   const refList = userMultiples?.length ? [...userMultiples].sort((x, y) => x - y) : regMultiples;
-  const referenceMultiple = refList[Math.floor(refList.length / 2)] ?? 10;
+  const referenceMultiple = refList[Math.floor((refList.length - 1) / 2)] ?? 10;
 
   const targetKind: "MULTIPLE" | "CONTRIBUTION" = opts.targetMultiple !== undefined ? "MULTIPLE" : "CONTRIBUTION";
   const contribution = opts.targetContributionUsd ?? state.fund.targetDealReturnUsd;

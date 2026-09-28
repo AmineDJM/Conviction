@@ -45,6 +45,9 @@ export function reconstructMarket(c: CanonicalDeal): MarketReconstruction {
   const ranges: MarketRange[] = [];
   const m = c.market;
   const rejected: string[] = [];
+  // A reconstruction rejected for being too SMALL must not hand the score to a larger range from another method:
+  // a worse (smaller) estimate would then score higher than a plausible small one. The market is not scored instead.
+  let tooSmall = false;
   if (m?.bottomUp) {
     const b = m.bottomUp;
     const cLo = Math.min(b.customerCountLow, b.customerCountHigh);
@@ -69,7 +72,10 @@ export function reconstructMarket(c: CanonicalDeal): MarketReconstruction {
     const lo = v.economicValueCreatedLowUsd * (v.captureShareLowPct / 100);
     const hi = v.economicValueCreatedHighUsd * (v.captureShareHighPct / 100);
     // A serviceable market below $5M is almost always a per-customer figure mislabelled as a market.
-    if (hi > 0 && hi < MIN_PLAUSIBLE_MARKET_USD) rejected.push(`VALUE_CAPTURE rejected: ${fmt(lo)}–${fmt(hi)} is below ${fmt(MIN_PLAUSIBLE_MARKET_USD)} (likely per-customer value, not a market)`);
+    if (hi > 0 && hi < MIN_PLAUSIBLE_MARKET_USD) {
+      rejected.push(`VALUE_CAPTURE rejected: ${fmt(lo)}–${fmt(hi)} is below ${fmt(MIN_PLAUSIBLE_MARKET_USD)} (likely per-customer value, not a market)`);
+      tooSmall = true;
+    }
     else if (hi > MAX_PLAUSIBLE_MARKET_USD) rejected.push(`VALUE_CAPTURE rejected: ${fmt(lo)}–${fmt(hi)} is above ${fmt(MAX_PLAUSIBLE_MARKET_USD)} (unit error)`);
     else if (hi > 0)
       ranges.push({
@@ -84,6 +90,7 @@ export function reconstructMarket(c: CanonicalDeal): MarketReconstruction {
     if (r.method === "BOTTOM_UP" && r.highUsd < MIN_PLAUSIBLE_MARKET_USD) {
       ranges.splice(ranges.indexOf(r), 1);
       rejected.push(`BOTTOM_UP rejected: ${fmt(r.lowUsd)}–${fmt(r.highUsd)} is below ${fmt(MIN_PLAUSIBLE_MARKET_USD)}`);
+      tooSmall = true;
     }
   }
   if (m?.topDown && m.topDown.highUsd > 0) {
@@ -95,7 +102,10 @@ export function reconstructMarket(c: CanonicalDeal): MarketReconstruction {
       basis: m.topDown.basis,
     });
   }
-  const primary = ranges.find((r) => r.method === "BOTTOM_UP") ?? ranges.find((r) => r.method === "VALUE_CAPTURE") ?? ranges[0] ?? null;
+  const candidate = ranges.find((r) => r.method === "BOTTOM_UP") ?? ranges.find((r) => r.method === "VALUE_CAPTURE") ?? ranges[0] ?? null;
+  const fallback = tooSmall && candidate && !ranges.some((r) => r.method === "BOTTOM_UP");
+  if (fallback) rejected.push(`Market not scored: a reconstructed range fell below ${fmt(MIN_PLAUSIBLE_MARKET_USD)}; the ${candidate.method.replace("_", "-").toLowerCase()} range (${fmt(candidate.lowUsd)}–${fmt(candidate.highUsd)}) is shown but not substituted — a rejected small estimate must not raise the score`);
+  const primary = fallback ? null : candidate;
   const midpointUsd = primary ? Math.sqrt(Math.max(primary.lowUsd, 1) * primary.highUsd) : null;
 
   let deckTamUsd: number | null = null;

@@ -185,3 +185,94 @@ describe("language detection covers ordinary French phrasing", () => {
   it.each(["Qu'a dit James Zhang sur Ledgerline ?", "Et son burn ?", "C'est quoi le runway", "Donne-moi le CAC", "Pourquoi on a passé ?"])("%s → fr", (q) => expect(detectLanguage(q)).toBe("fr"));
   it.each(["What did James say about Ledgerline?", "Is the NRR good?", "Show me the burn"])("%s → en", (q) => expect(detectLanguage(q)).toBe("en"));
 });
+
+describe("computations — money, multiples and horizons are parsed with their units", () => {
+  it.each([
+    ["1,5 Md", 1.5e9],
+    ["2 milliards", 2e9],
+    ["3 mds", 3e9],
+    ["1,250M", 1.25e9],
+    ["$1.2bn", 1.2e9],
+    ["40M€", 40e6],
+    ["250k", 250e3],
+    ["2 millions", 2e6],
+  ])("parseMoney(%s) = %s", (s, v) => expect(parseMoney(s)).toBe(v));
+
+  it.each([
+    // FR
+    ["Que faut-il pour faire un 10x à 7 ans ?", { entryPostMoneyUsd: null, targetMultiple: 10, yearsToExit: 7 }],
+    ["Quelle trajectoire pour un 10x à 1,5 Md de post-money ?", { entryPostMoneyUsd: 1.5e9, targetMultiple: 10 }],
+    ["Quelle trajectoire nécessaire pour 5x à 2 milliards ?", { entryPostMoneyUsd: 2e9, targetMultiple: 5 }],
+    ["trajectoire pour 10 fois à 40M€ post en 8 ans", { entryPostMoneyUsd: 40e6, targetMultiple: 10, yearsToExit: 8 }],
+    ["Que faut-il pour retourner 30M$ à 60 mois ?", { entryPostMoneyUsd: null, targetMultiple: null, targetContributionUsd: 30e6, yearsToExit: 5 }],
+    // EN
+    ["What trajectory is required for a 10× return at $42M post?", { entryPostMoneyUsd: 42e6, targetMultiple: 10 }],
+    ["What must happen so that 10x is possible at $42M post?", { entryPostMoneyUsd: 42e6, targetMultiple: 10 }],
+    ["What would it take to return $30M at 60 months?", { entryPostMoneyUsd: null, targetMultiple: null, targetContributionUsd: 30e6, yearsToExit: 5 }],
+    ["Required trajectory for 10x at $40M post in 8 years", { entryPostMoneyUsd: 40e6, targetMultiple: 10, yearsToExit: 8 }],
+    ["Required trajectory for 3x at 7 years", { entryPostMoneyUsd: null, targetMultiple: 3, yearsToExit: 7 }],
+  ] as const)("%s", (q, expected) => {
+    expect(detectCompute(q)).toMatchObject({ kind: "TRAJECTORY", ...expected });
+  });
+
+  it("a horizon is never read as a price (the $7 post-money bug)", () => {
+    const deal = makeDeal();
+    const derived = derive(deal, getRegistry(), DEFAULT_FUND_PROFILE, { now: new Date("2026-09-01") });
+    const out = runCompute(detectCompute("Que faut-il pour faire un 10x à 7 ans ?")!, economicsContext(deal, derived, getRegistry(), DEFAULT_FUND_PROFILE));
+    expect(out.title).not.toMatch(/at \$7 post/);
+    expect(out.text).not.toMatch(/not modelable/);
+  });
+});
+
+describe("fast path — stale and inferred values are shown with explicit labels", () => {
+  const co = { name: "Acme", slug: "acme" };
+  it("a STALE value is answered, labelled stale with its last reported period", () => {
+    const d = makeDeal();
+    d.metrics = d.metrics.map((m) => (m.metricKey === "arr" ? { ...m, state: "STALE" as const, periodEnd: "2025-10", qualityFlags: ["STALE: 11 months old (max 6)"] } : m));
+    const en = answerFact(detectFactQuestion("What is the ARR?")!, co, d, "en");
+    expect(en.found).toBe(true);
+    expect(en.text).toContain("$3.84M");
+    expect(en.text).toContain("stale: last reported 2025-10");
+    const fr = answerFact(detectFactQuestion("Quel est l'ARR ?")!, co, d, "fr");
+    expect(fr.text).toContain("ancien : dernière valeur communiquée 2025-10");
+  });
+
+  it("an INFERRED value is answered, labelled as inferred by code from its inputs", () => {
+    const d = makeDeal();
+    d.metrics = d.metrics.map((m) => (m.metricKey === "arr" ? { ...m, state: "INFERRED" as const, inputs: ["MET-900"] } : m));
+    const en = answerFact(detectFactQuestion("What is the ARR?")!, co, d, "en");
+    expect(en.found).toBe(true);
+    expect(en.text).toContain("inferred by code from MET-900");
+    expect(answerFact(detectFactQuestion("Quel est l'ARR ?")!, co, d, "fr").text).toContain("inféré par le code à partir de MET-900");
+  });
+
+  it("an OBSERVED value carries no state label and is preferred over a stale one", () => {
+    const d = makeDeal();
+    const arr = d.metrics.find((m) => m.metricKey === "arr")!;
+    d.metrics = [...d.metrics.filter((m) => m.metricKey !== "arr"), { ...arr, id: "MET-S", isPrimary: false, state: "STALE", periodEnd: "2026-08" }, { ...arr, id: "MET-O", isPrimary: false, periodEnd: "2026-03" }];
+    const a = answerFact(detectFactQuestion("What is the ARR?")!, co, d, "en");
+    expect(a.citations[0]!.title).toContain("MET-O");
+    expect(a.text).not.toMatch(/stale:|inferred by code/);
+  });
+
+  it("UNKNOWN / WITHHELD values are still not answered", () => {
+    const d = makeDeal();
+    d.metrics = d.metrics.map((m) => (m.metricKey === "arr" ? { ...m, state: "WITHHELD" as const } : m));
+    expect(answerFact(detectFactQuestion("What is the ARR?")!, co, d, "en").found).toBe(false);
+  });
+});
+
+describe("fast path — routing and language", () => {
+  it.each(["Who is on the cap table?", "Show me the cap-table", "Qui est au cap table ?"])("%s is not a valuation question", (q) => {
+    expect(detectFactQuestion(q)?.kind).not.toBe("VALUATION");
+  });
+  it.each(["What is the cap?", "Quel est le cap du SAFE ?", "What's the valuation cap?"])("%s is a valuation question", (q) => {
+    expect(detectFactQuestion(q)?.kind).toBe("VALUATION");
+  });
+  it.each(["What is Hélio's ARR?", "What did Zoé say about Ledgerline?", "Is Café Inc's NRR good?"])("an accent in a proper noun does not flip %s to French", (q) => {
+    expect(detectLanguage(q)).toBe("en");
+  });
+  it.each(["Quelle est la marge brute de Café Inc ?", "Où en est le runway ?", "Était-ce vérifié ?", "Quel est l'ARR de Hélio ?"])("%s → fr", (q) => {
+    expect(detectLanguage(q)).toBe("fr");
+  });
+});

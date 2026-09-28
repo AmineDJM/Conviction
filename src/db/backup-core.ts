@@ -50,7 +50,7 @@ export function backupFileName(now = new Date()) {
 
 export function uniqueBackupPath(dir: string, now = new Date()) {
   let file = path.join(dir, backupFileName(now));
-  for (let i = 1; fs.existsSync(file) || fs.existsSync(`${file}.partial`); i++) file = path.join(dir, backupFileName(now).replace(/\.db$/, `-${i}.db`));
+  for (let i = 1; fs.existsSync(/*turbopackIgnore: true*/ file) || fs.existsSync(/*turbopackIgnore: true*/ `${file}.partial`); i++) file = path.join(dir, backupFileName(now).replace(/\.db$/, `-${i}.db`));
   return file;
 }
 
@@ -175,7 +175,7 @@ export function backupBeforeMigrations(db: Database.Database, dbFile: string, mi
     file,
     reason: "pre-migration",
     createdAt: new Date().toISOString(),
-    sizeBytes: fs.statSync(file).size,
+    sizeBytes: fs.statSync(/*turbopackIgnore: true*/ file).size,
     integrity: v.integrity,
     counts: v.counts,
     migrations: v.migrations,

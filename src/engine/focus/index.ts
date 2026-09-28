@@ -69,15 +69,18 @@ export interface FocusContext {
 /** Only metrics that drive asymmetric upside can signal an outlier; hygiene metrics (low concentration, revenue per FTE) cannot. */
 const UPSIDE_METRICS = new Set(["arr_growth_yoy", "revenue_growth_yoy", "mom_growth", "nrr", "grr", "ltv_to_cac", "magic_number", "burn_multiple", "pilot_to_production_rate", "organic_acquisition_share", "d30_retention", "dau_mau", "repeat_rate", "time_to_value_days"]);
 
-/** Human-readable breakpoint values (dictionary units when the metric is known). */
-function num(v: number | string | null, metricKey: string | null): string {
+/** Human-readable breakpoint values, formatted by unit (dictionary unit when the metric is known, else the row's) — never by magnitude: 12,000 customers stay a count. */
+export function formatByUnit(v: number | string | null, metricKey: string | null, rowUnit?: SensitivityRow["unit"]): string {
   if (v === null) return "n/a";
   if (typeof v === "string") return v;
-  const unit = metricKey ? metricDef(metricKey)?.unit : undefined;
-  if (unit === "USD" || Math.abs(v) >= 10_000) return Math.abs(v) >= 1e6 ? `$${(v / 1e6).toFixed(2)}M` : `$${Math.round(v / 1e3)}k`;
-  if (unit === "PERCENT") return `${v.toFixed(v < 10 ? 1 : 0)}%`;
+  const dict = metricKey ? metricDef(metricKey)?.unit : undefined;
+  const unit = dict ?? (rowUnit === "PCT" ? "PERCENT" : rowUnit === "USD_PER_MONTH" ? "USD" : rowUnit);
+  if (unit === "USD") return `${v < 0 ? "-" : ""}${Math.abs(v) >= 1e6 ? `$${(Math.abs(v) / 1e6).toFixed(2)}M` : Math.abs(v) >= 1e3 ? `$${Math.round(Math.abs(v) / 1e3)}k` : `$${Math.round(Math.abs(v))}`}${rowUnit === "USD_PER_MONTH" && !dict ? "/mo" : ""}`;
+  if (unit === "PERCENT") return `${v.toFixed(Math.abs(v) < 10 ? 1 : 0)}%`;
   if (unit === "MONTHS") return `${v.toFixed(1)} mo`;
-  return Number.isInteger(v) ? String(v) : v.toFixed(2);
+  if (unit === "DAYS") return `${Math.round(v)} days`;
+  if (unit === "MULTIPLE") return `${v.toFixed(1)}×`;
+  return Number.isInteger(v) ? v.toLocaleString("en-US") : v.toFixed(2);
 }
 
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
@@ -119,7 +122,7 @@ export function decisionFocus(deal: CanonicalDeal, registry: BenchmarkRegistry, 
     const status = m ? metricStatus(m.verification, m.calculationMethod, m.state) : r.method === "COMPUTED" ? "COMPUTED" : "UNKNOWN";
     items.push(
       item("SENSITIVITY", r.metricKey ? `metric:${r.metricKey}` : `sens:${r.id}`, r.variable, m ? [m.id] : [], 0.55 + 0.45 * proximity, status, [
-        r.broken ? `Already past its breakpoint (${num(r.breaksAt, r.metricKey)})` : r.margin !== null ? `${Math.abs(r.margin).toFixed(0)}% from the breakpoint (${num(r.current, r.metricKey)} → breaks at ${num(r.breaksAt, r.metricKey)})` : `Breakpoint ${num(r.breaksAt, r.metricKey)}`,
+        r.broken ? `Already past its breakpoint (${formatByUnit(r.breaksAt, r.metricKey, r.unit)})` : r.margin !== null ? `${Math.abs(r.margin).toFixed(0)}% from the breakpoint (${formatByUnit(r.current, r.metricKey, r.unit)} → breaks at ${formatByUnit(r.breaksAt, r.metricKey, r.unit)})` : `Breakpoint ${formatByUnit(r.breaksAt, r.metricKey, r.unit)}`,
         r.why,
       ]),
     );
@@ -198,7 +201,7 @@ export function decisionFocus(deal: CanonicalDeal, registry: BenchmarkRegistry, 
 
   // Outlier candidates: top of a benchmark curve, or an exceptional strength rated on evidence — never manufactured.
   const outliers: (OutlierCandidate & { score: number })[] = [];
-  for (const m of deal.metrics.filter((x) => x.isPrimary && x.state === "OBSERVED" && x.normalizedValue !== null && UPSIDE_METRICS.has(x.metricKey) && !x.qualityFlags.some((f) => /INCONSISTENT|CONTRADICT|SIGNED_NOT_DEPLOYED|CUMULATIVE|SMALL_SAMPLE/.test(f)))) {
+  for (const m of deal.metrics.filter((x) => x.isPrimary && x.state === "OBSERVED" && x.normalizedValue !== null && UPSIDE_METRICS.has(x.metricKey) && !x.qualityFlags.some((f) => /INCONSISTENT|CONTRADICT|SIGNED_NOT_DEPLOYED|CUMULATIVE|SMALL_SAMPLE|SAMPLE_SIZE_UNKNOWN|NO_AS_OF_DATE/.test(f)))) {
     const b = findBenchmark(registry, m.metricKey, peer.profile, peer.stageBand);
     if (!b?.curve) continue;
     const score = interpolate(b.curve, m.normalizedValue!);

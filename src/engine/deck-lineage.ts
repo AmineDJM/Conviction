@@ -29,7 +29,20 @@ export interface DeckVersionEntry {
 
 const DECK_RANK: Record<string, number> = { PDF: 0, PPTX: 0, IMAGE: 1 };
 const deckRank = (kind: string) => DECK_RANK[kind] ?? 9;
-const byTime = (a: { createdAt: string; id: string }, b: { createdAt: string; id: string }) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id);
+/**
+ * Instant of a stored timestamp. Rows mix ISO strings with offsets ("…T09:00:00+02:00", "…Z") and SQLite
+ * "YYYY-MM-DD HH:MM:SS" (UTC): comparing the strings orders them wrongly. Unparseable → +∞ (sorted last).
+ */
+export function timeOf(s: string): number {
+  const t = Date.parse(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(s) ? `${s.replace(" ", "T")}${/(Z|[+-]\d{2}:?\d{2})$/.test(s) ? "" : "Z"}` : s);
+  return Number.isNaN(t) ? Number.POSITIVE_INFINITY : t;
+}
+const cmpTime = (a: string, b: string) => {
+  const ta = timeOf(a);
+  const tb = timeOf(b);
+  return ta === tb ? a.localeCompare(b) : ta < tb ? -1 : 1;
+};
+const byTime = (a: { createdAt: string; id: string }, b: { createdAt: string; id: string }) => cmpTime(a.createdAt, b.createdAt) || a.id.localeCompare(b.id);
 
 /** Index of the pitch deck in an upload set: the first PDF or PPTX, else the first image, else the first file. */
 export function pickDeckIndex(files: { kind: string }[]): number {
@@ -46,7 +59,7 @@ export function resolveDeckLineage(docs: LineageDoc[]): DeckVersionEntry[] {
   if (!out.has(1)) {
     const firstExplicit = explicit[0]?.createdAt ?? null;
     const legacy = docs
-      .filter((d) => d.deckVersion === null && (firstExplicit === null || d.createdAt <= firstExplicit))
+      .filter((d) => d.deckVersion === null && (firstExplicit === null || cmpTime(d.createdAt, firstExplicit) <= 0))
       .sort((a, b) => deckRank(a.kind) - deckRank(b.kind) || byTime(a, b));
     const v1 = legacy[0];
     if (v1 && deckRank(v1.kind) < 9) out.set(1, { seq: 1, documentId: v1.id, filename: v1.filename, createdAt: v1.createdAt, supersedesDocumentId: null, inferred: true });

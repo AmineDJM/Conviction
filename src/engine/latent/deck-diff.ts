@@ -10,6 +10,7 @@ import type { MetricObservation } from "@/domain/sections";
 import type { Money } from "@/domain/money";
 import { metricDef } from "../metrics/dictionary";
 import {
+  amountInText,
   CURRENT_BASES,
   fmtUsd,
   jaccard,
@@ -154,8 +155,9 @@ function actuals(d: CanonicalDeal): Pt[] {
   const obs = (d.metricObservations ?? []).filter((o) => CURRENT_BASES.has(o.basis) && o.value !== null && o.state !== "WITHHELD");
   if (obs.length)
     return obs
-      .map((o) => ({ key: identity(o), label: o.label, value: obsUsd(o) ?? o.value!, rawText: o.rawText, period: o.periodEnd, page: o.page }))
-      .filter((p) => Number.isFinite(p.value));
+      // obsUsd is null when a currency amount cannot be converted: drop the point rather than compare raw euros to dollars.
+      .map((o) => ({ key: identity(o), label: o.label, value: obsUsd(o), rawText: o.rawText, period: o.periodEnd, page: o.page }))
+      .filter((p): p is Pt => p.value !== null && Number.isFinite(p.value));
   return (d.metrics ?? [])
     .filter((m) => m.normalizedValue !== null && CURRENT_BASES.has(m.basis) && m.calculationMethod !== "DERIVED" && (m.state === "OBSERVED" || m.state === "INFERRED" || m.state === "STALE"))
     .map((m) => ({ key: identity(m), label: m.label, value: m.normalizedValue!, rawText: m.rawValue, period: m.periodEnd, page: pageFromLocation(m.location) }));
@@ -239,14 +241,25 @@ const MILESTONE_KEYS: [RegExp, string][] = [
   [/\bgmv\b|gross merchandise/, "gmv"],
   [/gross margin/, "gross_margin"],
   [/\bmau\b|monthly active/, "mau"],
-  [/revenue|sales/, "revenue_ttm"],
+  // Not bare "sales": "Hire 5 sales reps" is a hiring milestone, not a revenue target.
+  [/\brevenues?\b|chiffre d.affaires/, "revenue_ttm"],
   [/customers?|clients?|logos?/, "paying_customers"],
   [/headcount|employees|\bfte\b|hires/, "headcount"],
 ];
 
-function milestoneKey(text: string): string | null {
+/**
+ * Metric key and target (dictionary unit, USD for money) of a claimed milestone, or a null key when the target's unit
+ * does not fit the metric: a USD metric needs a money amount ("€5M", "$2M", "5M"), converted to USD with the shared
+ * FX table; a count / percent metric refuses a money amount.
+ */
+function milestoneTarget(text: string): { key: string | null; target: number | null } {
   const t = lower(text);
-  return MILESTONE_KEYS.find(([re]) => re.test(t))?.[1] ?? null;
+  const key = MILESTONE_KEYS.find(([re]) => re.test(t))?.[1] ?? null;
+  const amt = amountInText(text);
+  if (!key) return { key: null, target: amt?.value ?? null };
+  if (metricDef(key)?.unit === "USD") return amt?.money ? { key, target: amt.usd } : { key: null, target: null };
+  if (amt?.currency) return { key: null, target: null };
+  return { key, target: amt?.value ?? null };
 }
 
 function judge(key: string | null, target: number | null, actual: number): { status: MilestoneStatus; gapPct: number | null } {
@@ -369,7 +382,7 @@ export function deckDiff(previous: CanonicalDeal, current: CanonicalDeal, opts: 
   const milestones: MilestoneCheck[] = [];
   for (const f of forwards(previous)) {
     const due = parseDate(f.periodEnd);
-    const target = obsUsd(f) ?? f.value;
+    const target = obsUsd(f);
     const isDue = due ? (curAsOf ? due.getTime() <= curAsOf.getTime() + 31 * 864e5 : curPts.some((p) => p.key === f.key && (parseDate(p.period)?.getTime() ?? -1) >= due.getTime())) : false;
     const base = { source: f.basis as "FORECAST" | "TARGET", description: `${f.label}: ${f.rawText}`, metricKey: f.key, target, dueDate: f.periodEnd, previousPage: f.page };
     if (!isDue) {
@@ -381,8 +394,7 @@ export function deckDiff(previous: CanonicalDeal, current: CanonicalDeal, opts: 
     else milestones.push({ ...base, actual: strip(a), ...judge(f.key, target, a.value) });
   }
   for (const m of pf?.milestonesClaimed ?? []) {
-    const key = milestoneKey(m.milestone);
-    const target = parseScaled(m.milestone);
+    const { key, target } = milestoneTarget(m.milestone);
     const due = prevAsOf && m.monthsFromNow !== null ? new Date(Date.UTC(prevAsOf.getUTCFullYear(), prevAsOf.getUTCMonth() + Math.round(m.monthsFromNow), 28)) : null;
     const dueDate = due ? due.toISOString().slice(0, 7) : null;
     const base = { source: "MILESTONE_CLAIMED" as const, description: m.milestone, metricKey: key, target, dueDate, previousPage: null };

@@ -173,6 +173,24 @@ function rederive(metrics: MetricInstance[], overridden: Map<string, Override[]>
   return { metrics: out, propagated };
 }
 
+/** States in which the company gave no usable value: an override there SUPPLIES the value rather than correcting one. */
+const VALUELESS_STATES = new Set<MetricInstance["state"]>(["UNKNOWN", "WITHHELD"]);
+
+/** The original state when an override supplies a value the company never gave (UNKNOWN / WITHHELD), else null. */
+export function suppliesMissingValue(m: Pick<MetricInstance, "state">): MetricInstance["state"] | null {
+  return VALUELESS_STATES.has(m.state) ? m.state : null;
+}
+
+/**
+ * The state / verification a metric carries once an analyst override sets its value. A value supplied for an
+ * UNKNOWN or WITHHELD metric becomes OBSERVED (otherwise scoring would ignore it) and is never "verified": its
+ * provenance is the analyst (ANALYST_OVERRIDE flag + OVERRIDE lineage), never the company or a check.
+ */
+export function overriddenFields(m: Pick<MetricInstance, "state" | "verification">): Pick<MetricInstance, "state" | "verification"> {
+  if (!suppliesMissingValue(m)) return { state: m.state, verification: m.verification };
+  return { state: "OBSERVED", verification: m.verification === "CONTRADICTED" ? "CONTRADICTED" : "UNVERIFIED" };
+}
+
 /**
  * Resolves the overrides of a deal: the effective deal plus, for each
  * override, the raw value it replaced and the metrics it propagated to.
@@ -211,9 +229,14 @@ export function resolveOverrides(deal: CanonicalDeal): OverrideResolution {
       }
       metricOverrides.set(o.ref, [...(metricOverrides.get(o.ref) ?? []), o]);
       if (!m.lineage.some((l) => l.step === OVERRIDE_STEP && l.detail.startsWith(tag))) {
+        const supplied = suppliesMissingValue(m);
+        Object.assign(m, overriddenFields(m));
         m.normalizedValue = o.to as number;
         m.lineage.push({ step: OVERRIDE_STEP, detail: note });
-        m.qualityFlags = [...m.qualityFlags.filter((f) => !f.startsWith(OVERRIDE_FLAG)), `${OVERRIDE_FLAG}: company reported ${m.rawValue}`];
+        m.qualityFlags = [
+          ...m.qualityFlags.filter((f) => !f.startsWith(OVERRIDE_FLAG)),
+          supplied ? `${OVERRIDE_FLAG}: analyst-provided value — not reported by the company (was ${supplied.toLowerCase()})` : `${OVERRIDE_FLAG}: company reported ${m.rawValue}`,
+        ];
         needsRederive = true;
       }
     } else if (o.target === "CLASSIFICATION") {

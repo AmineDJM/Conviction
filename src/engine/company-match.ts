@@ -45,6 +45,8 @@ export interface CompanyMatch {
 }
 
 const LEGAL = /\b(inc|incorporated|ltd|llc|llp|gmbh|sas|sasu|sarl|sa|ag|bv|nv|oy|ab|as|srl|spa|plc|corp|corporation|co|company|limited|technologies|technology|labs|ai|hq|holding|holdings|group)\b\.?/g;
+/** Legal forms only: descriptive suffixes (AI, Labs, Technologies, HQ, Group…) are kept, so "Mistral AI" ≠ "Mistral Labs" here. */
+const LEGAL_FORMS = /\b(inc|incorporated|ltd|llc|llp|gmbh|sas|sasu|sarl|sa|ag|bv|nv|oy|ab|as|srl|spa|plc|corp|corporation|co|company|limited)\b\.?/g;
 
 const fold = (s: string) =>
   s
@@ -59,6 +61,11 @@ export function companyNameKey(name: string | null | undefined): string {
     .replace(/[^a-z0-9]+/g, " ")
     .replace(LEGAL, " ")
     .replace(/\s+/g, "");
+}
+
+/** Name key ignoring legal forms only. Two names with the same `companyNameKey` but different exact keys differ by a descriptive suffix. */
+function exactNameKey(name: string): string {
+  return fold(name).replace(/&/g, " and ").replace(/[^a-z0-9]+/g, " ").replace(LEGAL_FORMS, " ").replace(/\s+/g, "");
 }
 
 function nameTokens(name: string): string[] {
@@ -147,7 +154,10 @@ export function matchCompanies(probe: CompanyProbe, candidates: CompanyCandidate
     const f = founderOverlap(probe.founders, c.founders);
     const nameHit = name === "SAME" || name === "PREFIX";
     const reasons: string[] = [];
-    if (name === "SAME") reasons.push(`same name (${c.name})`);
+    // "Mistral AI" vs "Mistral Labs": same name only once descriptive suffixes are dropped — never conclusive on its own
+    // (the verdict below needs the domain or a founder to agree before SAME_LIKELY).
+    const suffixOnly = name === "SAME" && !!probe.name && exactNameKey(probe.name) !== exactNameKey(c.name);
+    if (name === "SAME") reasons.push(suffixOnly ? `same name apart from a descriptive suffix (${probe.name} vs ${c.name})` : `same name (${c.name})`);
     if (name === "PREFIX") reasons.push(`file name starts with “${c.name}”`);
     if (domain === "SAME") reasons.push(`same website (${cDomain})`);
     if (domain === "DIFFERENT" && (nameHit || f.signal === "SAME")) reasons.push(`different website (${pDomain} vs ${cDomain})`);
@@ -163,7 +173,7 @@ export function matchCompanies(probe: CompanyProbe, candidates: CompanyCandidate
     } else if (f.common.length >= 2) verdict = "POSSIBLE";
     if (!verdict) continue;
     if (verdict === "DIFFERENT_LIKELY") reasons.push("likely a homonym — a different company");
-    const rank = (verdict === "SAME_LIKELY" ? 30 : verdict === "POSSIBLE" ? 20 : 10) + (domain === "SAME" ? 3 : 0) + f.common.length + (name === "SAME" ? 1 : 0);
+    const rank = (verdict === "SAME_LIKELY" ? 30 : verdict === "POSSIBLE" ? 20 : 10) + (domain === "SAME" ? 3 : 0) + f.common.length + (name === "SAME" && !suffixOnly ? 1 : 0);
     out.push({ companyId: c.id, name: c.name, verdict, signals: { name, domain, founders: f.signal, foundersInCommon: f.common }, reasons, rank });
   }
   return out.sort((a, b) => b.rank - a.rank || a.name.localeCompare(b.name) || a.companyId.localeCompare(b.companyId)).map(({ rank: _rank, ...m }) => m);

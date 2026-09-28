@@ -43,8 +43,27 @@ export function hasText(s: string | null | undefined): boolean {
  */
 export const ABSENCE_RE =
   /\b(no|not|none|nor|never|without|does not|doesn['’]t|do not|don['’]t|is not|are not|isn['’]t|aren['’]t)\b[^.;]{0,90}\b(state|stated|states|provide|provided|provides|report|reported|reports|describe|described|describes|show|shown|shows|disclose|disclosed|discloses|given|mention|mentioned|specify|specified|specifies|available|identified|quantified)\b/i;
+/** French disclosure verbs / participles (stems): précisé, indiqué, mentionné, communiqué, fourni, détaillé, chiffré… */
+const FR_DISCLOSE = "précis|indiqu|mentionn|communiqu|fourni|détaill|quantifi|chiffr|présent|donn|décri|identifi|renseign|disponibl|document|explicit|abord|évoqu|spécifi|montr";
+const NL = "(?<![\\p{L}])"; // no letter before (\b is ASCII-only: "précisé" would not end on a boundary)
+const NR = "(?![\\p{L}])";
+/**
+ * French forms of an absence ("Aucun plan de recrutement n'est mentionné", "Le deck ne précise pas…", "Pas de plan
+ * d'embauche indiqué", "non communiqué", "néant", "à définir") and the language-neutral "TBD". A negation alone is not
+ * an absence ("Aucun churn sur 24 mois" is a fact): it needs a disclosure verb, as in English.
+ */
+export const ABSENCE_FR_RE = new RegExp(
+  [
+    `${NL}(?:(?:aucun|aucune|sans|pas\\s+d(?:e|u|es))${NR}|pas\\s+d['’])[^.;]{0,90}?${NL}(?:${FR_DISCLOSE})\\p{L}*`,
+    `${NL}n(?:e\\s+|['’])(?:(?:le|la|les|en|y)\\s+|l['’])?(?:${FR_DISCLOSE})\\p{L}*\\s+(?:pas|jamais|nulle\\s+part)${NR}`,
+    `${NL}n(?:e\\s+|['’])(?:est|sont|a|ont|était|étaient|avait|avaient)\\s+(?:pas|jamais)\\s+(?:(?:été|encore|clairement)\\s+)*(?:${FR_DISCLOSE})\\p{L}*`,
+    `${NL}non\\s+(?:${FR_DISCLOSE})\\p{L}*`,
+    `${NL}(?:néant|neant|tbd|à\\s+définir|a\\s+definir|à\\s+préciser|to\\s+be\\s+(?:determined|defined|confirmed))${NR}`,
+  ].join("|"),
+  "iu",
+);
 export function statesAbsence(s: string | null | undefined): boolean {
-  return ABSENCE_RE.test(s ?? "");
+  return ABSENCE_RE.test(s ?? "") || ABSENCE_FR_RE.test(s ?? "");
 }
 
 /** Evidence that states a fact (not an absence) — the only kind that can move a level. */
