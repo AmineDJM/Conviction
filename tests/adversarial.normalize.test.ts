@@ -148,3 +148,20 @@ describe("previously-known normalization bugs (fixed; regression tests)", () => 
     }
   });
 });
+
+describe("sub-team counts are never company headcount", () => {
+  it.each([
+    ["7 AEs", "Mid-market sales team of 7 AEs"],
+    ["12 engineers", "Engineering: 12 engineers"],
+    ["sales team of 5", "Our sales team of 5 reps"],
+  ])("%s is dropped from headcount", (raw, excerpt) => {
+    expect(N("headcount", 7, { unit: "COUNT", currency: null, rawText: raw, excerpt })).toBeNull();
+  });
+  it.each([
+    ["38", "Team of 38."],
+    ["38 employees including 7 AEs", "38 employees including 7 AEs"],
+    ["42 FTEs", "42 FTEs across Paris and NYC"],
+  ])("%s stays headcount", (raw, excerpt) => {
+    expect(N("headcount", 38, { unit: "COUNT", currency: null, rawText: raw, excerpt })).not.toBeNull();
+  });
+});

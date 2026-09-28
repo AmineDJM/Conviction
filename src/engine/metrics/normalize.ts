@@ -123,6 +123,18 @@ export function parsePeriodDate(s: string | null | undefined): Date | null {
   return parsePeriodBounds(s)?.end ?? null;
 }
 
+const SUB_TEAM = /\b(aes?|account executives?|sales ?reps?|sdrs?|bdrs?|salespeople|sales (team|force|people)|engineers?|developers?|devs|csms?|customer success (managers?|team)|support (agents?|staff)|designers?|data scientists?|researchers?|sales engineers?)\b/i;
+const WHOLE_COMPANY = /\b(total|company|employees|ftes?|full[- ]time|team of \d+\s*(people|employees)?\s*[.,;]?$|headcount|staff of)\b/i;
+
+/** "7 AEs" or "sales team of 12" describes a function, not the company's headcount. */
+export function isSubTeamCount(text: string): boolean {
+  const t = text.replace(/\s+/g, " ").trim();
+  if (!SUB_TEAM.test(t)) return false;
+  // "38 employees including 7 AEs" is a whole-company count that mentions a sub-team.
+  const num = /\d[\d,]*\s*(employees|ftes?|people|staff)\b/i.test(t);
+  return !(num && WHOLE_COMPANY.test(t));
+}
+
 const SMALL_RATE_KEYS = new Set(["default_rate", "loss_rate", "defect_rate"]);
 
 function dictUnitToObsUnit(u: MetricUnit): MetricObservation["unit"] {
@@ -167,6 +179,8 @@ export function normalizeObservation(obs: MetricObservation, ctx: NormalizeConte
   } else if (obs.basis === "SIGNED" || obs.basis === "BOOKED") {
     flags.push(`SIGNED_NOT_DEPLOYED: basis is ${obs.basis.toLowerCase()} — signed or booked, not necessarily live or paying`);
   }
+  // A sub-team count ("7 AEs", "12 engineers") is not company headcount: kept only in the raw audit trail.
+  if (key === "headcount" && isSubTeamCount(`${obs.rawText} ${obs.label} ${obs.definitionAsStated ?? ""} ${obs.excerpt}`)) return null;
   const def = metricDef(key);
   if (!def) return null;
 

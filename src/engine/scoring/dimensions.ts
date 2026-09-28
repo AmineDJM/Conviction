@@ -16,6 +16,7 @@ import type { BenchmarkRegistry, ComponentSpec, DimensionId, ProfileId, StageBan
 import { findBenchmark, interpolate, percentile, benchmarkById } from "./curve";
 import { metricDef } from "../metrics/dictionary";
 import type { MarketReconstruction } from "../market";
+import { measuredPmf } from "./measured-pmf";
 
 export type ScoreStatus = "SCORED" | "PARTIAL" | "NOT_SCORABLE";
 
@@ -171,6 +172,22 @@ function scoreComponent(spec: ComponentSpec, ctx: ScoringContext): ComponentResu
   if (spec.kind === "RUBRIC") {
     const r = blank(spec, rubricLabel(spec.criterion));
     const a = deal.rubric.find((x) => x.criterion === spec.criterion);
+    // PMF quality is anchored on measured signals when the record has them (model rating kept in the rationale).
+    if (spec.criterion === "PMF_SIGNAL_QUALITY") {
+      const pmf = measuredPmf(deal, registry, profile, stageBand, a?.rating ?? null);
+      if (pmf.effectiveRating) {
+        const r = blank(spec, rubricLabel(spec.criterion));
+        r.state = pmf.effectiveRating === "INSUFFICIENT_EVIDENCE" ? "INSUFFICIENT_EVIDENCE" : "RATED";
+        r.rating = pmf.effectiveRating;
+        r.rationale = `${pmf.explanation}${a?.rationale ? ` Model rationale: ${a.rationale}` : ""}`;
+        if (pmf.effectiveRating !== "INSUFFICIENT_EVIDENCE") {
+          r.score = registry.rubricPoints[pmf.effectiveRating];
+          r.credit = 1;
+        }
+        r.benchmarkType = pmf.mode === "CLAMPED" ? "MODEL_ASSUMPTION" : "COMPUTED_FROM_MEASURED_SIGNALS";
+        return r;
+      }
+    }
     if (!a || a.rating === "INSUFFICIENT_EVIDENCE") {
       r.state = "INSUFFICIENT_EVIDENCE";
       r.rationale = a?.rationale ?? "Not assessed";

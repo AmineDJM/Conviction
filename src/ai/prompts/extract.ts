@@ -1,5 +1,5 @@
 /**
- * extract_metrics_v1 / extract_claims_v1 — two parallel extraction passes over
+ * extract_metrics_v2 / extract_claims_v2 — parallel extraction passes over
  * the deck (numbers vs statements) so neither is the latency bottleneck.
  */
 import { z } from "zod";
@@ -8,7 +8,7 @@ import { Money } from "@/domain/money";
 import { METRIC_KEYS } from "@/engine/metrics/keys";
 import { ANALYST_STANDARD, today } from "./common";
 
-export const EXTRACT_METRICS = { id: "extract_metrics", version: "extract_metrics_v1" } as const;
+export const EXTRACT_METRICS = { id: "extract_metrics", version: "extract_metrics_v2" } as const;
 export const EXTRACT_CLAIMS = { id: "extract_claims", version: "extract_claims_v2" } as const;
 export const EXTRACT_PROFILE = { id: "extract_profile", version: "extract_profile_v1" } as const;
 
@@ -48,6 +48,7 @@ TASK: extract every NUMBER in the startup materials as structured observations. 
 - sourceKind: TEXT, TABLE, CHART (value read off a chart — also note axis/units in definitionAsStated), IMAGE, FOOTNOTE.
 - rawText and excerpt verbatim. Record definitions and what figures include/exclude (e.g. "CAC excludes founder time", "gross margin before inference costs", "customers incl. pilots"). sampleSize and cohortDefinition for every rate when stated.
 - services_revenue_share when the revenue mix is shown; contracted_arr for signed-not-live.
+- headcount is the WHOLE company's headcount only. Function or sub-team counts ("7 AEs", "12 engineers", "sales team of 5") are OTHER with the function in the label.
 - state=WITHHELD when explicitly not disclosed; INFERRED only when you computed it (say how).
 - FINANCING: instrument, amount, pre/post or cap, discount, pool top-up, cash, burn, runway claim, investors, total raised, use of funds, milestones with timing, terms.
 - MARKET: TAM/SAM/SOM exactly as stated (they are not accepted as-is).`;
