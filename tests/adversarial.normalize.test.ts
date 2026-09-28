@@ -6,7 +6,7 @@
  * recorded as `it.skip` with a precise description instead of being fixed here.
  */
 import { describe, expect, it } from "vitest";
-import { normalizeObservation, parsePeriodDate, parseScaledNumber, timeFactor } from "@/engine/metrics/normalize";
+import { normalizeObservation, parsePeriodDate, parseScaledNumber, propagateCumulative, timeFactor } from "@/engine/metrics/normalize";
 import { deriveMetrics } from "@/engine/metrics/derive";
 import type { MetricObservation } from "@/domain/sections";
 import type { CanonicalDeal } from "@/domain/canonical";
@@ -21,7 +21,7 @@ function pipelineDeal(observations: MetricObservation[], patch: (d: CanonicalDea
   const d = cleanDeal();
   let i = 0;
   const next = () => `MET-P${String(++i).padStart(3, "0")}`;
-  const inst = observations.map((o) => normalizeObservation(o, { asOf: ctx.asOf, nextId: next, sourceIdForPage: () => "SRC-001" })).filter((x): x is NonNullable<typeof x> => x !== null);
+  const inst = propagateCumulative(observations).map((o) => normalizeObservation(o, { asOf: ctx.asOf, nextId: next, sourceIdForPage: () => "SRC-001" })).filter((x): x is NonNullable<typeof x> => x !== null);
   d.metricObservations = observations;
   d.metrics = deriveMetrics(inst, next);
   patch(d);
@@ -442,5 +442,23 @@ describe("corpus regressions (ninth full eval run)", () => {
     const p = d.metrics.find((x) => x.metricKey === "paying_customers" && x.isPrimary)!;
     expect(p.normalizedValue).toBe(41);
     expect(p.state).toBe("OBSERVED");
+  });
+});
+
+describe("corpus regressions (tenth full eval run)", () => {
+  it("Carbonmoss: the title slide's undated '$1.1M revenue' is the same cumulative figure, not current revenue", () => {
+    const d = pipelineDeal([
+      obs("revenue_ttm", 1_100_000, { label: "Revenue", rawText: "$1.1M revenue", periodType: "UNSPECIFIED", periodEnd: null, basis: "ACTUAL" }),
+      obs("revenue_ttm", 1_100_000, { label: "Revenue since launch (2024 → Jul 2026)", rawText: "$1.1M", periodType: "CUMULATIVE", periodStart: "2024-01-01", periodEnd: "2026-07-31", basis: "ACTUAL" }),
+    ]);
+    expect(d.metrics.some((x) => x.metricKey === "revenue_ttm")).toBe(false);
+    expect(kinds(run(d))).toContain("CUMULATIVE_AS_RUN_RATE");
+  });
+  it("a dated figure of the same value is left alone", () => {
+    const o = propagateCumulative([
+      obs("revenue_ttm", 1_100_000, { rawText: "$1.1M", periodType: "ANNUAL", periodEnd: "2025-12" }),
+      obs("revenue_ttm", 1_100_000, { rawText: "$1.1M", periodType: "CUMULATIVE", periodEnd: "2026-07" }),
+    ]);
+    expect(o[0]!.periodType).toBe("ANNUAL");
   });
 });

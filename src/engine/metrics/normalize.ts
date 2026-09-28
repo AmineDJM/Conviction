@@ -242,6 +242,24 @@ export function keyFromLabel(o: Pick<MetricObservation, "metricKey" | "label" | 
   return undefined;
 }
 
+const FLOW_KEYS = new Set(["arr", "mrr", "revenue_ttm", "gmv", "tpv"]);
+
+/**
+ * One figure stated twice — "Revenue since launch (2024 → Jul 2026) $1.1M" and the title slide's "$1.1M revenue" with no
+ * period — is one cumulative figure: an undated observation of the same flow metric and value as an explicit CUMULATIVE
+ * one takes its period type, so the headline copy is not read as current revenue.
+ */
+export function propagateCumulative(observations: MetricObservation[]): MetricObservation[] {
+  const cumulative = observations.filter((o) => FLOW_KEYS.has(o.metricKey) && o.periodType === "CUMULATIVE" && o.value !== null);
+  if (!cumulative.length) return observations;
+  return observations.map((o) => {
+    if (!FLOW_KEYS.has(o.metricKey) || o.periodType === "CUMULATIVE" || o.value === null || o.periodEnd) return o;
+    if (o.periodType !== "UNSPECIFIED" && o.periodType !== "POINT_IN_TIME") return o;
+    const twin = cumulative.find((c) => c.metricKey === o.metricKey && Math.abs(c.value! - o.value!) <= 0.01 * Math.abs(c.value!));
+    return twin ? { ...o, periodType: "CUMULATIVE" as const, definitionAsStated: o.definitionAsStated ?? `Same figure as "${twin.label}" (cumulative)` } : o;
+  });
+}
+
 export function normalizeObservation(input: MetricObservation, ctx: NormalizeContext): MetricInstance | null {
   const corrected = keyFromLabel(input);
   if (corrected && corrected.key === null) return null;

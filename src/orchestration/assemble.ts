@@ -12,7 +12,7 @@ import type { ThesisOutput, ActionsOutput } from "@/ai/prompts/decision";
 import type { ResearchOutput } from "@/ai/prompts/research";
 import type { InvestmentAnalysisOutput } from "@/ai/prompts/investment-analysis";
 import type { FounderCallOutput } from "@/ai/prompts/founder-call";
-import { normalizeObservation, parsePeriodDate } from "@/engine/metrics/normalize";
+import { normalizeObservation, parsePeriodDate, propagateCumulative } from "@/engine/metrics/normalize";
 import { deriveMetrics } from "@/engine/metrics/derive";
 import { seqIdFactory, nowIso, normName } from "@/server/ids";
 import { detectInjection } from "@/ai/untrusted";
@@ -128,7 +128,7 @@ export function applyMetricsExtraction(c: CanonicalDeal, out: MetricsExtractionO
     if (!e) return null;
     return next.claims.find((x) => x.evidence.some((ev) => ev.excerpt.toLowerCase().includes(e)))?.id ?? null;
   };
-  const instances = out.metrics
+  const instances = propagateCumulative(out.metrics)
     .map((o) => normalizeObservation(o, { asOf, nextId: metId, sourceIdForPage: () => src, claimIdForExcerpt: findClaimByExcerpt }))
     .filter((m): m is NonNullable<typeof m> => m !== null);
   // Analyst corrections are overrides (canonical.overrides), re-anchored after extraction — never metric copies.
@@ -805,7 +805,7 @@ export function applyFounderCall(
   if (out.recommendation) next.aiRecommendation = out.recommendation;
   if (out.nextAction) next.nextBestAction = { action: out.nextAction.action, rationale: out.nextAction.rationale, type: out.nextAction.type };
   const statedMetrics = out.newMetrics.filter((o) => anchored(`METRIC:${o.metricKey}:${o.rawText.slice(0, 30)}`, o.rawText, [], o.excerpt));
-  const newInstances = statedMetrics
+  const newInstances = propagateCumulative(statedMetrics)
     .map((o) => normalizeObservation(o, { asOf, nextId: metId, sourceIdForPage: () => src.id }))
     .filter((m): m is NonNullable<typeof m> => m !== null);
   for (const m of newInstances) m.location = loc([], m.excerpt);
