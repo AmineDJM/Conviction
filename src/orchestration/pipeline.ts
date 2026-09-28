@@ -52,7 +52,6 @@ import { registerRun, releaseRun, acquireSlot, releaseSlot, throwIfCancelled, Ca
 import * as repo from "@/server/repo";
 import { indexCompanyForBrain } from "@/brain/indexer";
 import { applyOverrides } from "@/engine/overrides";
-import { withCarriedOverrides, type CarryOverSource } from "@/engine/override-carry";
 import { logger } from "@/lib/log";
 
 export const PIPELINE_STEPS = [
@@ -98,12 +97,8 @@ export interface RunDeckAnalysisInput {
   userId: string | null;
   companyUrl?: string | null;
   budgetUsd?: number;
-  /**
-   * Human overrides carried over from the previous version (never lost on re-analysis). Ids change between
-   * analyses, so they are re-anchored on the new record (engine/override-carry.ts); `source` is the analysis
-   * they were made on (anchors overrides stored before anchors existed).
-   */
-  carryOver?: CarryOverSource | null;
+  /** Human overrides carried over from the previous version (never lost on re-analysis). */
+  carryOver?: Pick<CanonicalDeal, "overrides"> | null;
 }
 
 export function budgetFor(mode: AnalysisMode, requested?: number) {
@@ -194,8 +189,7 @@ async function execute(inp: RunDeckAnalysisInput, signal: AbortSignal): Promise<
     startedAt: new Date(t0).toISOString(),
     durationMs: null,
   };
-  // Only field overrides (classification, identity) can anchor before extraction; the rest are re-anchored after it.
-  deal = withCarriedOverrides(deal, inp.carryOver, new Date(t0).toISOString());
+  if (inp.carryOver?.overrides?.length) deal.overrides = structuredClone(inp.carryOver.overrides);
   const skipped: { step: string; reason: string }[] = [];
   const researchNotCompleted: string[] = [];
   let identified = false;
@@ -386,8 +380,6 @@ async function execute(inp: RunDeckAnalysisInput, signal: AbortSignal): Promise<
     // Optional: a failed divergence pass leaves the factors on computed data only (reported, never invented).
     if (divergenceR.status === "fulfilled") deal = applyDivergence(deal, divergenceR.value.data);
     else skipped.push({ step: "DIVERGENCE", reason: errReason(divergenceR.reason) });
-    // Metrics and claims now exist: re-anchor the carried overrides on their new ids.
-    deal = withCarriedOverrides(deal, inp.carryOver, new Date(t0).toISOString());
     const t0Ok = forensicsR.status === "fulfilled" && latentR.status === "fulfilled";
     if (t0Ok) deal.analysis.completedSteps.push("FORENSICS");
     step("FORENSICS", t0Ok ? "DONE" : "FAILED", t0Ok ? `${deal.forensics?.visualElements.length ?? 0} visuals read, ${deal.forensics?.crossSlideInconsistencies.length ?? 0} cross-slide inconsistencies` : "Partial: " + skipped.filter((s) => s.step === "FORENSICS" || s.step === "LATENT").map((s) => s.reason).join("; "));

@@ -50,8 +50,12 @@ export default async function MemoPage({ params, searchParams }: { params: Promi
             Quick memo
           </Link>
           <span className="text-line-strong">·</span>
-          <Link href={`/deals/${s}/brief`} className="mr-2 text-[12.5px] text-ink-3 hover:text-ink">
+          <Link href={`/deals/${s}/brief`} className="text-[12.5px] text-ink-3 hover:text-ink">
             Founder call brief
+          </Link>
+          <span className="text-line-strong">·</span>
+          <Link href={`/deals/${s}/deep-dd`} className="mr-2 text-[12.5px] text-ink-3 hover:text-ink">
+            Deep DD report
           </Link>
           <PrintButton />
         </div>

@@ -68,6 +68,7 @@ function Palette() {
         ? [
             { id: "a-qm", label: "Open Quick Memo", group: "This deal", run: go(`/deals/${slug}/quick`) },
             { id: "a-memo", label: "Open Investment Memo", group: "This deal", run: go(`/deals/${slug}/memo`) },
+            { id: "a-deepdd", label: "Open Deep DD report", hint: "Dossier + diligence work plan", group: "This deal", run: go(`/deals/${slug}/deep-dd`) },
             { id: "a-call", label: "Add founder call", group: "This deal", run: go(`/deals/${slug}/questions#call`) },
             { id: "a-returns", label: "Open return model", group: "This deal", run: go(`/deals/${slug}/returns`) },
             { id: "a-evidence", label: "Search evidence", group: "This deal", run: go(`/deals/${slug}/evidence`) },
