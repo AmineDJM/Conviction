@@ -104,6 +104,8 @@ export interface RunDeckAnalysisInput {
    * they were made on (anchors overrides stored before anchors existed).
    */
   carryOver?: CarryOverSource | null;
+  /** Evaluation only: stop after extraction and the deterministic layer (no T1 analysis calls). */
+  extractionOnly?: boolean;
 }
 
 export function budgetFor(mode: AnalysisMode, requested?: number) {
@@ -430,65 +432,73 @@ async function executeWith(inp: RunDeckAnalysisInput, runSignal: AbortSignal, lo
     }
 
     /* ---------------- T1: analysis A ‖ B ‖ thesis ‖ actions ---------------- */
-    const pre = derive(deal, registry, inp.fund);
-    step("ANALYZE", "RUNNING");
-    step("DECIDE", "RUNNING");
-    const record = wrapUntrusted("canonical record (contains excerpts from untrusted documents and web pages)", JSON.stringify(canonicalForAnalysis(deal)));
-    const decisionInput = wrapUntrusted(
-      "canonical record, deck forensics, latent signals, divergence factors and deterministic results",
-      JSON.stringify({
-        record: canonicalForAnalysis(deal),
-        forensics: deal.forensics,
-        latentSignals: deal.latentSignals,
-        deterministic: { ...derivedDigest(pre), integrity: compactReport(pre.integrity), latent: pre.latent.summary, divergence: pre.divergence.summary, economics: compactReport(pre.economics) },
-      }),
-    );
-    const partCalls = partIds.map((id, k) =>
-      structured({ ...common, step: `ANALYZE_${id}`, promptVersion: INVESTMENT_ANALYSIS.version, instructions: analysisPartInstructions(id), input: [{ role: "user", content: record }], schema: AnalysisPartSchemas[id], schemaName: `investment_analysis_${id.toLowerCase()}`, maxOutputTokens: tokens.analysisPart, effort: effort.analysis, reservation: resParts[k] }),
-    );
-    const coreC = settle(
-      structured({ ...common, step: "DECIDE_CORE", promptVersion: DECISION_CORE.version, instructions: decisionCoreInstructions(inp.mode), input: [{ role: "user", content: decisionInput }], schema: DecisionCoreOutput, schemaName: "decision_core", maxOutputTokens: tokens.thesis, effort: effort.decide, reservation: resCore }),
-    );
-    const thesisC = settle(
-      structured({ ...common, step: "DECIDE_THESIS", promptVersion: DECISION_THESIS.version, instructions: thesisInstructions(inp.mode), input: [{ role: "user", content: decisionInput }], schema: ThesisBodyOutput, schemaName: "decision_thesis", maxOutputTokens: tokens.thesis, effort: effort.decide, reservation: resThesis }),
-    );
-    const challengeC = settle(
-      structured({ ...common, step: "DECIDE_CHALLENGE", promptVersion: DECISION_CHALLENGE.version, instructions: challengeInstructions(inp.mode), input: [{ role: "user", content: decisionInput }], schema: ChallengeOutput, schemaName: "decision_challenge", maxOutputTokens: tokens.challenge, effort: effort.decide, reservation: resChallenge }),
-    );
-    const actionsC = settle(
-      Promise.all([
-        structured({ ...common, step: "DECIDE_MACHINE", promptVersion: DECISION_ACTIONS.version, instructions: actionsInstructions(inp.mode, "MACHINE"), input: [{ role: "user", content: decisionInput }], schema: MachineOutput, schemaName: "decision_machine", maxOutputTokens: tokens.actions, effort: effort.decide, reservation: resActions }),
-        structured({ ...common, step: "DECIDE_NEXT_PROOF", promptVersion: DECISION_ACTIONS.version, instructions: actionsInstructions(inp.mode, "NEXT_PROOF"), input: [{ role: "user", content: decisionInput }], schema: NextProofOutput, schemaName: "decision_next_proof", maxOutputTokens: tokens.actions, effort: effort.decide, reservation: resActions2 }),
-      ]).then(([m, n]) => ({ data: { ...m.data, ...n.data } })),
-    );
-    const [partsR, coreR, bodyR, challengeR, actionsR] = await Promise.all([Promise.allSettled(partCalls), coreC, thesisC, challengeC, actionsC]);
-    for (const r of [...resParts, resCore, resThesis, resChallenge, resActions, resActions2]) if (r) cost.release(r);
-    // The bet = decision core + thesis body; both are required for a complete thesis.
-    const thesisR: Settled<{ data: import("@/ai/prompts/decision").ThesisCoreOutput }> =
-      coreR.ok && bodyR.ok ? { ok: true, value: { data: { ...coreR.value.data, ...bodyR.value.data } } } : { ok: false, error: !coreR.ok ? coreR.error : (bodyR as { ok: false; error: unknown }).error };
-    throwIfCancelled(signal);
-
-    // Merge the analysis parts. A failed part leaves its sections empty and is reported — never invented.
-    const merged = mergeAnalysisParts(deal, partIds.map((id, k) => ({ id, result: partsR[k]! })));
-    deal = applyInvestmentAnalysis(deal, merged.output);
-    if (merged.failed.length === 0) {
-      deal.analysis.completedSteps.push("ANALYZE");
-      step("ANALYZE", "DONE", `${deal.risks.length} risks, ${deal.rubric.length} rubric ratings`);
+    if (inp.extractionOnly) {
+      // Evaluation-only runs (never exposed by a route): extraction + deterministic layer, no analysis calls.
+      for (const s of ["ANALYZE", "DECIDE"]) {
+        step(s, "SKIPPED", "Extraction-only evaluation run");
+        skipped.push({ step: s, reason: "Extraction-only evaluation run" });
+      }
     } else {
-      const reason = merged.failed.map((f) => `${f.id}: ${f.reason}`).join("; ");
-      step("ANALYZE", "FAILED", reason);
-      skipped.push({ step: "ANALYZE", reason });
+      const pre = derive(deal, registry, inp.fund);
+      step("ANALYZE", "RUNNING");
+      step("DECIDE", "RUNNING");
+      const record = wrapUntrusted("canonical record (contains excerpts from untrusted documents and web pages)", JSON.stringify(canonicalForAnalysis(deal)));
+      const decisionInput = wrapUntrusted(
+        "canonical record, deck forensics, latent signals, divergence factors and deterministic results",
+        JSON.stringify({
+          record: canonicalForAnalysis(deal),
+          forensics: deal.forensics,
+          latentSignals: deal.latentSignals,
+          deterministic: { ...derivedDigest(pre), integrity: compactReport(pre.integrity), latent: pre.latent.summary, divergence: pre.divergence.summary, economics: compactReport(pre.economics) },
+        }),
+      );
+      const partCalls = partIds.map((id, k) =>
+        structured({ ...common, step: `ANALYZE_${id}`, promptVersion: INVESTMENT_ANALYSIS.version, instructions: analysisPartInstructions(id), input: [{ role: "user", content: record }], schema: AnalysisPartSchemas[id], schemaName: `investment_analysis_${id.toLowerCase()}`, maxOutputTokens: tokens.analysisPart, effort: effort.analysis, reservation: resParts[k] }),
+      );
+      const coreC = settle(
+        structured({ ...common, step: "DECIDE_CORE", promptVersion: DECISION_CORE.version, instructions: decisionCoreInstructions(inp.mode), input: [{ role: "user", content: decisionInput }], schema: DecisionCoreOutput, schemaName: "decision_core", maxOutputTokens: tokens.thesis, effort: effort.decide, reservation: resCore }),
+      );
+      const thesisC = settle(
+        structured({ ...common, step: "DECIDE_THESIS", promptVersion: DECISION_THESIS.version, instructions: thesisInstructions(inp.mode), input: [{ role: "user", content: decisionInput }], schema: ThesisBodyOutput, schemaName: "decision_thesis", maxOutputTokens: tokens.thesis, effort: effort.decide, reservation: resThesis }),
+      );
+      const challengeC = settle(
+        structured({ ...common, step: "DECIDE_CHALLENGE", promptVersion: DECISION_CHALLENGE.version, instructions: challengeInstructions(inp.mode), input: [{ role: "user", content: decisionInput }], schema: ChallengeOutput, schemaName: "decision_challenge", maxOutputTokens: tokens.challenge, effort: effort.decide, reservation: resChallenge }),
+      );
+      const actionsC = settle(
+        Promise.all([
+          structured({ ...common, step: "DECIDE_MACHINE", promptVersion: DECISION_ACTIONS.version, instructions: actionsInstructions(inp.mode, "MACHINE"), input: [{ role: "user", content: decisionInput }], schema: MachineOutput, schemaName: "decision_machine", maxOutputTokens: tokens.actions, effort: effort.decide, reservation: resActions }),
+          structured({ ...common, step: "DECIDE_NEXT_PROOF", promptVersion: DECISION_ACTIONS.version, instructions: actionsInstructions(inp.mode, "NEXT_PROOF"), input: [{ role: "user", content: decisionInput }], schema: NextProofOutput, schemaName: "decision_next_proof", maxOutputTokens: tokens.actions, effort: effort.decide, reservation: resActions2 }),
+        ]).then(([m, n]) => ({ data: { ...m.data, ...n.data } })),
+      );
+      const [partsR, coreR, bodyR, challengeR, actionsR] = await Promise.all([Promise.allSettled(partCalls), coreC, thesisC, challengeC, actionsC]);
+      for (const r of [...resParts, resCore, resThesis, resChallenge, resActions, resActions2]) if (r) cost.release(r);
+      // The bet = decision core + thesis body; both are required for a complete thesis.
+      const thesisR: Settled<{ data: import("@/ai/prompts/decision").ThesisCoreOutput }> =
+        coreR.ok && bodyR.ok ? { ok: true, value: { data: { ...coreR.value.data, ...bodyR.value.data } } } : { ok: false, error: !coreR.ok ? coreR.error : (bodyR as { ok: false; error: unknown }).error };
+      throwIfCancelled(signal);
+
+      // Merge the analysis parts. A failed part leaves its sections empty and is reported — never invented.
+      const merged = mergeAnalysisParts(deal, partIds.map((id, k) => ({ id, result: partsR[k]! })));
+      deal = applyInvestmentAnalysis(deal, merged.output);
+      if (merged.failed.length === 0) {
+        deal.analysis.completedSteps.push("ANALYZE");
+        step("ANALYZE", "DONE", `${deal.risks.length} risks, ${deal.rubric.length} rubric ratings`);
+      } else {
+        const reason = merged.failed.map((f) => `${f.id}: ${f.reason}`).join("; ");
+        step("ANALYZE", "FAILED", reason);
+        skipped.push({ step: "ANALYZE", reason });
+      }
+      if (thesisR.ok && challengeR.ok) deal = applyThesis(deal, { ...thesisR.value.data, ...challengeR.value.data });
+      else if (thesisR.ok) deal = applyThesis(deal, { ...thesisR.value.data, revealedBeyondPitch: [], redTeam: deal.redTeam as never, alternativeExplanations: [] });
+      if (!coreR.ok) skipped.push({ step: "DECIDE_CORE", reason: errReason(coreR.error) });
+      if (!bodyR.ok) skipped.push({ step: "DECIDE_THESIS", reason: errReason(bodyR.error) });
+      if (!challengeR.ok) skipped.push({ step: "DECIDE_CHALLENGE", reason: errReason(challengeR.error) });
+      if (actionsR.ok) deal = applyActions(deal, actionsR.value.data);
+      else skipped.push({ step: "DECIDE_ACTIONS", reason: errReason(actionsR.error) });
+      const decideOk = thesisR.ok && challengeR.ok && actionsR.ok;
+      if (decideOk) deal.analysis.completedSteps.push("DECIDE");
+      step("DECIDE", decideOk ? "DONE" : "FAILED", decideOk ? `${deal.questions.length} founder questions, ${deal.sensitivityDrivers.length} sensitivity drivers` : skipped.filter((s) => s.step.startsWith("DECIDE")).map((s) => s.reason).join("; "));
     }
-    if (thesisR.ok && challengeR.ok) deal = applyThesis(deal, { ...thesisR.value.data, ...challengeR.value.data });
-    else if (thesisR.ok) deal = applyThesis(deal, { ...thesisR.value.data, revealedBeyondPitch: [], redTeam: deal.redTeam as never, alternativeExplanations: [] });
-    if (!coreR.ok) skipped.push({ step: "DECIDE_CORE", reason: errReason(coreR.error) });
-    if (!bodyR.ok) skipped.push({ step: "DECIDE_THESIS", reason: errReason(bodyR.error) });
-    if (!challengeR.ok) skipped.push({ step: "DECIDE_CHALLENGE", reason: errReason(challengeR.error) });
-    if (actionsR.ok) deal = applyActions(deal, actionsR.value.data);
-    else skipped.push({ step: "DECIDE_ACTIONS", reason: errReason(actionsR.error) });
-    const decideOk = thesisR.ok && challengeR.ok && actionsR.ok;
-    if (decideOk) deal.analysis.completedSteps.push("DECIDE");
-    step("DECIDE", decideOk ? "DONE" : "FAILED", decideOk ? `${deal.questions.length} founder questions, ${deal.sensitivityDrivers.length} sensitivity drivers` : skipped.filter((s) => s.step.startsWith("DECIDE")).map((s) => s.reason).join("; "));
 
     /* ---------------- MEMO: finalize canonical + deterministic layer ---------------- */
     step("MEMO", "RUNNING");

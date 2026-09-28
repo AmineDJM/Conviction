@@ -23,6 +23,7 @@
  *         EVAL_UPDATE_BASELINE=1   rewrite the corpus baseline after reviewing drift
  *         EVAL_REUSE=1             measure stored analyses of the corpus instead of re-running them (downstream suites only)
  *         EVAL_MERGE_LATEST=1      with named suites: replace those suites' results in evals/latest.json (recorded under `merged`)
+ *         EVAL_TIER=quick          extraction, integrity and retrieval on extraction-only analyses (no T1 calls)
  *         EVAL_FAST_SCREEN_CAP_USD eval-only FAST_SCREEN cap used AFTER the product cap has been shown to fail
  *                                  (the failure is recorded as a hard FAIL; the override is written to the results)
  * Cost:   first full run ≈ $1 (12 new FAST_SCREEN analyses; identical re-runs hit the reproducibility cache).
@@ -73,8 +74,14 @@ async function main() {
   // Like a server start: runs left RUNNING by an interrupted eval process can never finish. Without this, a new
   // analysis of the same deck would join the dead run and the eval would score its preliminary version.
   (await import("../src/server/recovery")).recoverInterruptedRuns();
-  const suites = process.argv.slice(2);
+  // Tiers: "quick" measures what extraction alone determines (metrics, traps, retrieval) on extraction-only
+  // analyses (no T1 analysis calls, ~30% of the cost); "full" runs every suite on complete FAST_SCREEN analyses.
+  const TIER: "quick" | "full" = process.env.EVAL_TIER === "quick" ? "quick" : "full";
+  const QUICK_SUITES = ["extraction", "integrity", "retrieval"];
+  const argSuites = process.argv.slice(2);
+  const suites = argSuites.length ? argSuites : TIER === "quick" ? QUICK_SUITES : [];
   const want = (s: string) => suites.length === 0 || suites.includes(s);
+  const startedAt = new Date().toISOString();
   let spent = 0;
   const measurements: Record<string, unknown> = {};
   const skipped: string[] = [];
@@ -96,7 +103,7 @@ async function main() {
     const cap = MODE_BUDGETS.FAST_SCREEN.hardCapUsd;
     if (spent + cap > BUDGET_USD) throw new BudgetSkip(`${rel}: skipped, eval budget $${BUDGET_USD} would be exceeded (spent $${spent.toFixed(3)})`);
     const data = fs.readFileSync(path.join(DECKS, rel));
-    const { company, run, promise } = await startAnalysis({ workspaceId, userId, mode: "FAST_SCREEN", force: true, files: [{ filename: path.basename(rel), mime: "application/pdf", data }] });
+    const { company, run, promise } = await startAnalysis({ workspaceId, userId, mode: "FAST_SCREEN", force: true, extractionOnly: TIER === "quick", files: [{ filename: path.basename(rel), mime: "application/pdf", data }] });
     await promise;
     const r = repo.getRun(workspaceId, run.id)!;
     spent += r.spentUsd;
@@ -653,12 +660,39 @@ async function main() {
     measurements.regression = { engineDrift: drift, engineVersions: rows.length, corpusDrift, baselineAt: baseline?.createdAt ?? null };
     });
 
+  // Exact spend of this run, from the per-call cost records (plus the judge, whose calls are not stored per record).
+  {
+    const { getDb, schema } = await import("../src/db/client");
+    const { and, gte } = await import("drizzle-orm");
+    const recs = getDb().select().from(schema.costRecords).where(and(gte(schema.costRecords.createdAt, startedAt))).all();
+    const byStep = new Map<string, { calls: number; usd: number; inputTokens: number; cachedTokens: number; outputTokens: number; cacheHits: number }>();
+    for (const r of recs) {
+      const key = r.step.replace(/:cache$/, "");
+      const x = byStep.get(key) ?? { calls: 0, usd: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0, cacheHits: 0 };
+      if (r.step.endsWith(":cache")) x.cacheHits++;
+      else {
+        x.calls++;
+        x.usd += r.actualUsd;
+        x.inputTokens += r.inputTokens;
+        x.cachedTokens += r.cachedTokens;
+        x.outputTokens += r.outputTokens;
+      }
+      byStep.set(key, x);
+    }
+    const rows = [...byStep.entries()].sort((a, b) => b[1].usd - a[1].usd);
+    const recorded = rows.reduce((a, [, x]) => a + x.usd, 0);
+    const hits = rows.reduce((a, [, x]) => a + x.cacheHits, 0);
+    measurements.cost = { tier: TIER, recordedUsd: recorded, reportedUsd: spent, cacheHits: hits, byStep: Object.fromEntries(rows) };
+    console.log(`\nCOST (${TIER}) — recorded model spend $${recorded.toFixed(4)} · reproducibility-cache hits ${hits}`);
+    for (const [k, x] of rows.slice(0, 12)) console.log(`  ${k.padEnd(22)} ${String(x.calls).padStart(4)} calls  $${x.usd.toFixed(4)}  in ${x.inputTokens} (cached ${x.cachedTokens})  out ${x.outputTokens}  cache hits ${x.cacheHits}`);
+  }
+
   const hardFails = results.filter((r) => !r.pass && r.hard);
   const out = path.join(process.cwd(), "evals", "results");
   fs.mkdirSync(out, { recursive: true });
   const file = path.join(out, `eval-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
   const payload = JSON.stringify(
-    { at: new Date().toISOString(), suites: suites.length ? suites : "all", spentUsd: spent, budgetUsd: BUDGET_USD, fastScreenCapOverrideUsd: capOverrideUsed ? capOverride : null, skipped, tolerances: TOL, measurements, results },
+    { at: new Date().toISOString(), startedAt, tier: TIER, suites: suites.length ? suites : "all", spentUsd: spent, budgetUsd: BUDGET_USD, fastScreenCapOverrideUsd: capOverrideUsed ? capOverride : null, skipped, tolerances: TOL, measurements, results },
     null,
     2,
   );

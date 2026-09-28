@@ -72,6 +72,8 @@ export async function startAnalysis(v: {
   budgetUsd?: number;
   /** Re-run even when an identical analysis exists. */
   force?: boolean;
+  /** Evaluation only (no route sets it): stop after extraction and the deterministic layer. */
+  extractionOnly?: boolean;
   /** Analyse on this existing company (deck-version flow). */
   target?: { companyId: string; intent: TargetIntent } | null;
   /** Companies the user said this upload is NOT (duplicate prompt answered "different company"). */
@@ -237,6 +239,7 @@ export async function startAnalysis(v: {
     companyUrl: v.companyUrl,
     budgetUsd: v.budgetUsd,
     carryOver,
+    extractionOnly: v.extractionOnly,
   }).then(() => {
     if (carryOver) recordCarryOver(v.workspaceId, v.userId, company.id, run.id, carryOver.fromVersionId);
   });
