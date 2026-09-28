@@ -26,6 +26,7 @@ import { TRANSCRIBE_MODEL, AUDIO_EXTENSIONS, MAX_RECORDING_BYTES, mimeFor, trans
 import { MeetingParticipant, PostMeetingBrief, POST_MEETING_BRIEF_BUILDER, PreMeetingBrief, type TranscriptSegment } from "@/domain/meetings";
 import { parseTranscript, renderTranscript, transcriptForModel } from "@/ingestion/transcript";
 import { buildPostMeetingBrief } from "@/reports/meeting-briefs";
+import { applyOverrides } from "@/engine/overrides";
 import { applyFounderCall } from "./assemble";
 import { claimsDigest, metricsTable } from "./context";
 import { ensurePreMeetingBrief } from "./pre-meeting-brief";
@@ -342,8 +343,8 @@ export async function runFounderCall(inp: RunFounderCallInput): Promise<void> {
     const post = repo.getVersion(inp.companyId, res.version.id)!;
     const brief = buildPostMeetingBrief({
       meeting: { id: meeting.id, seq: meeting.seq, title: meeting.title, heldAt: meeting.heldAt, participants: meeting.participants, source: meeting.source },
-      pre: { versionId: pre.row.id, versionNo: pre.row.versionNo, stageCode: stages.get(pre.row.id)?.code ?? "PRE_MEETING_ANALYSIS", canonical: pre.canonical, derived: pre.derived },
-      post: { versionId: post.row.id, versionNo: post.row.versionNo, stageCode: stages.get(post.row.id)?.code ?? `POST_MEETING_ANALYSIS_V${seq}`, canonical: post.canonical, derived: post.derived },
+      pre: { versionId: pre.row.id, versionNo: pre.row.versionNo, stageCode: stages.get(pre.row.id)?.code ?? "PRE_MEETING_ANALYSIS", canonical: applyOverrides(pre.canonical), derived: pre.derived },
+      post: { versionId: post.row.id, versionNo: post.row.versionNo, stageCode: stages.get(post.row.id)?.code ?? `POST_MEETING_ANALYSIS_V${seq}`, canonical: applyOverrides(post.canonical), derived: post.derived },
       preBriefId: meeting.preBriefId,
       preBrief: preBriefContent?.success ? preBriefContent.data : null,
       extraction: out.data,

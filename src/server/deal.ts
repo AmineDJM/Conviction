@@ -9,10 +9,10 @@ import { applyOverrides } from "@/engine/overrides";
 /** Loads everything a deal page needs, once per request. */
 export const loadDeal = cache(async (slug: string) => {
   const session = await requireSession();
-  const company = repo.getCompany(session.workspaceId, decodeURIComponent(slug));
+  const company = repo.getCompany(session.workspaceId, safeDecode(slug));
   if (!company) {
     // A dossier merged into another company (as a new deck version) redirects there.
-    const target = repo.mergedTarget(session.workspaceId, decodeURIComponent(slug));
+    const target = repo.mergedTarget(session.workspaceId, safeDecode(slug));
     if (target) redirect(`/deals/${target.slug}?merged=1`);
     notFound();
   }
@@ -27,3 +27,12 @@ export const loadDeal = cache(async (slug: string) => {
 });
 
 export type LoadedDeal = Awaited<ReturnType<typeof loadDeal>>;
+
+/** Route params arrive decoded; a slug that still contains "%" must not throw. */
+function safeDecode(s: string): string {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+}
