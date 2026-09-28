@@ -6,7 +6,7 @@
  * recorded as `it.skip` with a precise description instead of being fixed here.
  */
 import { describe, expect, it } from "vitest";
-import { normalizeObservation, parseScaledNumber, timeFactor } from "@/engine/metrics/normalize";
+import { normalizeObservation, parsePeriodDate, parseScaledNumber, timeFactor } from "@/engine/metrics/normalize";
 import { deriveMetrics } from "@/engine/metrics/derive";
 import type { MetricObservation } from "@/domain/sections";
 import type { CanonicalDeal } from "@/domain/canonical";
@@ -316,4 +316,17 @@ describe("period-over-period derivations are annualized", () => {
     const d = pipelineDeal([obs("dau", 100, { unit: "COUNT", currency: null, rawText: "100" }), obs("mau", 0, { unit: "COUNT", currency: null, rawText: "0" })]);
     expect(d.metrics.some((x) => x.metricKey === "dau_mau")).toBe(false);
   });
+});
+
+describe("period parsing", () => {
+  it.each([
+    ["Jun 2025", "2025-06-28"],
+    ["June 2025", "2025-06-28"],
+    ["juin 2025", "2025-06-28"],
+    ["Aug-26", "2026-08-28"],
+    ["août 2026", "2026-08-28"],
+    ["FY24", "2024-12-28"],
+    ["2026-02-28", "2026-02-28"],
+  ])("%s → %s", (s, iso) => expect(parsePeriodDate(s)!.toISOString().slice(0, 10)).toBe(iso));
+  it.each(["2026-02-30", "2026-13", "Foo 2025"])("%s is rejected", (s) => expect(parsePeriodDate(s)).toBeNull());
 });

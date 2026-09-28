@@ -114,6 +114,25 @@ export interface PeriodBounds {
 }
 
 /** Parse "2026-06-30", "2026-06", "2026-Q2", "Q2 2026", "FY2026", "2026". */
+const MONTHS: [RegExp, number][] = [
+  [/^(jan|janv|janvier|january)$/, 0],
+  [/^(feb|fev|fév|févr|fevr|février|fevrier|february)$/, 1],
+  [/^(mar|mars|march)$/, 2],
+  [/^(apr|avr|avril|april)$/, 3],
+  [/^(may|mai)$/, 4],
+  [/^(jun|juin|june)$/, 5],
+  [/^(jul|juil|juillet|july)$/, 6],
+  [/^(aug|aou|aoû|août|aout|august)$/, 7],
+  [/^(sep|sept|septembre|september)$/, 8],
+  [/^(oct|octobre|october)$/, 9],
+  [/^(nov|novembre|november)$/, 10],
+  [/^(dec|déc|decembre|décembre|december)$/, 11],
+];
+function monthIndex(w: string): number | null {
+  const x = w.toLowerCase();
+  return MONTHS.find(([re]) => re.test(x))?.[1] ?? null;
+}
+
 export function parsePeriodBounds(s: string | null | undefined): PeriodBounds | null {
   if (!s) return null;
   const t = s.trim();
@@ -123,12 +142,29 @@ export function parsePeriodBounds(s: string | null | undefined): PeriodBounds | 
     const qi = Number(q[2] ?? q[3]);
     return { start: new Date(Date.UTC(y, (qi - 1) * 3, 1)), end: new Date(Date.UTC(y, qi * 3, 0)), precision: "QUARTER" };
   }
+  // "Jun 2025", "June 2025", "juin 2025", "Aug-26".
+  const named = /^([a-zéû]{3,9})\.?[\s-]+(\d{4}|\d{2})$/i.exec(t);
+  if (named) {
+    const mo = monthIndex(named[1]!);
+    if (mo === null) return null;
+    const y = named[2]!.length === 2 ? 2000 + Number(named[2]) : Number(named[2]);
+    return { start: new Date(Date.UTC(y, mo, 1)), end: new Date(Date.UTC(y, mo, 28)), precision: "MONTH" };
+  }
+  // "FY24" (two-digit fiscal year).
+  const fy2 = /^FY\s*'?(\d{2})$/i.exec(t);
+  if (fy2) {
+    const y = 2000 + Number(fy2[1]);
+    return { start: new Date(Date.UTC(y, 0, 1)), end: new Date(Date.UTC(y, 11, 28)), precision: "YEAR" };
+  }
   const m = /^(?:FY\s*)?(\d{4})(?:-(\d{1,2}))?(?:-(\d{1,2}))?/i.exec(t);
   if (!m) return null;
   const y = Number(m[1]);
   if (m[2] && m[3]) {
-    const d = new Date(Date.UTC(y, Number(m[2]) - 1, Number(m[3])));
-    return Number.isNaN(d.getTime()) ? null : { start: d, end: d, precision: "DAY" };
+    const mo = Number(m[2]) - 1;
+    const day = Number(m[3]);
+    const d = new Date(Date.UTC(y, mo, day));
+    // Reject impossible dates ("2026-02-30") instead of rolling them into the next month.
+    return Number.isNaN(d.getTime()) || d.getUTCMonth() !== mo || d.getUTCDate() !== day ? null : { start: d, end: d, precision: "DAY" };
   }
   if (m[2]) {
     const mo = Number(m[2]) - 1;
