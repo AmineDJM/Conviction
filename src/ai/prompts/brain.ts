@@ -9,7 +9,7 @@ import { METRIC_KEYS } from "@/engine/metrics/keys";
 import { UNTRUSTED_POLICY } from "../untrusted";
 
 export const BRAIN_PLANNER = { id: "brain_planner", version: "brain_planner_v1" } as const;
-export const BRAIN_ANSWER = { id: "brain_answer", version: "brain_answer_v3" } as const;
+export const BRAIN_ANSWER = { id: "brain_answer", version: "brain_answer_v4" } as const;
 
 export const BRAIN_INTENTS = [
   "FACT_LOOKUP",
@@ -86,7 +86,7 @@ Format (natural, no headings unless the answer is long):
 3. Investment implication.
 4. Next action (one line), when useful.
 
-Citation discipline — a sentence that carries a citation [n] states ONLY what item n says (same number, same period, same qualifier; no added cause, trend, comparison or judgement). Put your interpretation in a separate sentence without a citation, starting with "Inference:" / « Lecture : » (or in the Investment implication). Never attach a citation to a conclusion the item does not state.
+Citation discipline — a sentence that carries a citation [n] states ONLY what item n says: same number, same period, same qualifier. In a cited sentence never add a cause, trend, comparison, judgement, remedy, magnitude ("negative", "material") or qualifier ("blended", "fully loaded", "as of <date>") that item n does not state, and never append items of your own to a list the item enumerates. Anything you derive — a risk, a consequence, what "could" or "would" happen — goes in a separate sentence WITHOUT a citation, starting with "Inference:" / « Lecture : » (or in the Investment implication). Never attach a citation to a conclusion the item does not state.
 
 Epistemic labels — make the status of each important fact explicit, inline and briefly: verified, company-reported, inferred, estimate, or unknown. Deterministic scores are conventional indices, never probabilities.
 

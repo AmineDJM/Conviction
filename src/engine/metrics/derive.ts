@@ -75,6 +75,25 @@ export function deriveMetrics(input: MetricInstance[], nextId: () => string): Me
     metrics = selectPrimary(metrics);
   };
 
+  // A broad figure ("ARR incl. signed contracts", "41 customers incl. pilots") reported next to a narrower one for the
+  // same or a later period: the narrower one is the metric; the broad one is kept, marked CONTRADICTED and explained.
+  for (const [key, flag] of [
+    ["arr", "ARR_MAY_INCLUDE_NON_RECURRING"],
+    ["paying_customers", "CUSTOMER_COUNT_MAY_INCLUDE_NON_PAYING"],
+  ] as const) {
+    const current = metrics.filter((m) => m.metricKey === key && m.calculationMethod === "REPORTED" && m.normalizedValue !== null && (m.state === "OBSERVED" || m.state === "STALE"));
+    const t = (m: MetricInstance) => parsePeriodDate(m.periodEnd)?.getTime() ?? null;
+    let changed = false;
+    metrics = metrics.map((m) => {
+      if (!current.includes(m) || !m.qualityFlags.some((f) => f.startsWith(flag))) return m;
+      const narrow = current.find((n) => n !== m && !n.qualityFlags.some((f) => f.startsWith(flag)) && n.normalizedValue! < m.normalizedValue! && (t(n) === t(m) || (t(n) !== null && t(m) !== null && t(n)! >= t(m)!)));
+      if (!narrow) return m;
+      changed = true;
+      return { ...m, state: "CONTRADICTED" as const, qualityFlags: [...m.qualityFlags, `BROADER_THAN_NARROW_FIGURE: ${narrow.label} ${narrow.rawValue} (${narrow.id}) excludes what this figure includes`] };
+    });
+    if (changed) metrics = selectPrimary(metrics);
+  }
+
   // Revenue reported at the level of gross volume in a take-rate business: the reported figure is kept but
   // marked CONTRADICTED (it is GMV), and net revenue is estimated by code as GMV × take rate.
   const gmv = primary("gmv");

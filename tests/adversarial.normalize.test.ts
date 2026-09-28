@@ -10,7 +10,7 @@ import { normalizeObservation, parsePeriodDate, parseScaledNumber, timeFactor } 
 import { deriveMetrics } from "@/engine/metrics/derive";
 import type { MetricObservation } from "@/domain/sections";
 import type { CanonicalDeal } from "@/domain/canonical";
-import { cleanDeal, kinds, obs, one, run } from "./fixtures/integrity/builders";
+import { cleanDeal, findingsOf, kinds, obs, one, run } from "./fixtures/integrity/builders";
 import { metric } from "./fixtures";
 
 const ctx = { asOf: new Date("2026-09-27T00:00:00Z"), nextId: (() => { let i = 0; return () => `MET-N${++i}`; })(), sourceIdForPage: () => "SRC-001" };
@@ -37,8 +37,9 @@ describe("normalization behaviour the integrity engine relies on", () => {
     expect(r.metricKey).toBe("contracted_arr");
     expect(r.qualityFlags.some((f) => f.startsWith("SIGNED_NOT_DEPLOYED"))).toBe(true);
   });
-  it("cumulative ARR is flagged", () => {
-    expect(N("arr", 12_000_000, { periodType: "CUMULATIVE", rawText: "$12M" })!.qualityFlags.some((f) => f.startsWith("CUMULATIVE_NOT_RUN_RATE"))).toBe(true);
+  it("a cumulative total is never a current run-rate metric (kept in the raw trail; integrity reports it)", () => {
+    expect(N("arr", 12_000_000, { periodType: "CUMULATIVE", rawText: "$12M" })).toBeNull();
+    expect(N("revenue_ttm", 1_100_000, { label: "Revenue since launch", periodType: "CUMULATIVE", rawText: "$1.1M" })).toBeNull();
   });
   it.each([
     ["excluding inference and hosting", true],
@@ -334,4 +335,47 @@ describe("period parsing", () => {
 it("a percent given as a fraction while the raw text says '92%' is read as 92", () => {
   expect(N("nrr", 0.92, { rawText: "92%", unit: "PERCENT", currency: null })!.normalizedValue).toBe(92);
   expect(N("default_rate", 0.8, { rawText: "0.8%", unit: "PERCENT", currency: null })!.normalizedValue).toBe(0.8);
+});
+
+describe("corpus regressions (second full eval run)", () => {
+  it("Drypoint: ARR including signed-not-deployed contracts loses to the live ARR of the same period", () => {
+    const d = pipelineDeal([
+      obs("arr", 2_400_000, { label: "ARR", rawText: "$2.4M", periodType: "ANNUAL", periodEnd: "2026-05", definitionAsStated: "ARR includes signed utility contracts not yet deployed." }),
+      obs("arr", 310_000, { label: "Live subscription ARR", rawText: "$0.31M", periodType: "ANNUAL", periodEnd: "2026-05", definitionAsStated: "Live subscription ARR, excluding signed utility contracts not yet deployed." }),
+    ]);
+    const p = d.metrics.find((x) => x.metricKey === "arr" && x.isPrimary)!;
+    expect(p.normalizedValue).toBe(310_000);
+    expect(p.qualityFlags.join(" ")).not.toContain("ARR_MAY_INCLUDE_NON_RECURRING");
+    const broad = d.metrics.find((x) => x.metricKey === "arr" && x.normalizedValue === 2_400_000)!;
+    expect(broad.state).toBe("CONTRADICTED");
+    expect(broad.qualityFlags.join(" ")).toContain("BROADER_THAN_NARROW_FIGURE");
+  });
+
+  it("Clausewren: 41 'customers' including pilots lose to 8 in production", () => {
+    const d = pipelineDeal([
+      obs("paying_customers", 41, { label: "Enterprise customers", rawText: "41", unit: "COUNT", currency: null, periodEnd: "2026-07", definitionAsStated: "Enterprise customers including 27 paid pilots and 6 design partners" }),
+      obs("paying_customers", 8, { label: "Customers in production on annual contracts", rawText: "8 customers", unit: "COUNT", currency: null, periodEnd: "2026-07" }),
+    ]);
+    expect(d.metrics.find((x) => x.metricKey === "paying_customers" && x.isPrimary)!.normalizedValue).toBe(8);
+  });
+
+  it("a broad figure alone is kept (flagged), never dropped", () => {
+    const d = pipelineDeal([obs("arr", 2_400_000, { rawText: "$2.4M", periodEnd: "2026-05", definitionAsStated: "includes signed contracts" })]);
+    const p = d.metrics.find((x) => x.metricKey === "arr" && x.isPrimary)!;
+    expect(p.state).toBe("OBSERVED");
+    expect(p.qualityFlags.join(" ")).toContain("ARR_MAY_INCLUDE_NON_RECURRING");
+  });
+
+  it("Carbonmoss: 'Company headcount' filed as OTHER is the headcount; employee ranges of customers are not", () => {
+    expect(N("OTHER", 8, { label: "Company headcount", rawText: "8", unit: "COUNT", currency: null })!.metricKey).toBe("headcount");
+    expect(N("OTHER", 200, { label: "Target manufacturer employee range — lower bound", rawText: "200", unit: "COUNT", currency: null })).toBeNull();
+  });
+
+  it("Crateroute: GMV labelled as revenue is reported even when no revenue figure was extracted", () => {
+    const d = pipelineDeal([
+      obs("gmv", 8_200_000, { label: "Revenue 2025 (gross order value through the platform)", rawText: "$8.2M", periodType: "ANNUAL", periodEnd: "2025-12", basis: "ACTUAL" }),
+      obs("take_rate", 11, { label: "Take rate", rawText: "11%", unit: "PERCENT", currency: null }),
+    ]);
+    expect(findingsOf(run(d), "GMV_AS_REVENUE").map((f) => f.severity)).toContain("CRITICAL");
+  });
 });

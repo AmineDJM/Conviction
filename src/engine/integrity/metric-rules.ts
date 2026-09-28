@@ -141,6 +141,22 @@ function gmvAsRevenue(ctx: IntegrityContext, out: IntegrityFinding[]) {
       );
     }
   }
+  // Gross volume that the company itself labels as revenue ("Revenue 2025 (gross order value)").
+  const labelledRevenue = ctx.observations.filter((o) => (o.metricKey === "gmv" || o.metricKey === "tpv") && /\b(revenues?|sales|turnover|chiffre d'affaires|ca)\b/i.test(`${o.label ?? ""} ${o.definitionAsStated ?? ""}`));
+  if (labelledRevenue.length && !out.some((f) => f.kind === "GMV_AS_REVENUE"))
+    out.push(
+      finding({
+        kind: "GMV_AS_REVENUE",
+        key: "gross-labelled",
+        module: M,
+        severity: take && isNum(take.normalizedValue) && take.normalizedValue < 50 ? "CRITICAL" : "HIGH",
+        title: "Gross volume is labelled as revenue",
+        detail: `The materials present gross volume as revenue (${labelledRevenue.map((o) => `"${o.label}" ${o.rawText}`).join("; ")})${take && isNum(take.normalizedValue) ? `; with a ${fmtNum(take.normalizedValue, 1)}% take rate, net revenue is about ${fmtNum(take.normalizedValue, 1)}% of it` : ""}. Ask for net revenue by period.`,
+        metricIds: [gmv?.id, take?.id],
+        claimIds: [gmv?.claimId],
+        pages: labelledRevenue.map((o) => o.page),
+      }),
+    );
   // Revenue figures whose own definition says they are gross volume.
   const revKeys = ["arr", "mrr", "revenue_ttm"];
   const hits = ctx.metrics.filter((m) => revKeys.includes(m.metricKey) && m.calculationMethod !== "DERIVED" && GMV_WORDS_RE.test(metricText(m)));

@@ -237,6 +237,7 @@ export function keyFromLabel(o: Pick<MetricObservation, "metricKey" | "label" | 
   if (k === "paying_customers" && /\bpilots?\b/.test(text) && !/\b(customers?|clients?|logos?|accounts?)\b/.test(label)) return { key: "pilots", reason: `"${o.label}" counts pilots, not paying customers` };
   if (k === "pilots" && /\b(completed|past|finished|concluded|ended|converted|to date|since)\b/.test(label)) return { key: null, reason: `"${o.label}" is a historical pilot count, not active pilots` };
   if (k === "founder_led_revenue_share" && /\b(partners?|channels?|resellers?|marketplaces?|alliances?)\b/.test(label) && !/\bfounders?\b/.test(label)) return { key: null, reason: `"${o.label}" is a channel share, not founder-led revenue` };
+  if (k === "OTHER" && o.unit === "COUNT" && /^(company|total|current|full[- ]time)?\s*(headcount|employees|team size|team|ftes?|staff|people)$/.test(label.replace(/\(.*?\)/g, "").trim())) return { key: "headcount", reason: `"${o.label}" is the company headcount` };
   if (k === "OTHER" && o.unit === "PERCENT" && /\bfill rate\b|\bsell[- ]through\b|\bliquidity\b|\blistings?\b.*\b(sold|sell|sells|filled|transact(ed)?)\b/.test(label)) return { key: "fill_rate", reason: `"${o.label}" is a marketplace fill rate` };
   return undefined;
 }
@@ -372,9 +373,8 @@ export function normalizeObservation(input: MetricObservation, ctx: NormalizeCon
       flags.push("PERIOD_TYPE_NOT_STATED_MONTHLY: extraction marked the figure monthly but the materials state it as ARR; not annualized");
     }
   }
-  if ((key === "arr" || key === "revenue_ttm" || key === "gmv") && obs.periodType === "CUMULATIVE") {
-    flags.push("CUMULATIVE_NOT_RUN_RATE: figure is cumulative since inception, not a current run-rate");
-  }
+  // A total since inception is never a current run-rate: it stays in the raw audit trail (the integrity engine reports it).
+  if ((key === "arr" || key === "mrr" || key === "revenue_ttm" || key === "gmv" || key === "tpv") && obs.periodType === "CUMULATIVE") return null;
 
   // 5. State and quality.
   let state: DataState = obs.state === "UNKNOWN" ? "UNKNOWN" : obs.state;
@@ -413,12 +413,14 @@ export function normalizeObservation(input: MetricObservation, ctx: NormalizeCon
       flags.push(`GROSS_MARGIN_EXCLUDES_COGS: ${excluded.join("; ")}`);
     else if (!/inference|cloud|hosting|support|delivery|labor|ops/.test(defText)) flags.push("COGS_COMPOSITION_UNVERIFIED");
   }
-  if (def.key === "paying_customers" && /\b(pilots?|trials?|pocs?|proofs? of concept|lois?|letters? of intent|free|freemium|design partners?|logos?)\b/.test(defText)) {
+  // What a figure says it excludes ("excluding signed contracts not yet deployed") is not what it includes.
+  const inclText = defText.replace(/\b(exclud\w*|without|net of|not including|hors|sans)\b[^.;]*/g, " ");
+  if (def.key === "paying_customers" && /\b(pilots?|trials?|pocs?|proofs? of concept|lois?|letters? of intent|free|freemium|design partners?|logos?)\b/.test(inclText)) {
     flags.push("CUSTOMER_COUNT_MAY_INCLUDE_NON_PAYING: definition mentions pilots, trials, LOIs, free users or logos");
   }
   if (
     def.key === "arr" &&
-    /\b(pilots?|one[- ]time|non[- ]recurring|implementation|setup|set-up|bookings?|signed|contracted|pipeline|(professional|consulting|onboarding|implementation)\s+services|services\s+(revenue|fees|income))\b/.test(defText)
+    /\b(pilots?|one[- ]time|non[- ]recurring|implementation|setup|set-up|bookings?|signed|contracted|pipeline|(professional|consulting|onboarding|implementation)\s+services|services\s+(revenue|fees|income))\b/.test(inclText)
   ) {
     flags.push("ARR_MAY_INCLUDE_NON_RECURRING: definition mentions pilots, one-time, services, bookings or signed-not-live revenue");
   }
