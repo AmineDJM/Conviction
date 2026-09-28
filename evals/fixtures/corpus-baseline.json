@@ -1,0 +1,364 @@
+{
+  "createdAt": "2026-09-28T04:14:02.745Z",
+  "promptVersions": {
+    "triage": "triage_v2",
+    "extract_metrics": "extract_metrics_v2",
+    "extract_claims": "extract_claims_v3",
+    "extract_profile": "extract_profile_v1",
+    "deck_forensics": "deck_forensics_v2",
+    "latent_signals": "latent_signals_v1",
+    "divergence_signals": "divergence_signals_v1",
+    "research": "research_v2",
+    "research_refresh": "research_refresh_v1",
+    "investment_analysis": "investment_analysis_v4",
+    "decision_core": "decision_core_v1",
+    "decision_thesis": "decision_thesis_v5",
+    "decision_challenge": "decision_challenge_v2",
+    "decision_actions": "decision_actions_v2",
+    "founder_call_update": "founder_call_update_v3",
+    "pre_meeting_brief": "pre_meeting_brief_v1",
+    "brain_planner": "brain_planner_v1",
+    "brain_answer": "brain_answer_v2",
+    "ic_observations": "ic_observations_v1",
+    "fund_document": "fund_document_v1"
+  },
+  "engineVersion": "3.1",
+  "decks": {
+    "ledgerline-series-a.pdf": {
+      "name": "Ledgerline",
+      "stage": "SERIES_A",
+      "instrument": "PRICED_EQUITY",
+      "raiseUsd": 12000000,
+      "metrics": {
+        "acv": 42000,
+        "arr": 3840000,
+        "cac": 58000,
+        "cash_balance": 3100000,
+        "customer_concentration_top1": 6,
+        "founder_led_revenue_share": 60,
+        "gross_margin": 74,
+        "headcount": 38,
+        "logo_retention": null,
+        "monthly_net_burn": 365000,
+        "nrr": 118,
+        "paying_customers": 92,
+        "sales_cycle_days": 54
+      },
+      "findingKinds": [
+        "CAC_INCOMPLETE",
+        "CHART_MISSING_UNITS",
+        "CHART_OTHER",
+        "CROSS_SLIDE_MODEL",
+        "FORECAST_BASE_NOT_DISCLOSED",
+        "IMPLIED_DECK_TAM_VS_RECONSTRUCTED",
+        "IMPLIED_TAM_VS_PRICE_X_CUSTOMERS",
+        "INSTRUCTION_TEXT_IN_MATERIALS",
+        "LOGO_ONLY_CUSTOMERS",
+        "NARRATIVE_INCONSISTENCY",
+        "RATE_WITHOUT_DENOMINATOR",
+        "RETENTION_WITHOUT_COHORTS"
+      ],
+      "securityFlags": 4,
+      "recommendation": "NEEDS_FOUNDER_CALL",
+      "oqi": 58.9,
+      "tractionPmf": 75
+    },
+    "parcelo-seed.pdf": {
+      "name": "Parcelo",
+      "stage": "SEED",
+      "instrument": "SAFE",
+      "raiseUsd": 3500000,
+      "metrics": {
+        "cash_balance": 400000,
+        "fill_rate": null,
+        "gmv": 4600000,
+        "mom_growth": 11,
+        "monthly_net_burn": 140000,
+        "repeat_rate": 46,
+        "take_rate": 14
+      },
+      "findingKinds": [
+        "ACTUAL_DATED_IN_FUTURE",
+        "CROSS_SLIDE_MODEL",
+        "EXPECTED_EVIDENCE_MISSING",
+        "IMPLIED_DECK_TAM_VS_RECONSTRUCTED",
+        "IMPLIED_RUNWAY",
+        "NARRATIVE_INCONSISTENCY",
+        "RATE_WITHOUT_DENOMINATOR"
+      ],
+      "securityFlags": 0,
+      "recommendation": "NEEDS_FOUNDER_CALL",
+      "oqi": 44.6,
+      "tractionPmf": 51.3
+    },
+    "habitloom-seed.pdf": {
+      "name": "Habitloom",
+      "stage": "SEED",
+      "instrument": "PRICED_EQUITY",
+      "raiseUsd": 3000000,
+      "metrics": {
+        "cash_balance": 900000,
+        "d30_retention": 41,
+        "headcount": 9,
+        "mau": 86000,
+        "mom_growth": 38,
+        "monthly_net_burn": 85000,
+        "mrr": 7800
+      },
+      "findingKinds": [
+        "CHART_CUMULATIVE_AS_RUN_RATE",
+        "CHART_MISSING_UNITS",
+        "CROSS_SLIDE_MODEL",
+        "EXPECTED_EVIDENCE_MISSING",
+        "GROWTH_ON_TINY_BASE",
+        "IMPLIED_DECK_TAM_VS_RECONSTRUCTED",
+        "IMPLIED_TAM_VS_PRICE_X_CUSTOMERS",
+        "NARRATIVE_INCONSISTENCY",
+        "RATE_WITHOUT_DENOMINATOR"
+      ],
+      "securityFlags": 0,
+      "recommendation": "NEEDS_FOUNDER_CALL",
+      "oqi": 42.3,
+      "tractionPmf": 75.9
+    },
+    "crateroute-series-a.pdf": {
+      "name": "Crateroute",
+      "stage": "SERIES_A",
+      "instrument": "PRICED_EQUITY",
+      "raiseUsd": 9000000,
+      "metrics": {
+        "arr": null,
+        "cash_balance": 2400000,
+        "gmv": 8200000,
+        "headcount": 27,
+        "monthly_net_burn": 310000,
+        "repeat_rate": 62,
+        "revenue_ttm": 8200000,
+        "take_rate": 11
+      },
+      "findingKinds": [
+        "CHART_MISSING_UNITS",
+        "CHART_OTHER",
+        "CROSS_SLIDE_MODEL",
+        "EXPECTED_EVIDENCE_MISSING",
+        "GMV_AS_REVENUE",
+        "IMPLIED_NET_REVENUE_FROM_GMV",
+        "IMPLIED_TAM_VS_PRICE_X_CUSTOMERS",
+        "NARRATIVE_INCONSISTENCY",
+        "STALE_METRIC_AS_CURRENT"
+      ],
+      "securityFlags": 0,
+      "recommendation": "NEEDS_FOUNDER_CALL",
+      "oqi": 43.6,
+      "tractionPmf": 34.4
+    },
+    "lendquarry-series-a.pdf": {
+      "name": "Lendquarry",
+      "stage": "SERIES_A",
+      "instrument": "PRICED_EQUITY",
+      "raiseUsd": 6000000,
+      "metrics": {
+        "cash_balance": 1800000,
+        "default_rate": 1.2,
+        "headcount": 16,
+        "monthly_net_burn": 220000,
+        "revenue_ttm": 2100000
+      },
+      "findingKinds": [
+        "EXPECTED_EVIDENCE_MISSING",
+        "NARRATIVE_INCONSISTENCY",
+        "RATE_WITHOUT_DENOMINATOR"
+      ],
+      "securityFlags": 0,
+      "recommendation": "NEEDS_FOUNDER_CALL",
+      "oqi": 39.9,
+      "tractionPmf": null
+    },
+    "inferlane-series-a.pdf": {
+      "name": "Inferlane",
+      "stage": "SERIES_A",
+      "instrument": "PRICED_EQUITY",
+      "raiseUsd": 20000000,
+      "metrics": {
+        "arr": 67200000,
+        "cash_balance": 4000000,
+        "gross_margin": 81,
+        "headcount": 31,
+        "monthly_net_burn": 480000,
+        "nrr": 142,
+        "paying_customers": 44
+      },
+      "findingKinds": [
+        "CHART_MISSING_UNITS",
+        "CHART_OTHER",
+        "CROSS_SLIDE_MODEL",
+        "EXPECTED_EVIDENCE_MISSING",
+        "GROSS_MARGIN_EXCLUDES_COGS",
+        "MONTHLY_FIGURE_AS_ARR",
+        "NARRATIVE_INCONSISTENCY",
+        "SMALL_SAMPLE_RATE"
+      ],
+      "securityFlags": 0,
+      "recommendation": "NEEDS_FOUNDER_CALL",
+      "oqi": 45.6,
+      "tractionPmf": 59.1
+    },
+    "drypoint-series-a.pdf": {
+      "name": "Drypoint Sensors",
+      "stage": "SERIES_A",
+      "instrument": "PRICED_EQUITY",
+      "raiseUsd": 8000000,
+      "metrics": {
+        "arr": 310000,
+        "cash_balance": 1100000,
+        "headcount": 22,
+        "monthly_net_burn": 260000,
+        "revenue_ttm": 1600000
+      },
+      "findingKinds": [
+        "ARR_INCLUDES_NON_RECURRING",
+        "BOOKINGS_AS_ARR",
+        "CHART_CHERRY_PICKED_PERIOD",
+        "CHART_MISSING_UNITS",
+        "CROSS_SLIDE_MODEL",
+        "EXPECTED_EVIDENCE_MISSING",
+        "HOCKEY_STICK_FORECAST",
+        "NARRATIVE_INCONSISTENCY",
+        "STALE_METRIC_AS_CURRENT"
+      ],
+      "securityFlags": 0,
+      "recommendation": "NEEDS_FOUNDER_CALL",
+      "oqi": 42,
+      "tractionPmf": null
+    },
+    "oncovire-series-a.pdf": {
+      "name": "Oncovire Therapeutics",
+      "stage": "SERIES_A",
+      "instrument": "PRICED_EQUITY",
+      "raiseUsd": 15000000,
+      "metrics": {
+        "cash_balance": 6200000,
+        "headcount": 14,
+        "monthly_net_burn": 540000,
+        "revenue_ttm": 0
+      },
+      "findingKinds": [
+        "CHART_MISSING_UNITS",
+        "CHART_OTHER",
+        "CROSS_SLIDE_MODEL",
+        "IMPLIED_DECK_TAM_VS_RECONSTRUCTED",
+        "IMPLIED_TAM_VS_PRICE_X_CUSTOMERS",
+        "NARRATIVE_INCONSISTENCY"
+      ],
+      "securityFlags": 0,
+      "recommendation": "NEEDS_FOUNDER_CALL",
+      "oqi": 38.4,
+      "tractionPmf": null
+    },
+    "ruleyard-series-a.pdf": {
+      "name": "Ruleyard",
+      "stage": "SERIES_A",
+      "instrument": "PRICED_EQUITY",
+      "raiseUsd": 14000000,
+      "metrics": {
+        "cash_balance": 3500000,
+        "gross_margin": 58,
+        "headcount": 45,
+        "monthly_net_burn": 290000,
+        "services_revenue_share": 52
+      },
+      "findingKinds": [
+        "ARR_INCLUDES_NON_RECURRING",
+        "CHART_OTHER",
+        "CROSS_SLIDE_MODEL",
+        "EXPECTED_EVIDENCE_MISSING",
+        "NARRATIVE_INCONSISTENCY",
+        "SERVICES_AS_SAAS"
+      ],
+      "securityFlags": 0,
+      "recommendation": "NEEDS_FOUNDER_CALL",
+      "oqi": 39.7,
+      "tractionPmf": 85.3
+    },
+    "clausewren-seed.pdf": {
+      "name": "Clausewren",
+      "stage": "SEED",
+      "instrument": "PRICED_EQUITY",
+      "raiseUsd": 5000000,
+      "metrics": {
+        "arr": 1300000,
+        "cash_balance": 2200000,
+        "headcount": 17,
+        "monthly_net_burn": 190000,
+        "paying_customers": 27,
+        "pilots": 11
+      },
+      "findingKinds": [
+        "CROSS_SLIDE_MODEL",
+        "EXPECTED_EVIDENCE_MISSING",
+        "INSTRUCTION_TEXT_IN_MATERIALS",
+        "LOGO_ONLY_CUSTOMERS",
+        "NARRATIVE_INCONSISTENCY",
+        "PILOTS_AS_CUSTOMERS"
+      ],
+      "securityFlags": 3,
+      "recommendation": "NEEDS_FOUNDER_CALL",
+      "oqi": 39.9,
+      "tractionPmf": 75.1
+    },
+    "carbonmoss-seed.pdf": {
+      "name": "Carbonmoss",
+      "stage": "SEED",
+      "instrument": "SAFE",
+      "raiseUsd": 2000000,
+      "metrics": {
+        "arr": 624000,
+        "cash_balance": 600000,
+        "headcount": 8,
+        "monthly_net_burn": 95000,
+        "mrr": 52000,
+        "paying_customers": 23,
+        "revenue_ttm": null
+      },
+      "findingKinds": [
+        "EXPECTED_EVIDENCE_MISSING",
+        "NARRATIVE_INCONSISTENCY"
+      ],
+      "securityFlags": 0,
+      "recommendation": "NEEDS_FOUNDER_CALL",
+      "oqi": 41.6,
+      "tractionPmf": 68.7
+    },
+    "rostermint-series-a.pdf": {
+      "name": "Rostermint",
+      "stage": "SERIES_A",
+      "instrument": "PRICED_EQUITY",
+      "raiseUsd": 16000000,
+      "metrics": {
+        "acv": 38000,
+        "arr": 2900000,
+        "cac": 11000,
+        "cash_balance": 5300000,
+        "headcount": 41,
+        "monthly_net_burn": 410000,
+        "nrr": 124,
+        "paying_customers": 76
+      },
+      "findingKinds": [
+        "CAC_INCOMPLETE",
+        "CHART_CHERRY_PICKED_PERIOD",
+        "CHART_MISSING_UNITS",
+        "CROSS_SLIDE_MODEL",
+        "EXPECTED_EVIDENCE_MISSING",
+        "NARRATIVE_INCONSISTENCY",
+        "RATE_WITHOUT_DENOMINATOR",
+        "RETENTION_WITHOUT_COHORTS",
+        "STALE_METRIC_AS_CURRENT"
+      ],
+      "securityFlags": 0,
+      "recommendation": "NEEDS_FOUNDER_CALL",
+      "oqi": 42.1,
+      "tractionPmf": 60.1
+    }
+  }
+}

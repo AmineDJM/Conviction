@@ -3,8 +3,8 @@
  *
  *   NODE_USE_ENV_PROXY=1 npx tsx evals/historical.ts <folder> [--budget 1.00] [--out <dir>] [--no-probe] [--fast-screen-cap 0.25]
  *
- *   --fast-screen-cap  explicit eval-only FAST_SCREEN cap (the product cap currently refuses uncached decks,
- *                      see docs/EVALUATION.md); recorded in the report
+ *   --fast-screen-cap  explicit eval-only FAST_SCREEN cap override (only if the product cap refuses a deck —
+ *                      see the `pipeline` eval suite); recorded in the report
  *
  * <folder> contains dated decks (PDF) and `outcomes.csv`:
  *   company,deck_date,outcome,outcome_date,source[,deck_file][,famous]

@@ -16,16 +16,20 @@
  *   retrieval         — labelled query set → precision@k / recall@k / hit@k of the hybrid retrieval
  *   chat              — Fund Brain hallucination traps + latency
  *   regression        — engine drift over stored versions + corpus drift vs evals/fixtures/corpus-baseline.json
+ *   pipeline          — FAST_SCREEN completes within its product cap on an input that cannot hit the cache
  *
  * Usage:  NODE_USE_ENV_PROXY=1 npx tsx evals/run.ts [suite ...]   (default: all)
  *         EVAL_BUDGET_USD=3        total model spend cap for the run (analyses are skipped, not truncated, when it would be exceeded)
  *         EVAL_UPDATE_BASELINE=1   rewrite the corpus baseline after reviewing drift
+ *         EVAL_REUSE=1             measure stored analyses of the corpus instead of re-running them (downstream suites only)
+ *         EVAL_MERGE_LATEST=1      with named suites: replace those suites' results in evals/latest.json (recorded under `merged`)
  *         EVAL_FAST_SCREEN_CAP_USD eval-only FAST_SCREEN cap used AFTER the product cap has been shown to fail
  *                                  (the failure is recorded as a hard FAIL; the override is written to the results)
  * Cost:   first full run ≈ $1 (12 new FAST_SCREEN analyses; identical re-runs hit the reproducibility cache).
  */
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import type { DeckTruth } from "./lib/corpus";
 
 process.env.DATABASE_PATH ??= path.join(process.cwd(), "data", "evals.db");
@@ -107,8 +111,18 @@ async function main() {
     if (!v) throw new Error(`No version for ${rel}: ${r.error}`);
     return { run: r, version: v, company: co };
   }
+  /** EVAL_REUSE=1: measure the stored current analysis of a deck instead of re-running it (for re-measuring downstream suites only). */
+  const reuse = (rel: string) => {
+    if (process.env.EVAL_REUSE !== "1") return null;
+    const sha = createHash("sha256").update(fs.readFileSync(path.join(DECKS, rel))).digest("hex");
+    const doc = repo.findDocumentsBySha(workspaceId, [sha])[0];
+    const co = doc ? repo.getCompany(workspaceId, doc.companyId) : undefined;
+    const v = co ? repo.getCurrentVersion(co) : null;
+    const r = co ? repo.latestRun(co.id) : undefined;
+    return co && v && r ? { run: r, version: v, company: co } : null;
+  };
   const get = async (rel: string) => {
-    if (!cache.has(rel)) cache.set(rel, await analyze(rel));
+    if (!cache.has(rel)) cache.set(rel, reuse(rel) ?? (await analyze(rel)));
     return cache.get(rel)!;
   };
   /** Corpus deck or null when the budget does not allow analysing it (recorded, never silently dropped). */
@@ -124,6 +138,19 @@ async function main() {
       throw e;
     }
   };
+
+  /* ---------------- pipeline: the product FAST_SCREEN cap on an input that cannot be cached ---------------- */
+  if (want("pipeline")) {
+    // A unique company URL enters the prompts, so no call can be served from the reproducibility cache.
+    const rel = "../historical-sample/tallowbrook-2021-06.pdf";
+    const data = fs.readFileSync(path.join(DECKS, rel));
+    const t0 = Date.now();
+    const { run, promise } = await startAnalysis({ workspaceId, userId, mode: "FAST_SCREEN", force: true, companyUrl: `https://cap-probe-${Date.now()}.example`, files: [{ filename: path.basename(rel), mime: "application/pdf", data }] });
+    await promise;
+    const r = repo.getRun(workspaceId, run.id)!;
+    spent += r.spentUsd;
+    record("pipeline", `FAST_SCREEN completes within its product cap ($${productCap.toFixed(2)}) on an uncached deck`, r.status !== "FAILED" && r.spentUsd <= productCap, `${r.status}, $${r.spentUsd.toFixed(3)}, ${Math.round((Date.now() - t0) / 1000)} s${r.error ? ` — ${r.error}` : ""}`);
+  }
 
   /* ---------------- extraction (whole corpus) ---------------- */
   if (want("extraction")) {
@@ -426,7 +453,8 @@ async function main() {
       .innerJoin(schema.chatThreads, eq(schema.chatThreads.id, schema.chatMessages.threadId))
       .where(and(eq(schema.chatThreads.workspaceId, workspaceId), eq(schema.chatMessages.role, "assistant"), gte(schema.chatMessages.createdAt, since)))
       .all();
-    const chunkByHref = new Map(db.select({ href: schema.chunks.href, text: schema.chunks.text }).from(schema.chunks).where(eq(schema.chunks.workspaceId, workspaceId)).all().map((r) => [r.href ?? "", r.text]));
+    // Several chunks share an href (all questions → /questions): the item is identified by href AND title.
+    const chunkByRef = new Map(db.select({ href: schema.chunks.href, title: schema.chunks.title, text: schema.chunks.text }).from(schema.chunks).where(eq(schema.chunks.workspaceId, workspaceId)).all().map((r) => [`${r.href ?? ""}|${r.title}`, r.text]));
     const packs = db.select({ pack: schema.memoryPacks.pack, text: schema.memoryPacks.text }).from(schema.memoryPacks).where(eq(schema.memoryPacks.workspaceId, workspaceId)).all();
     const packBySlug = new Map(packs.map((p) => [`/deals/${(p.pack as { slug: string }).slug}`, p.text]));
     const chatItems: Item[] = [];
@@ -438,14 +466,16 @@ async function main() {
           const c = cites.find((x) => x.n === n);
           if (!c || !c.href) return null;
           if (c.kind === "PACK") return packBySlug.get(c.href) ?? null;
-          if (c.kind === "PASSAGE" || c.kind === "IC" || c.kind === "FUND") return chunkByHref.get(c.href) ?? null;
+          if (c.kind === "PASSAGE" || c.kind === "IC" || c.kind === "FUND") return chunkByRef.get(`${c.href}|${c.title}`) ?? null;
           return null; // TABLE / GRAPH / HISTORY / computed items are built at question time and not stored
         });
         if (!texts.length || texts.some((t) => t === null)) {
           unresolvable++;
           continue;
         }
-        chatItems.push({ origin: "CHAT", statement: st.statement, source: texts.map((t, i) => `[${st.refs[i]}] ${t!.slice(0, 3500)}`).join("\n\n"), ref: `answer ${m.createdAt} refs ${st.refs.join(",")}` });
+        // Same lengths the answer model was given (chat.ts: passages 1,800 chars, memory packs up to 7,000).
+        const limit = (n: number) => (cites.find((x) => x.n === n)?.kind === "PACK" ? 7000 : 1800);
+        chatItems.push({ origin: "CHAT", statement: st.statement, source: texts.map((t, i) => `[${st.refs[i]}] ${t!.slice(0, limit(st.refs[i]!))}`).join("\n\n"), ref: `answer ${m.createdAt} refs ${st.refs.join(",")}` });
       }
     }
 
@@ -578,7 +608,22 @@ async function main() {
   );
   fs.writeFileSync(file, payload);
   // The latest full run is versioned with the code so the Quality dashboard has it in production.
-  if (suites.length === 0) fs.writeFileSync(path.join(process.cwd(), "evals", "latest.json"), payload + "\n");
+  const latestFile = path.join(process.cwd(), "evals", "latest.json");
+  if (suites.length === 0) fs.writeFileSync(latestFile, payload + "\n");
+  else if (process.env.EVAL_MERGE_LATEST === "1" && fs.existsSync(latestFile)) {
+    // Re-measure some suites without re-running the whole corpus: their results and measurements replace the old ones; provenance is kept.
+    const prev = JSON.parse(fs.readFileSync(latestFile, "utf8"));
+    const measurementKey: Record<string, string> = { extraction: "extraction", integrity: "integrity", retrieval: "retrieval", "citation-support": "citationSupport", regression: "regression" };
+    const merged = {
+      ...prev,
+      spentUsd: (prev.spentUsd ?? 0) + spent,
+      merged: [...(prev.merged ?? []), { at: new Date().toISOString(), suites, spentUsd: spent, file: path.basename(file) }],
+      measurements: { ...prev.measurements, ...Object.fromEntries(suites.filter((x) => measurementKey[x] && measurements[measurementKey[x]!]).map((x) => [measurementKey[x]!, measurements[measurementKey[x]!]])) },
+      results: [...prev.results.filter((r: Result) => !suites.includes(r.suite)), ...results.filter((r) => suites.includes(r.suite))],
+    };
+    fs.writeFileSync(latestFile, JSON.stringify(merged, null, 2) + "\n");
+    console.log(`merged ${suites.join(", ")} into evals/latest.json`);
+  }
   console.log(`\n${results.filter((r) => r.pass).length} passed, ${hardFails.length} failed, ${results.filter((r) => !r.pass && !r.hard).length} warnings · model spend $${spent.toFixed(3)} (budget $${BUDGET_USD}) · ${file}`);
   process.exit(hardFails.length ? 1 : 0);
 }
