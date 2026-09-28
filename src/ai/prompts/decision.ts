@@ -26,7 +26,7 @@ import { ANALYST_STANDARD, today } from "./common";
 export const DECISION_THESIS = { id: "decision_thesis", version: "decision_thesis_v5" } as const;
 export const DECISION_CORE = { id: "decision_core", version: "decision_core_v1" } as const;
 export const DECISION_CHALLENGE = { id: "decision_challenge", version: "decision_challenge_v2" } as const;
-export const DECISION_ACTIONS = { id: "decision_actions", version: "decision_actions_v2" } as const;
+export const DECISION_ACTIONS = { id: "decision_actions", version: "decision_actions_v3" } as const;
 
 /** The decision core: the compression of the bet, its exceptional strength and power-law ratings (one mind, so they stay consistent). */
 export const DecisionCoreOutput = z.object({
@@ -118,7 +118,7 @@ TASK — the independent challenge. You are NOT the deal lead; another analyst w
 
 /** Two parallel parts: the machine (causal model, sensitivity, perfect slides) and the next proof (questions, action, status). */
 export function actionsInstructions(mode: string, part: "MACHINE" | "NEXT_PROOF") {
-  const items = part === "MACHINE" ? MACHINE_ITEMS : NEXT_PROOF_ITEMS;
+  const items = part === "MACHINE" ? MACHINE_ITEMS : NEXT_PROOF_ITEMS(mode);
   return `${COMMON(mode)}
 
 TASK — ${part === "MACHINE" ? "the machine and its fragility (a parallel pass writes the founder questions, next action and suggested status)" : "the next proof (a parallel pass reconstructs the causal model, sensitivity drivers and perfect slides; the code's computed sensitivity breakpoints are in the deterministic block — prioritize by them)"}:
@@ -128,6 +128,18 @@ ${items}`;
 const MACHINE_ITEMS = `- CAUSAL BUSINESS MODEL: reconstruct Acquisition → Conversion → Activation → Usage → Retention → Expansion → Revenue → Gross profit → Cash → Reinvestment for THIS company with evidence per stage (health STRONG/ADEQUATE/WEAK/UNKNOWN), then name the single binding bottleneck with evidence (e.g. "Demand is not the problem: pipeline is sufficient. The bottleneck is pilot→production conversion at 21%").
 - SENSITIVITY DRIVERS: the 3–5 variables the thesis is genuinely sensitive to, each with the current assumption and the value/condition at which the thesis breaks (use metric keys when quantitative; code computes exact breakpoints where it can).
 - PERFECT SLIDES: for the most decision-relevant missing or weak evidence, describe exactly the slide you would want (rows, columns, periods, cohorts) — a diligence request, not a complaint.`;
-const NEXT_PROOF_ITEMS = `- QUESTIONS: 5–8, each passing the decision test (answer A → what changes, answer B → what changes, what it affects). Prioritize by the sensitivity drivers and the integrity findings. MUST_ASK / IMPORTANT / OPTIONAL.
+/** Statuses the code can admit in each mode (engine/decision.ts DEPTH_LIMIT); the model chooses among them. */
+const MODE_STATUSES: Record<string, string> = {
+  FAST_SCREEN: "SCREEN_OUT | NEEDS_FOUNDER_CALL | WATCH | ANALYTICAL_RECOMMEND_PASS",
+  STANDARD: "SCREEN_OUT | NEEDS_FOUNDER_CALL | NEEDS_TARGETED_DILIGENCE | DEEP_DD | IC_READY | ANALYTICAL_RECOMMEND_INVEST | WATCH | ANALYTICAL_RECOMMEND_PASS",
+  DEEP_DD: "SCREEN_OUT | NEEDS_FOUNDER_CALL | NEEDS_TARGETED_DILIGENCE | DEEP_DD | IC_READY | ANALYTICAL_RECOMMEND_INVEST | WATCH | ANALYTICAL_RECOMMEND_PASS",
+};
+
+const NEXT_PROOF_ITEMS = (mode: string) => `- QUESTIONS: 5–8, each passing the decision test (answer A → what changes, answer B → what changes, what it affects). Prioritize by the sensitivity drivers and the integrity findings. MUST_ASK / IMPORTANT / OPTIONAL.
 - NEXT BEST ACTION: specific, never "do more diligence".
-- RECOMMENDATION: suggest a status (code gates decide admissibility). WATCH requires a concrete trigger, date and awaited information.\`;`;
+- RECOMMENDATION — choose ONE of: ${MODE_STATUSES[mode] ?? MODE_STATUSES.STANDARD}. Code gates then check admissibility (a suggestion outside this list is discarded). Be as selective as a top-tier fund, and no more:
+  · NEEDS_FOUNDER_CALL only when BOTH hold: (a) if the key claims are true, the company could plausibly return the fund at this entry price (read the backwards analysis and required trajectory), and (b) a conversation with the founder can resolve the decisive uncertainty.
+  · ANALYTICAL_RECOMMEND_PASS when the record already answers the decisive question negatively: integrity findings that contradict the headline traction or economics, a required outcome that is implausible at this price, or a thesis-killing weakness the evidence supports. SCREEN_OUT when the company is clearly not an investable venture outcome for this fund whatever the answers.
+  · Unverified is not disproven: missing verification alone is a reason for a call or diligence, never for a pass. A negative finding the founder could plausibly explain (a definition, a period) is a call, not a pass.
+  · WATCH only with a concrete trigger, date and awaited information (not now, but a specific future proof would change the answer).
+  · NEEDS_TARGETED_DILIGENCE / DEEP_DD / IC_READY / ANALYTICAL_RECOMMEND_INVEST only in STANDARD or DEEP_DD, when the evidence already supports going further.`;

@@ -577,6 +577,11 @@ async function main() {
       const got = await tryGet(file);
       if (got) snaps[file] = snapshotOf(observe(got.version.canonical, got.version.derived), truth[file]!);
     }
+    // Discrimination: a screen that recommends the same thing for every deck does not screen (reported, not prescribed per deck).
+    const recs = Object.values(snaps).map((x) => x.recommendation ?? "none");
+    const dist = Object.entries(recs.reduce<Record<string, number>>((a, r) => ((a[r] = (a[r] ?? 0) + 1), a), {})).sort((a, b) => b[1] - a[1]);
+    record("regression", "recommendations discriminate across the corpus", dist.length > 1, `${dist.map(([r, n]) => `${r} ${n}`).join(" · ")} over ${recs.length} decks`, false);
+    measurements.recommendations = Object.fromEntries(Object.entries(snaps).map(([f, x]) => [f, x.recommendation]));
     const baseline = fs.existsSync(BASELINE) ? (JSON.parse(fs.readFileSync(BASELINE, "utf8")) as { createdAt: string; promptVersions: unknown; engineVersion: string; decks: Record<string, ReturnType<typeof snapshotOf>> }) : null;
     const corpusDrift: Record<string, string[]> = {};
     if (!baseline) record("regression", "corpus baseline", true, `no baseline yet — created from this run (${Object.keys(snaps).length} decks)`, false);

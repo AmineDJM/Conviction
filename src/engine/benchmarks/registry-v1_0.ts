@@ -374,7 +374,7 @@ export const VC_BENCHMARK_V1_0: BenchmarkRegistry = {
       { id: "MANDATE", description: "Any mandate gate FAIL → SCREEN_OUT (binary; never averaged into Fund Fit)." },
       { id: "SCREEN_OUT_QUALITY", description: "Operating-quality upper bound below threshold AND power-law below override AND no rated exceptional strength → SCREEN_OUT." },
       { id: "EXCEPTIONAL_OVERRIDE", description: "Power-Law Index lower bound (missing components at 0) ≥ override threshold AND a STRONG/EXCEPTIONAL rated exceptional strength or nonlinear mechanism prevents screen-out on composite quality alone." },
-      { id: "THESIS_KILLER", description: "A thesis-killing weakness with HIGH/CRITICAL likelihood → ANALYTICAL_RECOMMEND_PASS unless the exceptional override applies." },
+      { id: "THESIS_KILLER", description: "A thesis-killing weakness with HIGH/CRITICAL likelihood blocks DEEP_DD, IC_READY and ANALYTICAL_RECOMMEND_INVEST unless the exceptional override applies; a founder call, watch or pass stay admissible (an unverified killer is resolved by asking, not assumed)." },
       { id: "DEPTH_LIMIT", description: "FAST_SCREEN may only produce SCREEN_OUT, NEEDS_FOUNDER_CALL or WATCH. PARTIAL analyses cannot be IC_READY or recommend invest." },
       { id: "MUST_ASK_OPEN", description: "Open MUST_ASK questions with evidence below HIGH → NEEDS_FOUNDER_CALL at most." },
       { id: "FOUNDER_CALL_HELD", description: "After a recorded founder call with no must-ask question left open, NEEDS_FOUNDER_CALL is no longer admissible." },
