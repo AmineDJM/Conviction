@@ -1,11 +1,15 @@
 import Link from "next/link";
 import { and, eq, sql } from "drizzle-orm";
 import { requireSession } from "@/server/session";
-import { costSummary, getDefaultFund, listCompanies } from "@/server/repo";
+import { costSummary, getCurrentVersion, getDefaultFund, listCompanies } from "@/server/repo";
 import { getDb, schema } from "@/db/client";
 import { PageHeader } from "@/components/shell/page-header";
 import { Badge, Empty, Section } from "@/components/ui";
 import { DECISION_LABEL, decisionTone, titleCase, usd } from "@/lib/format";
+import { portfolioIntelligence, type PortfolioDeal } from "@/engine/portfolio";
+import { applyOverrides } from "@/engine/overrides";
+import { InPageNav, Rule } from "@/components/deal/v2/kit";
+import { AllocationRanking, AsymmetricScreen, CorrelatedRisks, ExposureViews, IntelligenceSummary, Redundancy } from "@/components/portfolio/intelligence";
 
 export const metadata = { title: "Portfolio" };
 
@@ -28,11 +32,62 @@ export default async function PortfolioPage() {
   const total = db.select({ total: sql<number>`coalesce(sum(${schema.costRecords.actualUsd}),0)` }).from(schema.costRecords).where(eq(schema.costRecords.workspaceId, s.workspaceId)).get();
   const exposure = invested.length * fund.initialCheckDefaultUsd;
 
+  // Portfolio intelligence over the current version of every analyzed deal (effective values: raw + analyst overrides).
+  const deals: PortfolioDeal[] = [];
+  for (const c of companies) {
+    if (c.status === "PROCESSING") continue;
+    const v = getCurrentVersion(c);
+    if (v) deals.push({ companyId: c.id, name: c.name, canonical: applyOverrides(v.canonical), derived: v.derived });
+  }
+  const intel = deals.length ? portfolioIntelligence(deals, fund) : null;
+  const slugs = Object.fromEntries(companies.map((c) => [c.id, c.slug]));
+
   return (
     <main className="pb-16">
       <PageHeader title="Portfolio" meta={`${fund.name} · ${usd(fund.fundSizeUsd)} fund, vintage ${fund.vintage}`} />
-      <div className="max-w-[1180px] space-y-12 px-8">
-        <Section eyebrow="Invested" title={`${invested.length} signed or funded`}>
+      <div className="max-w-[1180px] space-y-12 px-4 sm:px-8">
+        {intel && (
+          <>
+            <InPageNav
+              items={[
+                { href: "#allocation", label: "Next $1M" },
+                { href: "#exposure", label: "Exposure" },
+                { href: "#correlated", label: "Correlated risks", count: intel.correlatedRisks.length },
+                { href: "#redundancy", label: "Redundancy", count: intel.redundancy.length },
+                { href: "#asymmetric", label: "Asymmetric upside" },
+                { href: "#invested", label: "Invested" },
+                { href: "#costs", label: "Costs" },
+              ]}
+            />
+            <Section eyebrow="Portfolio intelligence · deterministic, over the current version of every deal">
+              <IntelligenceSummary r={intel} fundSizeUsd={fund.fundSizeUsd} />
+            </Section>
+            <Section id="allocation" eyebrow="Where to allocate the next $1M" title="Marginal fund-return capacity, evidence-discounted">
+              <AllocationRanking r={intel} slugs={slugs} />
+            </Section>
+            <Section id="exposure" eyebrow="Exposure" title="Sector, stage and geography — committed vs. pipeline">
+              <ExposureViews r={intel} />
+            </Section>
+            <Section id="correlated" eyebrow="Correlated-risk clusters" title="One adverse move that hits several deals together">
+              <CorrelatedRisks r={intel} slugs={slugs} />
+            </Section>
+            <Section id="asymmetric" eyebrow="Asymmetric-upside screen" title="Outlier return, price headroom, evidence-adjusted power-law">
+              <AsymmetricScreen r={intel} slugs={slugs} />
+            </Section>
+            <Section id="redundancy" eyebrow="Redundancy" title="Deals that would compete for the same outcome">
+              <Redundancy r={intel} slugs={slugs} />
+            </Section>
+            <details className="text-[12.5px]">
+              <summary className="cursor-pointer text-ink-3 hover:text-ink">Rules ({intel.rules.length})</summary>
+              <div className="mt-2 space-y-1">
+                {intel.rules.map((r, i) => (
+                  <Rule key={i}>{r}</Rule>
+                ))}
+              </div>
+            </details>
+          </>
+        )}
+        <Section id="invested" eyebrow="Invested" title={`${invested.length} signed or funded`}>
           {invested.length === 0 ? (
             <Empty title="No investments recorded">Record execution status (term sheet, signed, funded) from the IC page. Portfolio companies from before this system can be listed in the fund profile.</Empty>
           ) : (
@@ -83,7 +138,7 @@ export default async function PortfolioPage() {
           </Section>
         </div>
 
-        <Section eyebrow="Cost control (§132)" title="What the analysis costs">
+        <Section id="costs" eyebrow="Cost control (§132)" title="What the analysis costs">
           <table className="w-full text-[13px]">
             <thead>
               <tr className="text-left text-[11.5px] text-ink-3">

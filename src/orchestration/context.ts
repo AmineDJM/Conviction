@@ -74,6 +74,10 @@ export function derivedDigest(d: DerivedAnalysis) {
     fundFit: { mandate: d.fundFit.mandate, failedGates: d.fundFit.gates.filter((g) => g.result !== "PASS").map((g) => `${g.label}: ${g.result} (${g.detail})`), index: d.fundFit.index },
     risk: { headline: d.risk.headline, thesisKillers: d.risk.thesisKillers.map((r) => r.title) },
     smallSampleWarnings: d.smallSampleWarnings.map((w) => `${w.label}: ${w.detail}`),
+    // Ten ordinal divergence factors (never a score, never part of the OQI). Absent on versions derived before the engine existed.
+    divergence: d.divergence
+      ? { headline: d.divergence.summary.headline, factors: d.divergence.summary.factors.map((f) => `${f.n}. ${f.name}: ${f.level} (${f.reading}) — ${f.why}${f.numbers.length ? ` [${f.numbers.join("; ")}]` : ""}`) }
+      : null,
   };
 }
 

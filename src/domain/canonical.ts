@@ -60,6 +60,7 @@ import {
   LatentSignalsDraft,
   RevealedInsight,
   DecisionCore,
+  DivergenceDraft,
 } from "./sections";
 import { Money } from "./money";
 
@@ -123,7 +124,8 @@ export const Claim = z.object({
   history: z.array(
     z.object({
       at: z.string(),
-      change: z.enum(["CREATED", "CONFIRMED", "CHANGED", "CONTRADICTED", "UNRESOLVED", "CORRECTED"]),
+      /** CLARIFIED: same fact, better defined (definition, scope, period) — e.g. by the founder in a meeting. */
+      change: z.enum(["CREATED", "CONFIRMED", "CLARIFIED", "CHANGED", "CONTRADICTED", "UNRESOLVED", "CORRECTED"]),
       note: z.string(),
     }),
   ),
@@ -314,6 +316,8 @@ export const CanonicalDeal = z.object({
   revealedBeyondPitch: z.array(RevealedInsight).default([]),
   /** Compression: the bet, the 5 determinants, 2 outlier signals, the reversing question. */
   decisionCore: DecisionCore.nullable().default(null),
+  /** Observable divergence signals from the deck (model-extracted, code-aggregated in derived.divergence). */
+  divergence: DivergenceDraft.nullable().default(null),
   /** Human overrides. Raw data is never overwritten: every override records what it replaced. */
   overrides: z
     .array(
@@ -409,6 +413,7 @@ export function emptyCanonical(mode: z.infer<typeof AnalysisMode>): CanonicalDea
     latentSignals: null,
     revealedBeyondPitch: [],
     decisionCore: null,
+    divergence: null,
     overrides: [],
   };
 }
@@ -429,6 +434,12 @@ export function upgradeCanonical(raw: unknown): CanonicalDeal {
       delete o.isProjection;
     }
     r.schemaVersion = CANONICAL_SCHEMA_VERSION;
+  }
+  // Divergence signals (added within schema 1.1): absent on versions stored before the pass existed.
+  // A malformed stored block is dropped rather than failing the whole version — it is re-extracted on re-analysis.
+  if (r && typeof r === "object") {
+    if (r.divergence === undefined) r.divergence = null;
+    else if (r.divergence !== null && !DivergenceDraft.safeParse(r.divergence).success) r.divergence = null;
   }
   return CanonicalDeal.parse(r);
 }

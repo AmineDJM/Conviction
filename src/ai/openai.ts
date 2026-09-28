@@ -20,11 +20,17 @@ export const PRIMARY_MODEL = process.env.CONVICTION_MODEL ?? "gpt-5.6-luna";
 export const EMBEDDING_MODEL = "text-embedding-3-small";
 export const EMBEDDING_DIM = 512;
 
-function headers(): Record<string, string> {
-  const h: Record<string, string> = { "Content-Type": "application/json" };
+/** Base URL of the OpenAI API (overridable for the offline mock). */
+export const OPENAI_BASE_URL = BASE_URL;
+
+/** Authorization header only (multipart requests set their own content type). */
+export function authHeaders(): Record<string, string> {
   // In managed environments an egress proxy injects credentials; send the key only if configured.
-  if (process.env.OPENAI_API_KEY) h.Authorization = `Bearer ${process.env.OPENAI_API_KEY}`;
-  return h;
+  return process.env.OPENAI_API_KEY ? { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` } : {};
+}
+
+function headers(): Record<string, string> {
+  return { "Content-Type": "application/json", ...authHeaders() };
 }
 
 export type Effort = "none" | "low" | "medium" | "high";

@@ -2,11 +2,17 @@ import { loadDeal } from "@/server/deal";
 import { DealHeader } from "@/components/deal/deal-header";
 import { DealTabs } from "@/components/deal/deal-tabs";
 import { RunProgress } from "@/components/deal/run-progress";
+import { stageOfVersion } from "@/server/meetings";
+import { LineageProvider } from "@/components/deal/lineage/lineage-provider";
+import { lineageData } from "@/components/deal/lineage/data";
 
 export default async function DealLayout({ children, params }: { children: React.ReactNode; params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { company, version, run } = await loadDeal(slug);
+  const loaded = await loadDeal(slug);
+  const { company, version, run } = loaded;
+  const lineage = lineageData(loaded);
   const running = run && (run.status === "RUNNING" || run.status === "QUEUED");
+  const stage = version ? stageOfVersion(company.id, version.row.id) : null;
   return (
     <div>
       <div className="no-print sticky top-0 z-30 border-b border-line bg-bg/90 backdrop-blur-md">
@@ -27,6 +33,7 @@ export default async function DealLayout({ children, params }: { children: React
         updatedAt={company.updatedAt}
         depth={version?.canonical.analysis.depth ?? null}
         mode={version?.canonical.analysis.mode ?? null}
+        versionStage={stage ? { stage: stage.stage, label: stage.label, code: stage.code } : null}
       />
       {version && <DealTabs slug={company.slug} />}
       </div>
@@ -40,7 +47,7 @@ export default async function DealLayout({ children, params }: { children: React
           </div>
         </div>
       )}
-      {version && children}
+      {version && (lineage ? <LineageProvider data={lineage}>{children}</LineageProvider> : children)}
     </div>
   );
 }

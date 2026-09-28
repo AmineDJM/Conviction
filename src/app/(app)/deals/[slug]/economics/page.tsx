@@ -5,6 +5,7 @@ import { loadDeal } from "@/server/deal";
 import { Badge, Section, Td, Th, cx } from "@/components/ui";
 import { metricValue, titleCase } from "@/lib/format";
 import { metricEvidence } from "@/components/deal/metric";
+import { CausalModelView } from "@/components/deal/causal-model";
 import { DimensionDetail, FlagList, Layers, Prose, Quiet, TabMain, TableFrame, instancesOf, periodText, primaryOf } from "@/components/deal/tabs/shared";
 
 const ECONOMICS = [
@@ -185,6 +186,10 @@ export default async function EconomicsTab({ params }: { params: Promise<{ slug:
 
   return (
     <TabMain>
+      <Section eyebrow="Causal business model" title="How the business turns demand into cash — and where it binds">
+        <CausalModelView c={c} slug={slug} />
+      </Section>
+
       <Section
         eyebrow="Unit economics & cash"
         title={present.length ? `${present.length} of ${ECONOMICS.length} economics metrics available` : "No economics metrics disclosed"}

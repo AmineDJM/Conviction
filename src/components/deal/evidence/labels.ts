@@ -68,6 +68,7 @@ export const effectTone = (e: string): Tone => (e === "CONFIRMS" ? "ok" : e === 
 export const HISTORY_TEXT: Record<Claim["history"][number]["change"], string> = {
   CREATED: "Created",
   CONFIRMED: "Confirmed",
+  CLARIFIED: "Clarified",
   CHANGED: "Changed",
   CONTRADICTED: "Contradicted",
   UNRESOLVED: "Unresolved",

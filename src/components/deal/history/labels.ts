@@ -8,6 +8,7 @@ const REASON: Record<string, string> = {
   QUESTION_UPDATE: "Question update",
   STATUS_CHANGE: "Status change",
   FUND_PROFILE_CHANGE: "Fund profile change",
+  USER_OVERRIDE: "Analyst override",
 };
 export const reasonText = (r: string) => REASON[r] ?? r;
 
@@ -24,6 +25,8 @@ export const HISTORY_TYPE_TEXT: Record<string, string> = {
   IC_DECISION: "IC decision",
   EXECUTION_STATUS: "Execution status",
   REPORT_EXPORTED: "Report exported",
+  OVERRIDE_ADDED: "Override added",
+  OVERRIDE_REVERTED: "Override reverted",
 };
 
 export const RUN_KIND_TEXT: Record<string, string> = { DECK: "Deck analysis", FOUNDER_CALL: "Founder call", RESEARCH: "Research", RECALC: "Recalculation" };

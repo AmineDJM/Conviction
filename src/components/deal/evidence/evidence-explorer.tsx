@@ -9,6 +9,7 @@ import { MetricsTable } from "./metrics-table";
 import { DocumentPages, SourcesTable } from "./sources-table";
 import { ClaimDetail, DocDetail, MetricDetail, SourceDetail, type EvidenceIndex } from "./details";
 import { titleCase } from "@/lib/format";
+import type { LineageContextData } from "@/components/deal/lineage/lineage-view";
 import { SOURCE_KIND_TEXT, type DocLite, type EvidenceClaim, type MetricDefLite, type Selection } from "./labels";
 
 export interface EvidenceExplorerProps {
@@ -22,6 +23,10 @@ export interface EvidenceExplorerProps {
   documents: DocLite[];
   securityFlags: { location: string; excerpt: string }[];
   initial: Selection | null;
+  /** Lineage + override data for the metric drawer. */
+  lineage?: LineageContextData;
+  /** Source age and flags from the integrity engine (freshness column). */
+  reliability?: Record<string, { ageMonths: number | null; flags: string[] }>;
 }
 
 const PARAMS = ["claim", "source", "metric", "doc", "page"];
@@ -40,7 +45,7 @@ export function EvidenceExplorer(p: EvidenceExplorerProps) {
   const sel = stack[stack.length - 1] ?? null;
   const shown = sel ?? lastShown; // keep content while the drawer slides out
 
-  const idx: EvidenceIndex = { claims: p.claims, sources: p.sources, metrics: p.metrics, defs: p.defs, documents: p.documents, securityFlags: p.securityFlags };
+  const idx: EvidenceIndex = { claims: p.claims, sources: p.sources, metrics: p.metrics, defs: p.defs, documents: p.documents, securityFlags: p.securityFlags, lineage: p.lineage };
 
   const openFromTable = useCallback((s: Selection) => {
     setStack([s]);
@@ -107,7 +112,7 @@ export function EvidenceExplorer(p: EvidenceExplorerProps) {
       </Section>
 
       <Section id="sources" eyebrow="Sources" title="Documents, transcripts and web pages behind the ledger" className="mb-12">
-        <SourcesTable sources={p.sources} claims={p.claims} selectedId={selectedSource} onOpen={openFromTable} />
+        <SourcesTable sources={p.sources} claims={p.claims} selectedId={selectedSource} onOpen={openFromTable} reliability={p.reliability} />
       </Section>
 
       <Section id="documents" eyebrow="Raw sources" title="Extracted document pages" className="mb-12">

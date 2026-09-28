@@ -6,6 +6,7 @@ import { metricDef } from "@/engine/metrics/dictionary";
 import { Badge } from "@/components/ui";
 import { evidenceTone, titleCase } from "@/lib/format";
 import { EvidenceExplorer } from "@/components/deal/evidence/evidence-explorer";
+import { lineageData } from "@/components/deal/lineage/data";
 import type { DocLite, EvidenceClaim, MetricDefLite, Selection } from "@/components/deal/evidence/labels";
 
 type SP = Record<string, string | string[] | undefined>;
@@ -14,7 +15,8 @@ const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) 
 export default async function EvidencePage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<SP> }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { session, company, version } = await loadDeal(slug);
+  const loaded = await loadDeal(slug);
+  const { session, company, version } = loaded;
   // Pages render alongside the layout; while the first analysis is running there is no version yet.
   if (!version) return null;
   const c = version!.canonical;
@@ -140,6 +142,8 @@ export default async function EvidencePage({ params, searchParams }: { params: P
         documents={documents}
         securityFlags={flags}
         initial={initial}
+        lineage={lineageData(loaded) ?? undefined}
+        reliability={Object.fromEntries((d.integrity?.sourceReliability ?? []).map((r) => [r.sourceId, { ageMonths: r.ageMonths, flags: r.flags }]))}
       />
 
       {flags.length > 0 && (

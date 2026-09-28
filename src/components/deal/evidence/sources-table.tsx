@@ -3,12 +3,13 @@
 import { useMemo, useState } from "react";
 import type { Source } from "@/domain/canonical";
 import { Badge, cx } from "@/components/ui";
+import { FreshnessBadge } from "@/components/deal/freshness";
 import { FilterSelect, PlainTh, SortTh, TableFrame, useSort } from "./table-kit";
 import { ORIGIN_TEXT, SOURCE_KIND_TEXT, hostOf, isUrl, type EvidenceClaim, type Selection } from "./labels";
 
 type Key = "id" | "title" | "kind" | "origin" | "group" | "claims";
 
-export function SourcesTable({ sources, claims, selectedId, onOpen }: { sources: Source[]; claims: EvidenceClaim[]; selectedId: string | null; onOpen: (s: Selection) => void }) {
+export function SourcesTable({ sources, claims, selectedId, onOpen, reliability }: { sources: Source[]; claims: EvidenceClaim[]; selectedId: string | null; onOpen: (s: Selection) => void; reliability?: Record<string, { ageMonths: number | null; flags: string[] }> }) {
   const [kind, setKind] = useState("ALL");
   const cites = useMemo(() => {
     const m = new Map<string, number>();
@@ -56,6 +57,7 @@ export function SourcesTable({ sources, claims, selectedId, onOpen }: { sources:
               <SortTh k="group" sort={sort} onSort={toggle}>
                 Independence group
               </SortTh>
+              <PlainTh>Freshness</PlainTh>
               <PlainTh>Citation</PlainTh>
               <SortTh k="claims" sort={sort} onSort={toggle} align="right">
                 Claims
@@ -102,6 +104,12 @@ export function SourcesTable({ sources, claims, selectedId, onOpen }: { sources:
                   <td className="border-t border-line px-3 py-2 align-top text-ink-2">{SOURCE_KIND_TEXT[s.kind]}</td>
                   <td className="border-t border-line px-3 py-2 align-top text-ink-2">{ORIGIN_TEXT[s.origin]}</td>
                   <td className="border-t border-line px-3 py-2 align-top font-mono text-[11.5px] text-ink-2">{s.independenceGroup}</td>
+                  <td className="border-t border-line px-3 py-2 align-top">
+                    {reliability?.[s.id] ? <FreshnessBadge ageMonths={reliability[s.id]!.ageMonths} flags={reliability[s.id]!.flags} /> : <span className="text-[11.5px] text-ink-3">—</span>}
+                    <div className="num mt-0.5 text-[11px] text-ink-3" title="Retrieved at">
+                      retrieved {s.retrievedAt.slice(0, 10)}
+                    </div>
+                  </td>
                   <td className="border-t border-line px-3 py-2 align-top">
                     {s.citationVerified ? (
                       <Badge tone="neutral" title={s.kind === "WEB" ? "URL was returned by the search tool" : "Uploaded by the analyst"}>

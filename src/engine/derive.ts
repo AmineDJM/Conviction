@@ -30,6 +30,8 @@ import { unifiedReturnModel } from "./unified-returns";
 import { integrityReport, type IntegrityReport } from "./integrity";
 import { economicsReport, type EconomicsReport } from "./economics";
 import { latentReport, type LatentReport } from "./latent";
+import { divergenceReport, type DivergenceReport } from "./divergence";
+import { applyOverrides } from "./overrides";
 
 export interface ResearchPriority {
   gapId: string;
@@ -70,6 +72,8 @@ export interface DerivedAnalysis {
   economics: EconomicsReport;
   /** Latent signals: what the deck reveals beyond what it claims. */
   latent: LatentReport;
+  /** Divergence factors: why this company could diverge from lookalikes. Ten ordinal levels; never part of the OQI. */
+  divergence: DivergenceReport;
 }
 
 export function researchPriorityIndex(g: Pick<InformationGap, "decisionImportance" | "uncertainty" | "researchability">): number {
@@ -95,6 +99,8 @@ export interface DeriveOptions {
 }
 
 export function derive(deal: CanonicalDeal, registry: BenchmarkRegistry, fund: FundProfile, opts: DeriveOptions = {}): DerivedAnalysis {
+  // Analyst overrides flow into every score; the raw extraction stays untouched in the stored canonical object.
+  deal = applyOverrides(deal);
   const peerGroup = resolvePeerGroup(deal.classification);
   const market = reconstructMarket(deal);
   const dimensions = scoreDimensions({ deal, registry, profile: peerGroup.profile, stageBand: peerGroup.stageBand, market });
@@ -135,6 +141,10 @@ export function derive(deal: CanonicalDeal, registry: BenchmarkRegistry, fund: F
       detail: m.qualityFlags.find((f) => f.startsWith("SMALL_SAMPLE") || f.startsWith("SAMPLE_SIZE_UNKNOWN"))!,
     }));
 
+  const economicsContext = { deal, registry, fund, returns: simpleReturns, backwards, market };
+  const economics = economicsReport(economicsContext);
+  const latent = latentReport(deal, registry, peerGroup, { asOf: opts.now, market });
+
   return {
     registryId: registry.id,
     computedAt: (opts.now ?? new Date()).toISOString(),
@@ -155,7 +165,9 @@ export function derive(deal: CanonicalDeal, registry: BenchmarkRegistry, fund: F
     researchPriority,
     smallSampleWarnings,
     integrity: integrityReport(deal, registry, peerGroup),
-    economics: economicsReport({ deal, registry, fund, returns: simpleReturns, backwards, market }),
-    latent: latentReport(deal, registry, peerGroup, { asOf: opts.now, market }),
+    economics,
+    latent,
+    // Computed last, from the finished layer; nothing above reads it (the OQI never sees divergence).
+    divergence: divergenceReport(deal, registry, peerGroup, { asOf: opts.now, market, financing, economics, latent, economicsContext }),
   };
 }

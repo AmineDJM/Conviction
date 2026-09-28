@@ -10,6 +10,7 @@
  */
 import type { CanonicalDeal } from "@/domain/canonical";
 import { derive, type DerivedAnalysis } from "@/engine/derive";
+import { applyOverrides } from "@/engine/overrides";
 import { getRegistry } from "@/engine/benchmarks";
 import { indexCompanyForBrain } from "@/brain/indexer";
 import type { CostController } from "@/ai/cost";
@@ -27,6 +28,9 @@ export interface CommitInput {
   history: { type: repo.HistoryType; summary: string; payload?: unknown };
   audit: { action: string; detail?: string };
   runId?: string | null;
+  /** Meetings workflow stage of the new version (see repo.saveVersion). */
+  stage?: repo.SaveVersionInput["stage"];
+  stageSeq?: number | null;
 }
 
 export interface CommitResult {
@@ -49,6 +53,8 @@ export function commitCanonicalUpdate(v: CommitInput): CommitResult {
     runId: v.runId ?? null,
     summary: v.summary,
     userId: v.userId,
+    stage: v.stage,
+    stageSeq: v.stageSeq,
   });
   repo.addHistory({ workspaceId: v.workspaceId, companyId: v.company.id, type: v.history.type, versionId: version.id, summary: v.history.summary, payload: v.history.payload, userId: v.userId });
 
@@ -70,7 +76,7 @@ export function commitCanonicalUpdate(v: CommitInput): CommitResult {
 
   const reindex = async (cost?: CostController) => {
     try {
-      const stats = await indexCompanyForBrain({ workspaceId: v.workspaceId, companyId: v.company.id, versionId: version.id, canonical: v.canonical, derived, cost });
+      const stats = await indexCompanyForBrain({ workspaceId: v.workspaceId, companyId: v.company.id, versionId: version.id, canonical: applyOverrides(v.canonical), derived, cost });
       return { ok: true, detail: `${stats.chunks} chunks, ${stats.embedded} embedded, ${stats.facts} facts` };
     } catch (e) {
       logger.error({ err: (e as Error).message, companyId: v.company.id, versionId: version.id }, "re-index failed");

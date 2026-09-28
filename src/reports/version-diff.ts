@@ -244,7 +244,7 @@ export function founderCallChanges(before: CanonicalDeal, after: CanonicalDeal):
     for (const h of c.history.slice(prev.history.length)) {
       const row = { id: c.id, statement: c.statement, note: h.note };
       if (h.change === "CONFIRMED") out.confirmed.push(row);
-      else if (h.change === "CHANGED") out.changed.push(row);
+      else if (h.change === "CHANGED" || h.change === "CLARIFIED") out.changed.push(row);
       else if (h.change === "CONTRADICTED") out.contradicted.push(row);
       else if (h.change === "UNRESOLVED") out.unresolvedClaims.push(row);
     }

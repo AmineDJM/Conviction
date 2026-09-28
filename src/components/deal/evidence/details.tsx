@@ -6,6 +6,8 @@ import type { MetricInstance, Source } from "@/domain/canonical";
 import { Badge, Button, cx } from "@/components/ui";
 import { EVIDENCE_LABEL_TEXT, date, evidenceLabelTone, metricValue, titleCase } from "@/lib/format";
 import { DrawerSection } from "./drawer";
+import { LineageSections, type LineageContextData } from "@/components/deal/lineage/lineage-view";
+import type { OverrideRow } from "@/components/deal/overrides/overrides-panel";
 import {
   EFFECT_TEXT,
   FRESHNESS_TEXT,
@@ -39,6 +41,8 @@ export interface EvidenceIndex {
   defs: Record<string, MetricDefLite>;
   documents: DocLite[];
   securityFlags: { location: string; excerpt: string }[];
+  /** Lineage + override data (effective metrics, override rows, events) for the metric drawer. */
+  lineage?: LineageContextData;
 }
 
 function Row({ k, children }: { k: string; children: ReactNode }) {
@@ -300,6 +304,7 @@ export function MetricDetail({ id, idx, open, companyId, versionId, canWrite, on
         <span className="num text-[26px] font-semibold tracking-tight text-ink">{metricValue(m.unit, m.normalizedValue)}</span>
         <span className="text-[12.5px] text-ink-3">raw “{m.rawValue}”</span>
       </div>
+      {idx.lineage && <OverrideBanner m={m} rows={idx.lineage.overrides} />}
       <div className="mb-4 flex flex-wrap gap-1.5">
         {m.isPrimary ? <Badge tone="accent">Primary — used for scoring</Badge> : <Badge tone="unknown">Not primary</Badge>}
         <Badge tone={stateTone(m.state)}>{STATE_TEXT[m.state]}</Badge>
@@ -351,19 +356,23 @@ export function MetricDetail({ id, idx, open, companyId, versionId, canWrite, on
         {m.notes && <Row k="Notes">{m.notes}</Row>}
       </DrawerSection>
 
-      <DrawerSection title="Quality flags">
-        {m.qualityFlags.length ? (
-          <ul className="space-y-1">
-            {m.qualityFlags.map((f) => (
-              <li key={f} className="font-mono text-[11.5px] text-warn">
-                {f}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-[13px] text-ink-3">None.</p>
-        )}
-      </DrawerSection>
+      {idx.lineage ? (
+        <LineageSections m={m} data={idx.lineage} showSource={false} onOpenMetric={(mid) => open({ kind: "metric", id: mid })} />
+      ) : (
+        <DrawerSection title="Quality flags">
+          {m.qualityFlags.length ? (
+            <ul className="space-y-1">
+              {m.qualityFlags.map((f) => (
+                <li key={f} className="font-mono text-[11.5px] text-warn">
+                  {f}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-[13px] text-ink-3">None.</p>
+          )}
+        </DrawerSection>
+      )}
 
       {def ? (
         <>
@@ -538,6 +547,24 @@ export function DocDetail({ id, page, idx, open }: { id: string; page: number; i
           <p className="text-[13px] text-ink-3">Page {page} does not exist in this document.</p>
         )}
       </DrawerSection>
+    </div>
+  );
+}
+
+/** "Company reported X · analyst override Y · reason" — the raw value stays visible next to the override. */
+function OverrideBanner({ m, rows }: { m: MetricInstance; rows: OverrideRow[] }) {
+  const last = rows.filter((o) => o.target === "METRIC" && o.ref === m.id && !o.stale).at(-1);
+  if (!last) return null;
+  return (
+    <div className="mb-3 rounded-md border border-accent/25 bg-accent-soft/50 px-2.5 py-1.5 text-[12.5px]">
+      <span className="text-ink-2">Company reported </span>
+      <b className="font-medium text-ink">{typeof last.rawValue === "number" ? metricValue(m.unit, last.rawValue) : String(last.rawValue)}</b>
+      <span className="text-ink-2"> · analyst override </span>
+      <b className="font-medium text-accent-text">{typeof last.to === "number" ? metricValue(m.unit, last.to) : String(last.to)}</b>
+      <span className="text-ink-3">
+        {" "}
+        · “{last.reason}” — {last.by ?? "unknown"}, {last.at.slice(0, 10)}
+      </span>
     </div>
   );
 }

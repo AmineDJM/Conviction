@@ -5,7 +5,10 @@ import { Badge, cx } from "@/components/ui";
 import { metricValue } from "@/lib/format";
 
 /** The evidence status of a metric, as a quiet label (§86). */
-export function metricEvidence(m: MetricInstance): { text: string; tone: "ok" | "neutral" | "warn" | "risk" | "unknown" } {
+export function metricEvidence(m: MetricInstance): { text: string; tone: "ok" | "neutral" | "warn" | "risk" | "unknown" | "accent" } {
+  // Analyst overrides are marked wherever the value renders (the raw extraction stays in the lineage drawer).
+  if (m.qualityFlags.some((f) => f.startsWith("ANALYST_OVERRIDE")) || m.lineage.some((l) => l.step === "OVERRIDE")) return { text: "Analyst override", tone: "accent" };
+  if (m.lineage.some((l) => l.step === "OVERRIDE_PROPAGATED")) return { text: "Derived · override input", tone: "accent" };
   if (m.state === "CONTRADICTED" || m.verification === "CONTRADICTED") return { text: "Contradicted", tone: "risk" };
   if (m.verification === "VERIFIED") return { text: "Verified", tone: "ok" };
   if (m.state === "WITHHELD") return { text: "Withheld", tone: "unknown" };

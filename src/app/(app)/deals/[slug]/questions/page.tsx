@@ -60,8 +60,8 @@ export default async function QuestionsPage({ params }: { params: Promise<{ slug
             Each question passed the decision test: the two plausible answers lead to different actions. Status records what happened on the call, not a judgement of the founder.
           </p>
         </div>
-        <div className="flex items-center gap-6">
-          <dl className="num flex gap-6 text-[12.5px]">
+        <div className="flex flex-wrap items-center gap-6">
+          <dl className="num flex flex-wrap gap-x-6 gap-y-2 text-[12.5px]">
             {(
               [
                 ["Open", count("OPEN")],

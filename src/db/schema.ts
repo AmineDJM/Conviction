@@ -187,11 +187,18 @@ export const companyVersions = sqliteTable(
     canonical: text("canonical", { mode: "json" }).notNull(),
     derived: text("derived", { mode: "json" }).notNull(),
     reason: text("reason", {
-      enum: ["DECK_ANALYSIS", "RESEARCH", "FOUNDER_CALL", "METRIC_CORRECTION", "BENCHMARK_RECALC", "QUESTION_UPDATE", "STATUS_CHANGE", "FUND_PROFILE_CHANGE"],
+      enum: ["DECK_ANALYSIS", "RESEARCH", "FOUNDER_CALL", "METRIC_CORRECTION", "BENCHMARK_RECALC", "QUESTION_UPDATE", "STATUS_CHANGE", "FUND_PROFILE_CHANGE", "USER_OVERRIDE"],
     }).notNull(),
     summary: text("summary"),
     createdBy: text("created_by"),
     createdAt: ts("created_at"),
+    /**
+     * Meetings workflow stage, set once at insert and never rewritten (see src/domain/meetings.ts).
+     * Null on rows written before the workflow existed: resolved at read time (DECK_ANALYSIS → PRE_MEETING_ANALYSIS).
+     */
+    stage: text("stage", { enum: ["PRE_MEETING_ANALYSIS", "POST_MEETING_ANALYSIS", "DECK_REANALYSIS"] }),
+    /** POST_MEETING_ANALYSIS_V{stageSeq}; for other stages, the revision number within the stage. */
+    stageSeq: integer("stage_seq"),
   },
   (t) => [uniqueIndex("versions_company_no_idx").on(t.companyId, t.versionNo)],
 );
@@ -252,7 +259,7 @@ export const costRecords = sqliteTable(
     id: text("id").primaryKey(),
     workspaceId: text("workspace_id").notNull(),
     runId: text("run_id"),
-    scope: text("scope", { enum: ["ANALYSIS", "CHAT", "EMBEDDING"] }).notNull(),
+    scope: text("scope", { enum: ["ANALYSIS", "CHAT", "EMBEDDING", "FORMATION"] }).notNull(),
     step: text("step").notNull(),
     model: text("model").notNull(),
     promptVersion: text("prompt_version"),
@@ -291,6 +298,8 @@ export const historyEvents = sqliteTable(
         "IC_DECISION",
         "EXECUTION_STATUS",
         "REPORT_EXPORTED",
+        "OVERRIDE_ADDED",
+        "OVERRIDE_REVERTED",
       ],
     }).notNull(),
     summary: text("summary").notNull(),
@@ -454,3 +463,149 @@ export const llmCache = sqliteTable("llm_cache", {
   hits: integer("hits").notNull().default(0),
   createdAt: ts("created_at"),
 });
+
+/* ================================================================== */
+/* Meetings workflow                                                  */
+/*                                                                    */
+/* Deck → PRE_MEETING_ANALYSIS (company_versions.stage) → PRE_MEETING_ */
+/* BRIEF → founder meeting (transcript segments) → POST_MEETING_BRIEF */
+/* → POST_MEETING_ANALYSIS_Vn (company_versions.stage). Briefs are    */
+/* immutable rows; a meeting row only records workflow state and the  */
+/* ids of the four objects it produced.                               */
+/* ================================================================== */
+
+/** One founder meeting on a deal. Distinct from the Fund Brain `meetings` table (partner/IC meetings). */
+export const founderMeetings = sqliteTable(
+  "founder_meetings",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull(),
+    companyId: text("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    /** 1, 2, … per company, in ingestion order. Each successfully processed meeting produces the next POST_MEETING_ANALYSIS_V{n}. */
+    seq: integer("seq").notNull(),
+    title: text("title").notNull(),
+    heldAt: text("held_at").notNull(),
+    participants: text("participants", { mode: "json" }).$type<{ name: string; role: string | null; side: "FUND" | "COMPANY" | "OTHER" }[]>().notNull(),
+    source: text("source", { enum: ["PASTED_TRANSCRIPT", "TRANSCRIPT_FILE", "RECORDING_UPLOAD", "ZOOM", "GOOGLE_MEET"] }).notNull(),
+    status: text("status", { enum: ["TRANSCRIBING", "PROCESSING", "READY", "FAILED"] }).notNull(),
+    error: text("error"),
+    runId: text("run_id"),
+    transcriptDocumentId: text("transcript_document_id"),
+    recordingDocumentId: text("recording_document_id"),
+    /** Transcription provenance (recordings only). */
+    transcription: text("transcription", { mode: "json" }).$type<{ model: string; diarized: boolean; chunks: number; durationSec: number | null; costUsd: number } | null>(),
+    /** Display names for diarized speaker labels ("A" → "Maya Chen (CEO)"). Labels in segments are never rewritten. */
+    speakerNames: text("speaker_names", { mode: "json" }).$type<Record<string, string>>().notNull(),
+    /** Frozen at ingestion: the analysis version the founder was met against. */
+    preAnalysisVersionId: text("pre_analysis_version_id").notNull(),
+    preBriefId: text("pre_brief_id"),
+    postBriefId: text("post_brief_id"),
+    postAnalysisVersionId: text("post_analysis_version_id"),
+    /** The post-meeting extraction (founder_call_update output) and the code guards applied to it — source of the "Founder said" / "Reason" columns. */
+    extraction: text("extraction", { mode: "json" }).$type<{ promptVersion: string; model: string; output: unknown; guards: unknown[] } | null>(),
+    createdBy: text("created_by"),
+    createdAt: ts("created_at"),
+  },
+  (t) => [uniqueIndex("founder_meetings_seq_idx").on(t.companyId, t.seq), index("founder_meetings_ws_idx").on(t.workspaceId, t.createdAt)],
+);
+
+/** Verbatim transcript, one row per speaker turn. Timestamps are seconds from the start of the recording (null when the source had none). */
+export const meetingSegments = sqliteTable(
+  "meeting_segments",
+  {
+    id: text("id").primaryKey(),
+    meetingId: text("meeting_id").notNull().references(() => founderMeetings.id, { onDelete: "cascade" }),
+    idx: integer("idx").notNull(),
+    speaker: text("speaker"),
+    startSec: real("start_sec"),
+    endSec: real("end_sec"),
+    text: text("text").notNull(),
+  },
+  (t) => [uniqueIndex("meeting_segments_idx").on(t.meetingId, t.idx)],
+);
+
+/** PRE_MEETING_BRIEF / POST_MEETING_BRIEF — immutable once written. */
+export const meetingBriefs = sqliteTable(
+  "meeting_briefs",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull(),
+    companyId: text("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: ["PRE_MEETING_BRIEF", "POST_MEETING_BRIEF"] }).notNull(),
+    /** PRE: the PRE_MEETING_ANALYSIS (or current) version it was built from. POST: the POST_MEETING_ANALYSIS version. */
+    versionId: text("version_id").notNull(),
+    meetingId: text("meeting_id"),
+    builderVersion: text("builder_version").notNull(),
+    content: text("content", { mode: "json" }).notNull(),
+    generation: text("generation", { mode: "json" }).$type<{ mode: "DETERMINISTIC" | "DETERMINISTIC_PLUS_MODEL"; model: string | null; promptVersion: string | null; costUsd: number; cached: boolean; fallbackReason: string | null }>().notNull(),
+    createdBy: text("created_by"),
+    createdAt: ts("created_at"),
+  },
+  (t) => [index("meeting_briefs_version_idx").on(t.versionId, t.kind), index("meeting_briefs_company_idx").on(t.companyId, t.createdAt)],
+);
+
+/* ------------------------------ Formation (investor training) ------------------------------ */
+/*
+ * Deliberate practice on the workspace's real deals. Attempts belong to a USER
+ * (not only a workspace). The answer columns are written once, before the
+ * reveal, and never updated (the investor journal); only grade columns change
+ * afterwards (src/formation/store.ts enforces it). `answer_hash` = sha256 of
+ * the canonical answer payload + confidence + answered_at, for tamper evidence.
+ * Skill ratings are not stored: they are a deterministic replay of the graded
+ * attempts (src/formation/skill-model.ts).
+ */
+
+export const formationAttempts = sqliteTable(
+  "formation_attempts",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    companyId: text("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    versionId: text("version_id").notNull(),
+    exerciseId: text("exercise_id").notNull(),
+    kind: text("kind").notNull(),
+    variant: text("variant").notNull(),
+    skills: text("skills", { mode: "json" }).$type<string[]>().notNull(),
+    difficulty: real("difficulty").notNull(),
+    level: integer("level").notNull(),
+    expert: integer("expert", { mode: "boolean" }).notNull().default(false),
+    patterns: text("patterns", { mode: "json" }).$type<string[]>().notNull(),
+    /** Full exercise snapshot (public part + key) as generated when the answer was stored. */
+    exercise: text("exercise", { mode: "json" }).notNull(),
+    /** Immutable: the user's answer and stated confidence (0–1), written before the reveal. */
+    answer: text("answer", { mode: "json" }).notNull(),
+    confidence: real("confidence").notNull(),
+    answeredAt: ts("answered_at"),
+    answerHash: text("answer_hash").notNull(),
+    /** Grade (written after the answer; may be re-written by a regrade). */
+    status: text("status", { enum: ["ANSWERED", "GRADED", "GRADE_FAILED"] }).notNull().default("ANSWERED"),
+    grade: text("grade", { mode: "json" }),
+    score: real("score"),
+    correct: integer("correct", { mode: "boolean" }),
+    gradeMethod: text("grade_method"),
+    gradeCostUsd: real("grade_cost_usd").notNull().default(0),
+    gradedAt: text("graded_at"),
+  },
+  (t) => [
+    index("formation_attempts_user_idx").on(t.workspaceId, t.userId, t.answeredAt),
+    index("formation_attempts_company_idx").on(t.companyId, t.answeredAt),
+    index("formation_attempts_exercise_idx").on(t.userId, t.exerciseId),
+  ],
+);
+
+/** Private mistake library: one row per classified mistake, with its evidence. */
+export const formationMistakes = sqliteTable(
+  "formation_mistakes",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    attemptId: text("attempt_id").notNull().references(() => formationAttempts.id, { onDelete: "cascade" }),
+    companyId: text("company_id").notNull(),
+    kind: text("kind").notNull(),
+    evidence: text("evidence").notNull(),
+    createdAt: ts("created_at"),
+  },
+  (t) => [index("formation_mistakes_user_idx").on(t.workspaceId, t.userId, t.kind), uniqueIndex("formation_mistakes_attempt_kind_idx").on(t.attemptId, t.kind)],
+);

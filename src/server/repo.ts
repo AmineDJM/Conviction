@@ -6,8 +6,10 @@ import { getDb, schema, type DB } from "@/db/client";
 import { CanonicalDeal, upgradeCanonical } from "@/domain/canonical";
 import { DEFAULT_FUND_PROFILE, FundProfile } from "@/domain/fund";
 import type { DerivedAnalysis } from "@/engine/derive";
+import { applyOverrides } from "@/engine/overrides";
 import { newId, normName, nowIso, slugify } from "./ids";
 import type { CostEntry } from "@/ai/cost";
+import { resolveStages, type VersionStage } from "@/domain/meetings";
 
 const s = schema;
 
@@ -125,6 +127,8 @@ export function listVersions(companyId: string, db: DB = getDb()) {
       registryId: s.companyVersions.registryId,
       runId: s.companyVersions.runId,
       createdAt: s.companyVersions.createdAt,
+      stage: s.companyVersions.stage,
+      stageSeq: s.companyVersions.stageSeq,
     })
     .from(s.companyVersions)
     .where(eq(s.companyVersions.companyId, companyId))
@@ -142,6 +146,27 @@ export interface SaveVersionInput {
   userId?: string | null;
   /** Preliminary versions do not flip the company to READY. */
   preliminary?: boolean;
+  /** Meetings workflow stage. Omitted: DECK_ANALYSIS → PRE_MEETING_ANALYSIS (DECK_REANALYSIS once a meeting exists); other edits inherit the current stage. */
+  stage?: VersionStage;
+  stageSeq?: number | null;
+}
+
+/** Stage of a new version row (set once at insert; version rows are never updated). */
+function stageForNewVersion(input: SaveVersionInput, db: DB): { stage: VersionStage; stageSeq: number | null } {
+  if (input.stage) return { stage: input.stage, stageSeq: input.stageSeq ?? null };
+  if (input.reason === "DECK_ANALYSIS") {
+    const met = db.select({ n: sql<number>`count(*)` }).from(s.founderMeetings).where(eq(s.founderMeetings.companyId, input.company.id)).get();
+    return { stage: (met?.n ?? 0) > 0 ? "DECK_REANALYSIS" : "PRE_MEETING_ANALYSIS", stageSeq: null };
+  }
+  const rows = db
+    .select({ id: s.companyVersions.id, versionNo: s.companyVersions.versionNo, reason: s.companyVersions.reason, stage: s.companyVersions.stage, stageSeq: s.companyVersions.stageSeq })
+    .from(s.companyVersions)
+    .where(eq(s.companyVersions.companyId, input.company.id))
+    .all();
+  // Every saveVersion makes the new row current, so the latest row is the version this edit builds on.
+  const cur = [...rows].sort((a, b) => b.versionNo - a.versionNo)[0]?.id;
+  const resolved = cur ? resolveStages(rows).get(cur) : undefined;
+  return resolved ? { stage: resolved.stage, stageSeq: resolved.seq } : { stage: "PRE_MEETING_ANALYSIS", stageSeq: null };
 }
 
 export function saveVersion(input: SaveVersionInput, db: DB = getDb()): VersionRow {
@@ -153,6 +178,7 @@ export function saveVersion(input: SaveVersionInput, db: DB = getDb()): VersionR
     .get();
   const versionNo = (last?.n ?? 0) + 1;
   const id = newId("ver");
+  const { stage, stageSeq } = stageForNewVersion(input, db);
   const row = {
     id,
     companyId: input.company.id,
@@ -166,10 +192,13 @@ export function saveVersion(input: SaveVersionInput, db: DB = getDb()): VersionR
     summary: input.summary ?? null,
     createdBy: input.userId ?? null,
     createdAt: nowIso(),
+    stage,
+    stageSeq,
   };
   db.transaction((tx) => {
     tx.insert(s.companyVersions).values(row).run();
-    tx.update(s.companies).set(projection(canonical, input.derived, id, input.preliminary)).where(eq(s.companies.id, input.company.id)).run();
+    // The company row projects the effective deal (raw extraction + analyst overrides), like the scores.
+    tx.update(s.companies).set(projection(applyOverrides(canonical), input.derived, id, input.preliminary)).where(eq(s.companies.id, input.company.id)).run();
   });
   return db.select().from(s.companyVersions).where(eq(s.companyVersions.id, id)).get()!;
 }
@@ -255,7 +284,7 @@ export function latestRun(companyId: string, db: DB = getDb()) {
   return db.select().from(s.analysisRuns).where(eq(s.analysisRuns.companyId, companyId)).orderBy(desc(s.analysisRuns.startedAt)).get();
 }
 
-export function recordCost(workspaceId: string, runId: string | null, scope: "ANALYSIS" | "CHAT" | "EMBEDDING", e: CostEntry, db: DB = getDb()) {
+export function recordCost(workspaceId: string, runId: string | null, scope: (typeof s.costRecords.$inferInsert)["scope"], e: CostEntry, db: DB = getDb()) {
   db.insert(s.costRecords)
     .values({
       id: newId("cost"),

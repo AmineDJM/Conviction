@@ -10,6 +10,7 @@ const NAV = [
   { href: "/portfolio", label: "Portfolio", match: (p: string) => p.startsWith("/portfolio") },
   { href: "/compare", label: "Compare", match: (p: string) => p.startsWith("/compare") },
   { href: "/ic", label: "IC", match: (p: string) => p.startsWith("/ic") },
+  { href: "/formation", label: "Formation", match: (p: string) => p.startsWith("/formation") },
   { href: "/benchmarks", label: "Benchmarks", match: (p: string) => p.startsWith("/benchmarks") },
   { href: "/fund", label: "Fund", match: (p: string) => p.startsWith("/fund") },
   { href: "/quality", label: "Quality", match: (p: string) => p.startsWith("/quality") },
@@ -80,7 +81,7 @@ export function MobileNav({ workspace }: { workspace: string }) {
         <span className="grid h-5 w-5 place-items-center rounded-[5px] bg-ink text-[11px] text-bg">C</span>
         {workspace}
       </Link>
-      {NAV.slice(0, 4).map((n) => (
+      {NAV.slice(0, 5).map((n) => (
         <Link key={n.href} href={n.href} className={cx("shrink-0 text-[13px]", n.match(path) ? "font-medium text-ink" : "text-ink-3")}>
           {n.label}
         </Link>

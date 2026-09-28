@@ -59,6 +59,10 @@ function Palette() {
     const actions: Item[] = [
       { id: "a-analyze", label: "Analyze company", hint: "Upload a deck", group: "Actions", run: go("/analyze") },
       { id: "a-compare", label: "Compare deals", group: "Actions", run: go("/compare") },
+      { id: "a-formation", label: "Formation — practice on real deals", hint: "Answer first, then see the analysis", group: "Actions", run: go("/formation/practice") },
+      { id: "a-formation-overview", label: "Formation — skill profile", group: "Actions", run: go("/formation") },
+      { id: "a-journal", label: "Investor journal", group: "Actions", run: go("/formation/journal") },
+      { id: "a-mistakes", label: "Mistake library", group: "Actions", run: go("/formation/mistakes") },
       { id: "a-recalc", label: "Recalculate benchmarks", group: "Actions", run: go("/benchmarks") },
       ...(slug
         ? [
@@ -67,6 +71,7 @@ function Palette() {
             { id: "a-call", label: "Add founder call", group: "This deal", run: go(`/deals/${slug}/questions#call`) },
             { id: "a-returns", label: "Open return model", group: "This deal", run: go(`/deals/${slug}/returns`) },
             { id: "a-evidence", label: "Search evidence", group: "This deal", run: go(`/deals/${slug}/evidence`) },
+            { id: "a-train", label: "Practise this deal in Formation", group: "This deal", run: go(`/formation/practice?case=${slug}`) },
           ]
         : []),
       { id: "a-fund", label: "Fund profile & IC memory", group: "Actions", run: go("/fund") },

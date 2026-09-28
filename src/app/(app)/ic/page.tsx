@@ -41,7 +41,8 @@ export default async function IcPage() {
 function DealTable({ rows, canWrite }: { rows: ReturnType<typeof listCompanies>; canWrite: boolean }) {
   if (!rows.length) return <p className="text-ink-3">—</p>;
   return (
-    <table className="w-full text-[13px]">
+    <div className="overflow-x-auto">
+    <table className="w-full min-w-[640px] text-[13px]">
       <thead>
         <tr className="text-left text-[11.5px] text-ink-3">
           <th className="py-2 pr-3 font-medium">Company</th>
@@ -83,5 +84,6 @@ function DealTable({ rows, canWrite }: { rows: ReturnType<typeof listCompanies>;
         ))}
       </tbody>
     </table>
+    </div>
   );
 }

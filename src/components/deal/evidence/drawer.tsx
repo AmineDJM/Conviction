@@ -58,7 +58,7 @@ export function Drawer({
       aria-label={label}
       aria-hidden={!open}
       className={cx(
-        "no-print fixed inset-y-0 right-0 z-40 flex w-[520px] max-w-full flex-col border-l border-line bg-surface shadow-[var(--shadow-pop)] transition-transform duration-200 ease-out motion-reduce:transition-none",
+        "no-print fixed inset-y-0 right-0 z-40 flex w-full max-w-[100vw] flex-col sm:w-[520px] border-l border-line bg-surface shadow-[var(--shadow-pop)] transition-transform duration-200 ease-out motion-reduce:transition-none",
         open ? "translate-x-0" : "pointer-events-none translate-x-full",
       )}
     >

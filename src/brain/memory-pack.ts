@@ -89,6 +89,14 @@ export function buildMemoryPack(company: { id: string; slug: string }, versionId
   if (d.backwards) L.push(`Backwards: ${d.backwards.explanation} Plausibility ${d.backwards.plausibility}.`);
   if (d.market.primary) L.push(`Market (reconstructed ${d.market.primary.method}): ${fmtUsd(d.market.primary.lowUsd)}–${fmtUsd(d.market.primary.highUsd)}; deck TAM ${fmtUsd(d.market.deckTamUsd)}`);
   L.push(`Financing path: ${d.financing.explanation} Risk ${d.financing.risk}.`);
+  // Divergence factors: why this company could diverge from lookalikes (ordinal levels, not a score). Absent on older versions.
+  if (d.divergence) {
+    const dv = d.divergence.summary;
+    L.push(`## Divergence factors (ordinal, not a score): ${dv.headline}`);
+    const read = dv.factors.filter((f) => f.level !== "INSUFFICIENT_EVIDENCE");
+    if (read.length) L.push(read.map((f) => `${f.name} ${f.level}: ${f.why}`).join(" | "));
+    if (dv.unread.length) L.push(`Divergence factors not readable yet: ${dv.unread.join(", ")}`);
+  }
 
   if (c.founders.length || c.foundersFromDeck.length) {
     L.push(`## Founders`);

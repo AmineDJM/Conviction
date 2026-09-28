@@ -189,11 +189,15 @@ describe("performance", () => {
   it("runs in < 20 ms per deal on a large, messy deck", () => {
     const d = messyDeal(3); // ~130 claims, ~180 observations
     for (let i = 0; i < 5; i++) run(d);
-    const n = 20;
-    const t = performance.now();
-    for (let i = 0; i < n; i++) run(d);
-    const avg = (performance.now() - t) / n;
-    expect(avg).toBeLessThan(20);
+    // Median of per-run timings: robust to GC pauses and CPU contention from parallel test files.
+    const times: number[] = [];
+    for (let i = 0; i < 21; i++) {
+      const t = performance.now();
+      run(d);
+      times.push(performance.now() - t);
+    }
+    const median = [...times].sort((a, b) => a - b)[10]!;
+    expect(median).toBeLessThan(20);
   });
 });
 

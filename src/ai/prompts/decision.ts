@@ -23,8 +23,8 @@ import {
 import { RubricRating } from "@/domain/enums";
 import { ANALYST_STANDARD, today } from "./common";
 
-export const DECISION_THESIS = { id: "decision_thesis", version: "decision_thesis_v2" } as const;
-export const DECISION_CHALLENGE = { id: "decision_challenge", version: "decision_challenge_v1" } as const;
+export const DECISION_THESIS = { id: "decision_thesis", version: "decision_thesis_v3" } as const;
+export const DECISION_CHALLENGE = { id: "decision_challenge", version: "decision_challenge_v2" } as const;
 export const DECISION_ACTIONS = { id: "decision_actions", version: "decision_actions_v1" } as const;
 
 /** The bet (one mind, so the bet, the strength, the breaking point and the falsification stay consistent). */
@@ -80,7 +80,8 @@ TASK — the bet and its falsification (a separate analyst runs the red team and
 - THESIS: the bet; required conditions with evidence and status; exactly 3 thesis points; exactly 3 failure modes; fatal weakness; the single fatal question; return path; next proof.
 - FALSIFICATION: for each thesis point, what would prove it wrong and whether that evidence was searched/found.
 - WHAT I LIKE / WHAT WORRIES ME: max 3 each, concrete.
-- POWER-LAW RATINGS on the anchored scale.`;
+- POWER-LAW RATINGS on the anchored scale.
+- DIVERGENCE FACTORS (deterministic.divergence: ten ordinal levels with the reason and the numbers): when you name the 5 determinants, the breaking point and the outlier signals, use the factors that make THIS company diverge from lookalikes (ambition ceiling, cap-table alignment, syndicate behaviour, survivability, market structure, dependencies, land→expand ceiling, focus, compounding loops, scalability); cite the factor and its level, and treat INSUFFICIENT_EVIDENCE factors as unknowns, never as strengths.`;
 }
 
 export function challengeInstructions(mode: string) {
@@ -89,7 +90,8 @@ export function challengeInstructions(mode: string) {
 TASK — the independent challenge. You are NOT the deal lead; another analyst writes the thesis in parallel. Your job is to see what the deck makes easy to miss.
 - WHAT THE DECK REVEALS BEYOND THE PITCH: 3–5 insights a very good investor would draw from the presentation choices themselves — what the metrics chosen, the omissions, the definitions, the inconsistencies and the latent signals (provided) unintentionally reveal. E.g. "Sales scalability is probably the real bottleneck: every case study mentions founder involvement and no sales-productivity metric is provided." or positive: "Management appears unusually metrics-disciplined: every metric has period, cohort and definition; forecasts are separated from actuals." Each with the observable evidence and pages. Never judge honesty or personality.
 - SYMMETRIC RED TEAM: the strongest case against investing AND the strongest case against passing; the pass-regret scenario.
-- ALTERNATIVE EXPLANATIONS: for every major positive signal (growth, margin jump, logos, retention), the bullish reading, a plausible alternative (paid acquisition, one large customer, definition change, pilots…), and the discriminating test.`;
+- ALTERNATIVE EXPLANATIONS: for every major positive signal (growth, margin jump, logos, retention), the bullish reading, a plausible alternative (paid acquisition, one large customer, definition change, pilots…), and the discriminating test.
+- DIVERGENCE FACTORS (deterministic.divergence): in the red team, name the factor(s) on which this company could fall behind apparently similar companies (e.g. a critical single dependency, fragmented focus, a services-heavy delivery model, a founder already over-diluted) and the one on which it could pull away — cite the factor, its level and the number behind it.`;
 }
 
 export function actionsInstructions(mode: string) {

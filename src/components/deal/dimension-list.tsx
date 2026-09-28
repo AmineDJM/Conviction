@@ -13,11 +13,13 @@ export function DimensionList({ dims, slug, peerGroup, weights }: { dims: Dimens
     <div className="divide-y divide-line border-y border-line">
       {dims.map((d) => (
         <div key={d.id}>
-          <button onClick={() => setOpen(open === d.id ? null : d.id)} className="grid w-full grid-cols-[150px_44px_140px_1fr_auto] items-center gap-4 py-2.5 text-left hover:bg-surface-2/60">
+          <button onClick={() => setOpen(open === d.id ? null : d.id)} className="grid w-full grid-cols-[1fr_40px_auto] items-center gap-x-4 gap-y-1 py-2.5 text-left hover:bg-surface-2/60 sm:grid-cols-[150px_44px_140px_1fr_auto]">
             <span className="font-medium">{d.name}</span>
             <span className="num text-right text-[15px] font-semibold">{d.value !== null ? Math.round(d.value) : "—"}</span>
-            <IndexBar value={d.value} lower={d.lower} upper={d.upper} width={130} />
-            <span className="num text-[12px] text-ink-3">
+            <span className="hidden sm:block">
+              <IndexBar value={d.value} lower={d.lower} upper={d.upper} width={130} />
+            </span>
+            <span className="num order-last col-span-3 text-[12px] text-ink-3 sm:order-none sm:col-span-1">
               coverage {Math.round(d.coverage * 100)}% · bounds {Math.round(d.lower)}–{Math.round(d.upper)} · weight {Math.round((weights[d.id] ?? 0) * 100)}%
             </span>
             <span className="flex items-center gap-2">
@@ -26,7 +28,7 @@ export function DimensionList({ dims, slug, peerGroup, weights }: { dims: Dimens
             </span>
           </button>
           {open === d.id && (
-            <div className="anim-in pb-4 pl-[150px] pr-2">
+            <div className="anim-in overflow-x-auto pb-4 pr-2 sm:pl-[150px]">
               <table className="w-full text-[12.5px]">
                 <thead>
                   <tr className="text-left text-[11px] text-ink-3">

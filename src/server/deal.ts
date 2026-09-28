@@ -4,13 +4,17 @@ import { notFound } from "next/navigation";
 import { requireSession } from "./session";
 import * as repo from "./repo";
 import { getRegistry } from "@/engine/benchmarks";
+import { applyOverrides } from "@/engine/overrides";
 
 /** Loads everything a deal page needs, once per request. */
 export const loadDeal = cache(async (slug: string) => {
   const session = await requireSession();
   const company = repo.getCompany(session.workspaceId, decodeURIComponent(slug));
   if (!company) notFound();
-  const version = repo.getCurrentVersion(company);
+  const stored = repo.getCurrentVersion(company);
+  // Pages display the effective deal (raw extraction + analyst overrides) — the same object derive() scored.
+  // `rawCanonical` keeps the untouched extraction for "company reported X · override Y". Display only: never persist it back.
+  const version = stored ? { ...stored, canonical: applyOverrides(stored.canonical), rawCanonical: stored.canonical } : null;
   const run = repo.latestRun(company.id);
   const fund = repo.getDefaultFund(session.workspaceId);
   const registry = getRegistry(version?.row.registryId);

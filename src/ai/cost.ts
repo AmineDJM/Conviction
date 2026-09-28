@@ -93,7 +93,15 @@ export class CostController {
    * A step-level reservation made earlier is converted into the in-flight hold.
    */
   authorize(step: string, model: string, inputChars: number, maxOutputTokens: number, maxWebSearches = 0, reservation?: Reservation | null): number {
-    const est = worstCaseCost(model, inputChars, maxOutputTokens, maxWebSearches);
+    return this.authorizeAmount(step, worstCaseCost(model, inputChars, maxOutputTokens, maxWebSearches), reservation);
+  }
+
+  /**
+   * Same contract as `authorize` for calls priced outside the token table
+   * (audio transcription): the caller supplies the worst-case amount; `record`
+   * must then pass an explicit `actualUsd`.
+   */
+  authorizeAmount(step: string, est: number, reservation?: Reservation | null): number {
     if (!this.canAfford(est, reservation)) {
       const credit = reservation?.open ? reservation.amount : 0;
       throw new BudgetExceededError(step, this.spentUsd + this.reservedUsd + this.inflightUsd - credit + est, this.hardCapUsd);

@@ -1,7 +1,7 @@
 /**
  * §133 Analysis workflow orchestration — v3 (parallel).
  *
- *   T0  triage ‖ extract metrics ‖ extract claims ‖ forensics (visual) ‖ latent
+ *   T0  triage ‖ extract metrics ‖ extract claims ‖ forensics (visual) ‖ latent ‖ divergence
  *       research (company ‖ market) starts as soon as triage lands
  *   T1  analysis A ‖ analysis B ‖ thesis ‖ actions  (on the same record + deterministic layer)
  *   T2  deterministic layer (scores, returns, integrity, economics) → version → Fund Brain index
@@ -21,6 +21,7 @@ import { TriageOutput, triageInstructions, TRIAGE } from "@/ai/prompts/triage";
 import { MetricsExtractionOutput, ClaimsOnlyOutput, ProfileExtractionOutput, metricsExtractionInstructions, claimsExtractionInstructions, profileExtractionInstructions, EXTRACT_METRICS, EXTRACT_CLAIMS, EXTRACT_PROFILE } from "@/ai/prompts/extract";
 import { ForensicsOutput, forensicsInstructions, DECK_FORENSICS } from "@/ai/prompts/forensics";
 import { LatentSignalsOutput, latentSignalsInstructions, LATENT_SIGNALS } from "@/ai/prompts/latent";
+import { DivergenceSignalsOutput, divergenceSignalsInstructions, DIVERGENCE_SIGNALS } from "@/ai/prompts/divergence";
 import { ResearchOutput, researchInstructions, RESEARCH } from "@/ai/prompts/research";
 import { AnalysisPartSchemas, ANALYSIS_PARTS, analysisPartInstructions, INVESTMENT_ANALYSIS, type AnalysisPartId, type InvestmentAnalysisOutput } from "@/ai/prompts/investment-analysis";
 import { ThesisCoreOutput, ChallengeOutput, ActionsOutput, thesisInstructions, challengeInstructions, actionsInstructions, DECISION_THESIS, DECISION_CHALLENGE, DECISION_ACTIONS } from "@/ai/prompts/decision";
@@ -38,6 +39,7 @@ import {
   applyMetricsExtraction,
   applyForensics,
   applyLatent,
+  applyDivergence,
   applyResearch,
   applyInvestmentAnalysis,
   applyThesis,
@@ -66,9 +68,9 @@ export const PIPELINE_STEPS = [
 ] as const;
 
 const OUTPUT_TOKENS = {
-  FAST_SCREEN: { triage: 3_000, metrics: 9_000, claims: 7_000, profile: 5_000, forensics: 7_000, latent: 4_500, research: 0, analysisPart: 5_000, thesis: 7_000, challenge: 5_000, actions: 6_000 },
-  STANDARD: { triage: 4_000, metrics: 14_000, claims: 10_000, profile: 7_000, forensics: 10_000, latent: 6_000, research: 6_000, analysisPart: 8_000, thesis: 9_000, challenge: 7_000, actions: 9_000 },
-  DEEP_DD: { triage: 5_000, metrics: 20_000, claims: 14_000, profile: 10_000, forensics: 14_000, latent: 8_000, research: 10_000, analysisPart: 12_000, thesis: 14_000, challenge: 10_000, actions: 12_000 },
+  FAST_SCREEN: { triage: 3_000, metrics: 9_000, claims: 7_000, profile: 5_000, forensics: 7_000, latent: 4_500, divergence: 3_500, research: 0, analysisPart: 5_000, thesis: 7_000, challenge: 5_000, actions: 6_000 },
+  STANDARD: { triage: 4_000, metrics: 14_000, claims: 10_000, profile: 7_000, forensics: 10_000, latent: 6_000, divergence: 5_000, research: 6_000, analysisPart: 8_000, thesis: 9_000, challenge: 7_000, actions: 9_000 },
+  DEEP_DD: { triage: 5_000, metrics: 20_000, claims: 14_000, profile: 10_000, forensics: 14_000, latent: 8_000, divergence: 7_000, research: 10_000, analysisPart: 12_000, thesis: 14_000, challenge: 10_000, actions: 12_000 },
 } as const;
 
 const EFFORT: Record<AnalysisMode, { fast: Effort; extract: Effort; analysis: Effort; decide: Effort }> = {
@@ -227,7 +229,9 @@ async function execute(inp: RunDeckAnalysisInput, signal: AbortSignal): Promise<
     claimsP.catch(() => undefined);
     const forensicsP = structured({ ...common, step: "FORENSICS", promptVersion: DECK_FORENSICS.version, instructions: forensicsInstructions(), input: [{ role: "user", content: deckContent("forensics") }], schema: ForensicsOutput, schemaName: "deck_forensics", maxOutputTokens: tokens.forensics, effort: effort.extract });
     const latentP = structured({ ...common, step: "LATENT", promptVersion: LATENT_SIGNALS.version, instructions: latentSignalsInstructions(), input: extraction, schema: LatentSignalsOutput, schemaName: "latent_signals", maxOutputTokens: tokens.latent, effort: effort.extract });
-    const restT0 = Promise.allSettled([claimsP, metricsP, forensicsP, latentP]);
+    // Divergence signals: deck-only, low effort, modest output — issued last so it can never starve a mandatory T0 call.
+    const divergenceP = structured({ ...common, step: "DIVERGENCE", promptVersion: DIVERGENCE_SIGNALS.version, instructions: divergenceSignalsInstructions(), input: extraction, schema: DivergenceSignalsOutput, schemaName: "divergence_signals", maxOutputTokens: tokens.divergence, effort: "low" });
+    const restT0 = Promise.allSettled([claimsP, metricsP, forensicsP, latentP, divergenceP]);
 
     let triage: Awaited<typeof triageP>;
     try {
@@ -333,7 +337,7 @@ async function execute(inp: RunDeckAnalysisInput, signal: AbortSignal): Promise<
     }
 
     /* ---------------- T0 results: claims → metrics → forensics → latent ---------------- */
-    const [claimsR, metricsR, forensicsR, latentR] = await restT0;
+    const [claimsR, metricsR, forensicsR, latentR, divergenceR] = await restT0;
     throwIfCancelled(signal);
     if (claimsR.status === "rejected" && metricsR.status === "rejected") throw claimsR.reason;
     if (claimsR.status === "fulfilled") deal = applyClaimsExtraction(deal, claimsR.value.data);
@@ -347,6 +351,9 @@ async function execute(inp: RunDeckAnalysisInput, signal: AbortSignal): Promise<
     else skipped.push({ step: "FORENSICS", reason: errReason(forensicsR.reason) });
     if (latentR.status === "fulfilled") deal = applyLatent(deal, latentR.value.data);
     else skipped.push({ step: "LATENT", reason: errReason(latentR.reason) });
+    // Optional: a failed divergence pass leaves the factors on computed data only (reported, never invented).
+    if (divergenceR.status === "fulfilled") deal = applyDivergence(deal, divergenceR.value.data);
+    else skipped.push({ step: "DIVERGENCE", reason: errReason(divergenceR.reason) });
     const t0Ok = forensicsR.status === "fulfilled" && latentR.status === "fulfilled";
     if (t0Ok) deal.analysis.completedSteps.push("FORENSICS");
     step("FORENSICS", t0Ok ? "DONE" : "FAILED", t0Ok ? `${deal.forensics?.visualElements.length ?? 0} visuals read, ${deal.forensics?.crossSlideInconsistencies.length ?? 0} cross-slide inconsistencies` : "Partial: " + skipped.filter((s) => s.step === "FORENSICS" || s.step === "LATENT").map((s) => s.reason).join("; "));
@@ -372,12 +379,12 @@ async function execute(inp: RunDeckAnalysisInput, signal: AbortSignal): Promise<
     step("DECIDE", "RUNNING");
     const record = wrapUntrusted("canonical record (contains excerpts from untrusted documents and web pages)", JSON.stringify(canonicalForAnalysis(deal)));
     const decisionInput = wrapUntrusted(
-      "canonical record, deck forensics, latent signals and deterministic results",
+      "canonical record, deck forensics, latent signals, divergence factors and deterministic results",
       JSON.stringify({
         record: canonicalForAnalysis(deal),
         forensics: deal.forensics,
         latentSignals: deal.latentSignals,
-        deterministic: { ...derivedDigest(pre), integrity: compactReport(pre.integrity), latent: pre.latent.summary, economics: compactReport(pre.economics) },
+        deterministic: { ...derivedDigest(pre), integrity: compactReport(pre.integrity), latent: pre.latent.summary, divergence: pre.divergence.summary, economics: compactReport(pre.economics) },
       }),
     );
     const partCalls = partIds.map((id, k) =>

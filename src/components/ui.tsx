@@ -68,7 +68,7 @@ export function Button({
   title?: string;
 }) {
   const cls = cx(
-    "inline-flex select-none items-center justify-center gap-1.5 rounded-md font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+    "inline-flex select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-md font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
     size === "sm" ? "h-7 px-2.5 text-[12.5px]" : "h-8 px-3 text-[13px]",
     variant === "primary" && "bg-ink text-bg hover:bg-ink/85",
     variant === "secondary" && "border border-line bg-surface text-ink hover:bg-surface-2",

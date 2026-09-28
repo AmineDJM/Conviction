@@ -331,8 +331,8 @@ export const MarketSection = z.object({
       customerDefinition: z.string(),
       customerCountLow: z.number(),
       customerCountHigh: z.number(),
-      annualSpendLowUsd: z.number(),
-      annualSpendHighUsd: z.number(),
+      annualSpendLowUsd: z.number().describe("Annual spend PER CUSTOMER on this category, USD (e.g. 15000) — never a total; code multiplies by the customer count"),
+      annualSpendHighUsd: z.number().describe("Annual spend PER CUSTOMER, USD — never a total"),
       spendBasis: z.string(),
     })
     .nullable(),
@@ -944,3 +944,220 @@ export const DecisionCore = z.object({
     .describe("What do incumbents do if it works? If AI gets 10× cheaper? Does the moat grow or vanish with scale? Does the company get stronger as it grows?"),
 });
 export type DecisionCore = z.infer<typeof DecisionCore>;
+
+/* ---------------------------------------------------------------- */
+/* Divergence signals — why two apparently similar startups diverge.  */
+/* Observable, deck-only facts the engine cannot compute. No           */
+/* psychology, no honesty judgements, no pedigree. Aggregated by       */
+/* engine/divergence into ten factors (never a blended score).         */
+/* ---------------------------------------------------------------- */
+
+const DivPage = z.number().int().nullable().describe("Deck page number; null when not tied to a page");
+const DivEvidence = z.string().describe("What the deck shows, verbatim or near-verbatim — never an inference about the person");
+
+export const AMBITION_SIGNAL_KINDS = ["PRODUCT_SCOPE", "GEOGRAPHY", "HIRING_PLAN", "ROADMAP", "MARKET_LANGUAGE", "ROUND_SIZE_VS_PLAN", "OTHER"] as const;
+export const PRODUCT_SCOPES = ["SINGLE_WORKFLOW", "PRODUCT_SUITE", "PLATFORM", "INFRASTRUCTURE", "UNCLEAR"] as const;
+export const GEO_SCOPES = ["LOCAL", "REGIONAL", "MULTI_REGION", "GLOBAL", "UNSTATED"] as const;
+export const MARKET_FRAMINGS = ["TOOL_IN_EXISTING_CATEGORY", "CATEGORY_LEADER", "NEW_CATEGORY", "INFRASTRUCTURE_LAYER", "UNCLEAR"] as const;
+export const FOUNDER_STATUSES = ["ACTIVE_FULL_TIME", "PART_TIME", "DEPARTED", "UNKNOWN"] as const;
+export const CONVERTIBLE_KINDS = ["SAFE_POST_MONEY", "SAFE_PRE_MONEY", "CONVERTIBLE_NOTE", "UNKNOWN"] as const;
+export const CAP_TABLE_TERMS = ["PARTICIPATING_PREFERRED", "PREFERENCE_ABOVE_1X", "FULL_RATCHET", "REDEMPTION_RIGHT", "INVESTOR_OPERATING_VETO", "SUPER_VOTING", "OTHER"] as const;
+export const INVESTOR_KINDS = ["VC_FUND", "ANGEL", "OPERATOR_ANGEL", "STRATEGIC_CORPORATE", "ACCELERATOR", "FAMILY_OFFICE", "PUBLIC_OR_GRANT", "UNKNOWN"] as const;
+export const INVESTOR_ROUND_ROLES = ["LEADS_CURRENT_ROUND", "PARTICIPATES_CURRENT_ROUND", "EXISTING_PARTICIPATION_UNSTATED", "EXISTING_NOT_PARTICIPATING"] as const;
+export const SYNDICATE_BEHAVIOURS = [
+  "FOLLOWS_ON_THIS_ROUND",
+  "PRO_RATA_OR_RESERVES_COMMITTED",
+  "INVESTS_AT_NEXT_STAGE",
+  "BRIDGED_OR_SUPPORTED_IN_DOWNTURN",
+  "INTRODUCED_CUSTOMERS",
+  "HELPED_RECRUIT",
+  "ACTIVE_BOARD_OR_OPERATING_SUPPORT",
+  "SECTOR_SPECIALIST",
+  "NOT_FOLLOWING_ON",
+  "CONFLICT_OF_INTEREST",
+] as const;
+export const SURVIVAL_OPTIONS = [
+  "CUT_BURN",
+  "CHANGE_GTM",
+  "ALTERNATIVE_MONETIZATION",
+  "LICENSE_TECHNOLOGY",
+  "SERVICES_REVENUE",
+  "ADJACENT_SEGMENT",
+  "NON_DILUTIVE_FUNDING",
+  "STRATEGIC_PARTNERSHIP",
+  "SLOW_DOWN_PROFITABLY",
+  "OTHER",
+] as const;
+export const OPTION_STATUSES = ["DEMONSTRATED", "PLAUSIBLE", "ASSERTED"] as const;
+export const RIGIDITY_KINDS = ["FIXED_COMMITMENTS", "HARDWARE_OR_INVENTORY", "REGULATORY_TIMELINE", "LONG_SALES_CYCLE", "SINGLE_REVENUE_LINE", "OTHER"] as const;
+export const MARKET_DIMENSIONS = [
+  "FRAGMENTATION",
+  "BUYER_CONCENTRATION",
+  "SUPPLIER_CONCENTRATION",
+  "PRICING_POWER",
+  "NETWORK_STRUCTURE",
+  "PURCHASE_FREQUENCY",
+  "SWITCHING_COSTS",
+  "PROCUREMENT_POWER",
+  "WINNER_TAKE_DYNAMICS",
+  "INCUMBENT_BUNDLING",
+] as const;
+export const STRUCTURE_READINGS = ["FAVORABLE", "NEUTRAL", "UNFAVORABLE", "UNKNOWN"] as const;
+export const DEPENDENCY_KINDS = [
+  "MODEL_PROVIDER",
+  "CLOUD_INFRASTRUCTURE",
+  "APP_STORE",
+  "PLATFORM_API",
+  "BANKING_OR_PAYMENT_PARTNER",
+  "DATA_SOURCE",
+  "CHANNEL_PARTNER",
+  "REGULATORY_LICENCE",
+  "KEY_SUPPLIER_OR_MANUFACTURER",
+  "KEY_CUSTOMER",
+  "OTHER",
+] as const;
+export const DEPENDENCY_CRITICALITY = ["CORE", "IMPORTANT", "PERIPHERAL"] as const;
+export const SUBSTITUTABILITY = ["EASY", "MODERATE", "HARD", "UNKNOWN"] as const;
+export const OWNED_ASSETS = ["DISTRIBUTION", "PROPRIETARY_DATA", "TECHNOLOGY_IP", "CUSTOMER_RELATIONSHIP", "BRAND_COMMUNITY", "OWN_LICENCE", "OTHER"] as const;
+export const PRICING_MODELS = ["PER_SEAT", "USAGE", "PLATFORM_FEE", "TRANSACTION", "TIERED", "OUTCOME_BASED", "ONE_OFF", "UNKNOWN"] as const;
+export const MODULE_STATUSES = ["LIVE", "BETA", "ROADMAP", "VISION"] as const;
+export const EXPANSION_KINDS = ["SEAT_EXPANSION", "USAGE_GROWTH", "CROSS_SELL", "UPSELL_TIER", "PRICE_INCREASE", "NEW_DEPARTMENT", "NEW_SITE_OR_COUNTRY", "OTHER"] as const;
+export const LOOP_KINDS = ["DATA", "SUPPLY_DEMAND_LIQUIDITY", "INTEGRATION_ECOSYSTEM", "COMMUNITY_CONTENT", "REFERRAL_VIRAL", "SCALE_COST", "OTHER"] as const;
+export const LINK_STATUSES = ["DEMONSTRATED", "PLAUSIBLE", "ASSERTED", "ABSENT"] as const;
+export const SCALABILITY_SIGNALS = [
+  "CUSTOM_WORK_PER_CUSTOMER",
+  "IMPLEMENTATION_EFFORT",
+  "SERVICES_REVENUE",
+  "HUMAN_IN_THE_LOOP",
+  "LOCAL_TEAM_PER_COUNTRY",
+  "HUMAN_SUPPORT_PER_CONTRACT",
+  "SELF_SERVE_ONBOARDING",
+  "STANDARD_PRODUCT",
+  "MARGIN_TREND",
+  "OTHER",
+] as const;
+export const TEAM_FUNCTIONS = ["ENGINEERING_PRODUCT", "SALES_MARKETING", "CUSTOMER_SUCCESS_SUPPORT", "SERVICES_IMPLEMENTATION", "OPERATIONS", "G_AND_A", "OTHER"] as const;
+
+export const DivergenceDraft = z.object({
+  ambition: z.object({
+    productScope: z.enum(PRODUCT_SCOPES).describe("What product the deck says the company is building long-term"),
+    geography: z.enum(GEO_SCOPES).describe("Where the deck says the company intends to operate (not where it is today)"),
+    marketFraming: z.enum(MARKET_FRAMINGS).describe("How the deck frames the market it is attacking"),
+    statedEndState: z.string().nullable().describe("The long-term company the deck says it is building, verbatim if possible; null if not stated"),
+    signals: z
+      .array(z.object({ kind: z.enum(AMBITION_SIGNAL_KINDS), direction: z.enum(["EXPANSIVE", "CONTAINED"]), evidence: DivEvidence, page: DivPage }))
+      .describe("Up to 8 observable signals of the size of company being built: product scope, geography, hiring plan/roles, roadmap, market language, round size vs plan"),
+  }),
+  capTable: z.object({
+    founderOwnershipPct: z.number().nullable().describe("Combined fully diluted ownership of ACTIVE founders before this round, only if stated (percent units)"),
+    founders: z
+      .array(
+        z.object({
+          name: z.string(),
+          role: z.string(),
+          status: z.enum(FOUNDER_STATUSES).describe("DEPARTED only when the deck states the person left"),
+          ownershipPct: z.number().nullable().describe("Fully diluted %, only if stated"),
+          evidence: DivEvidence,
+          page: DivPage,
+        }),
+      )
+      .describe("Founders and co-founders named anywhere in the materials, including any who left"),
+    optionPoolPct: z.number().nullable().describe("Total option pool, % fully diluted, only if stated"),
+    optionPoolAvailablePct: z.number().nullable().describe("Unallocated pool, % fully diluted, only if stated"),
+    convertibles: z
+      .array(
+        z.object({
+          instrument: z.enum(CONVERTIBLE_KINDS),
+          amount: Money.nullable(),
+          valuationCap: Money.nullable(),
+          discountPct: z.number().nullable(),
+          evidence: DivEvidence,
+          page: DivPage,
+        }),
+      )
+      .describe("OUTSTANDING (not yet converted) SAFEs / notes raised BEFORE the current round. Do not include the round being raised now."),
+    terms: z.array(z.object({ term: z.enum(CAP_TABLE_TERMS), evidence: DivEvidence, page: DivPage })).describe("Non-standard or investor-favourable terms stated anywhere"),
+    investorConflicts: z
+      .array(z.object({ evidence: DivEvidence, page: DivPage }))
+      .describe("Stated facts that put investors at odds: a strategic investor competing with customers or acquirers, conflicting control rights, investors on both sides of a deal"),
+  }),
+  syndicate: z
+    .array(
+      z.object({
+        name: z.string(),
+        kind: z.enum(INVESTOR_KINDS),
+        roundRole: z.enum(INVESTOR_ROUND_ROLES),
+        behaviours: z
+          .array(z.enum(SYNDICATE_BEHAVIOURS))
+          .describe("Only behaviours the materials state for THIS investor in THIS company. Never infer from reputation or fame."),
+        evidence: DivEvidence,
+        page: DivPage,
+      }),
+    )
+    .describe("Every investor, lead or angel named in the materials"),
+  survivability: z.object({
+    options: z
+      .array(z.object({ option: z.enum(SURVIVAL_OPTIONS), status: z.enum(OPTION_STATUSES).describe("DEMONSTRATED = already done/revenue exists; PLAUSIBLE = concrete facts make it feasible; ASSERTED = only stated"), evidence: DivEvidence, page: DivPage }))
+      .describe("Real options the company has if its market takes 24 months longer than planned"),
+    rigidities: z
+      .array(z.object({ kind: z.enum(RIGIDITY_KINDS), evidence: DivEvidence, page: DivPage }))
+      .describe("Facts that make slowing down hard (fixed commitments, inventory, regulatory timelines, long sales cycles, one revenue line)"),
+  }),
+  marketStructure: z.object({
+    dimensions: z
+      .array(z.object({ dimension: z.enum(MARKET_DIMENSIONS), reading: z.enum(STRUCTURE_READINGS).describe("For a new entrant capturing value"), evidence: DivEvidence, page: DivPage }))
+      .describe("Structure of the market, NOT its size. One entry per dimension the materials inform; UNKNOWN when nothing is shown"),
+    topBuyersSharePct: z.number().nullable().describe("Share of market spend controlled by the largest buyers, if stated"),
+    topBuyersCount: z.number().int().nullable().describe("How many largest buyers the previous share refers to (e.g. 5)"),
+    addressableBuyerCount: z.number().nullable().describe("Number of potential buying organizations/users, if stated"),
+    largestCompetitorSharePct: z.number().nullable().describe("Market share of the largest incumbent, if stated"),
+  }),
+  dependencies: z
+    .array(
+      z.object({
+        kind: z.enum(DEPENDENCY_KINDS),
+        provider: z.string().describe("Named provider/partner, or a description if unnamed"),
+        whatItProvides: z.string(),
+        criticality: z.enum(DEPENDENCY_CRITICALITY).describe("CORE = the product or revenue stops without it"),
+        substitutability: z.enum(SUBSTITUTABILITY),
+        switchingTimeMonths: z.number().nullable().describe("Only if stated or directly implied"),
+        mitigationStated: z.string().nullable(),
+        evidence: DivEvidence,
+        page: DivPage,
+      }),
+    )
+    .describe("Critical elements the company does NOT control: model provider, cloud, app store, platform API, bank/payment partner, data source, channel partner, licence, supplier, key customer"),
+  ownedAssets: z.array(z.object({ asset: z.enum(OWNED_ASSETS), evidence: DivEvidence, page: DivPage })).describe("What the company demonstrably owns and controls"),
+  expansion: z.object({
+    pricingModel: z.enum(PRICING_MODELS),
+    entryPrice: Money.nullable().describe("Annual price of the entry product per customer, as stated"),
+    largestCustomerAnnualValue: Money.nullable().describe("Annual contract value of the largest customer, as stated"),
+    modules: z
+      .array(z.object({ name: z.string(), status: z.enum(MODULE_STATUSES), annualPricePerCustomer: Money.nullable(), evidence: DivEvidence, page: DivPage }))
+      .describe("Products/modules that can be sold to the same customer beyond the entry product (live, beta, roadmap, vision)"),
+    expansionEvidence: z.array(z.object({ kind: z.enum(EXPANSION_KINDS), evidence: DivEvidence, page: DivPage })).describe("Observed expansion inside existing customers"),
+  }),
+  focus: z.object({
+    products: z.array(z.object({ name: z.string(), status: z.enum(["LIVE", "BETA", "ROADMAP"]), page: DivPage })).describe("Distinct products sold or built today (not features)"),
+    customerSegments: z.array(z.object({ name: z.string(), page: DivPage })).describe("Distinct ICPs/segments the company sells to today"),
+    markets: z.array(z.object({ name: z.string(), status: z.enum(["ACTIVE", "LAUNCHING", "PLANNED"]), page: DivPage })).describe("Countries/regions"),
+    channels: z.array(z.object({ name: z.string(), page: DivPage })).describe("Distinct acquisition channels actively run (direct sales, partners, self-serve, marketplace…)"),
+  }),
+  loops: z
+    .array(
+      z.object({
+        kind: z.enum(LOOP_KINDS),
+        description: z.string(),
+        links: z
+          .array(z.object({ from: z.string(), to: z.string(), status: z.enum(LINK_STATUSES).describe("DEMONSTRATED only with a measured number"), evidence: DivEvidence, page: DivPage }))
+          .describe("Each causal link of the loop in order, e.g. customers → data, data → model accuracy, accuracy → win rate, win rate → customers"),
+      }),
+    )
+    .describe("Compounding loops where each new customer makes the company better. Empty if the deck shows none"),
+  scalability: z.object({
+    signals: z.array(z.object({ kind: z.enum(SCALABILITY_SIGNALS), direction: z.enum(["SCALES", "NEUTRAL", "FRAGILE"]), evidence: DivEvidence, page: DivPage })),
+    implementationWeeks: z.number().nullable().describe("Typical time from signature to live, in weeks, if stated"),
+    headcountByFunction: z.array(z.object({ function: z.enum(TEAM_FUNCTIONS), count: z.number(), page: DivPage })).describe("Only when the deck states it"),
+  }),
+});
+export type DivergenceDraft = z.infer<typeof DivergenceDraft>;

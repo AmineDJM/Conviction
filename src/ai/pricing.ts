@@ -55,3 +55,53 @@ export function worstCaseCost(model: string, inputChars: number, maxOutputTokens
   const inputTokens = Math.ceil(inputChars / 3.2) + maxWebSearches * WEB_SEARCH_CONTENT_TOKENS_ESTIMATE;
   return (inputTokens * p.inputPerM + maxOutputTokens * p.outputPerM) / 1e6 + maxWebSearches * WEB_SEARCH_PER_CALL_USD;
 }
+
+/* ---------------------------------------------------------------- */
+/* Audio transcription (meeting recordings)                           */
+/* ---------------------------------------------------------------- */
+
+/**
+ * Transcription pricing (USD), OpenAI published pricing as of 2026-09.
+ * gpt-4o-transcribe-diarize (speaker labels + segment timestamps): audio input
+ * $6 / 1M tokens, text input $2.50 / 1M, text output $10 / 1M (≈ $0.006 / min
+ * audio input). whisper-1 (segment timestamps, no speakers): $0.006 / min.
+ * When the API reports token usage it is priced per token; otherwise per minute.
+ */
+export interface TranscriptionPrice {
+  perMinuteUsd: number;
+  audioInputPerM: number | null;
+  textInputPerM: number | null;
+  outputPerM: number | null;
+  /** Conservative worst case per audio minute, used to authorize a call before it runs (tokens incl. diarized JSON output). */
+  worstCasePerMinuteUsd: number;
+}
+
+export const TRANSCRIPTION_PRICES: Record<string, TranscriptionPrice> = {
+  "gpt-4o-transcribe-diarize": { perMinuteUsd: 0.006, audioInputPerM: 6, textInputPerM: 2.5, outputPerM: 10, worstCasePerMinuteUsd: 0.03 },
+  "whisper-1": { perMinuteUsd: 0.006, audioInputPerM: null, textInputPerM: null, outputPerM: null, worstCasePerMinuteUsd: 0.006 },
+};
+
+export function transcriptionPriceFor(model: string): TranscriptionPrice {
+  const p = TRANSCRIPTION_PRICES[model];
+  if (!p) throw new Error(`No pricing configured for transcription model ${model}; refusing to run without cost control.`);
+  return p;
+}
+
+export interface TranscriptionUsage {
+  seconds: number | null;
+  audioTokens: number | null;
+  textInputTokens: number | null;
+  outputTokens: number | null;
+}
+
+export function transcriptionCost(model: string, u: TranscriptionUsage): number {
+  const p = transcriptionPriceFor(model);
+  if (u.audioTokens !== null && p.audioInputPerM !== null) {
+    return ((u.audioTokens ?? 0) * p.audioInputPerM + (u.textInputTokens ?? 0) * (p.textInputPerM ?? 0) + (u.outputTokens ?? 0) * (p.outputPerM ?? 0)) / 1e6;
+  }
+  return ((u.seconds ?? 0) / 60) * p.perMinuteUsd;
+}
+
+export function worstCaseTranscriptionCost(model: string, seconds: number): number {
+  return (Math.max(seconds, 1) / 60) * transcriptionPriceFor(model).worstCasePerMinuteUsd;
+}

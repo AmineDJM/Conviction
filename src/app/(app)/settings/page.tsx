@@ -16,11 +16,14 @@ import { AuditLog } from "@/components/settings/audit-log";
 import { DataPolicy } from "@/components/settings/data-policy";
 import { BackupPanel } from "@/components/settings/backup-panel";
 import { AccountForm } from "@/components/settings/account-form";
+import { IntegrationsPanel } from "@/components/settings/integrations-panel";
+import { connectorStatuses } from "@/server/connectors/meeting-connectors";
+import { TRANSCRIBE_MODEL } from "@/ai/transcribe";
 
 export const metadata = { title: "Settings" };
 export const dynamic = "force-dynamic";
 
-type Tab = "members" | "audit" | "data" | "account";
+type Tab = "members" | "audit" | "data" | "integrations" | "account";
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ tab?: string; action?: string; user?: string; q?: string }> }) {
   const s = await requireSession();
@@ -31,6 +34,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
     { id: "members", label: "Members" },
     ...(canAudit ? [{ id: "audit" as const, label: "Audit log" }] : []),
     { id: "data", label: "Data & backups" },
+    { id: "integrations", label: "Integrations" },
     { id: "account", label: "Your account" },
   ];
   const tab: Tab = tabs.some((t) => t.id === sp.tab) ? (sp.tab as Tab) : "members";
@@ -63,6 +67,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           />
         )}
         {tab === "data" && <DataTab isOwner={isOwner} canAudit={canAudit} workspaceId={s.workspaceId} />}
+        {tab === "integrations" && <IntegrationsPanel connectors={connectorStatuses()} transcriptionModel={TRANSCRIBE_MODEL} />}
         {tab === "account" && <AccountForm name={s.name} email={s.email} />}
       </div>
     </main>

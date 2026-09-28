@@ -16,8 +16,12 @@ export const DEAL_TABS = [
   { seg: "competition", label: "Competition" },
   { seg: "returns", label: "Returns" },
   { seg: "risks", label: "Risks" },
+  { seg: "integrity", label: "Integrity" },
+  { seg: "signals", label: "Signals" },
+  { seg: "divergence", label: "Divergence" },
   { seg: "evidence", label: "Evidence" },
   { seg: "questions", label: "Questions" },
+  { seg: "meetings", label: "Meetings" },
   { seg: "memo", label: "Reports" },
   { seg: "history", label: "History" },
 ];
@@ -27,7 +31,7 @@ export function DealTabs({ slug }: { slug: string }) {
   const base = `/deals/${slug}`;
   const current = path === base ? "" : path.slice(base.length + 1).split("/")[0];
   return (
-    <nav className="no-print border-t border-line px-6">
+    <nav className="no-print border-t border-line px-2 sm:px-6">
       <div className="-mb-px flex gap-0.5 overflow-x-auto">
         {DEAL_TABS.map((t) => (
           <Link
