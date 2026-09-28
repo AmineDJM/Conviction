@@ -39,8 +39,16 @@ describe("provider errors are user-safe", () => {
     expect(redactSecrets("Authorization: Bearer sk-live-123456")).not.toContain("123456");
   });
 
-  it("an accepted request that fails mid-stream without usage is charged its worst case; with usage, the usage", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => sse({ type: "response.created" }, { type: "response.failed", response: { error: { message: `server exploded near ${KEY_TEXT}`, code: "server_error" } } })));
+  it("a request that fails before generating anything (HTTP 200 then an error event) is not charged", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => sse({ type: "response.created" }, { type: "response.in_progress" }, { type: "error", error: { message: "unavailable", code: "server_error" } })));
+    const cost = new CostController(1, 1);
+    await structured(call(cost)).catch(() => undefined);
+    expect(cost.spentUsd).toBe(0);
+    expect(cost.remainingUsd).toBe(1);
+  });
+
+  it("a request that fails mid-generation without usage is charged its worst case; with usage, the usage", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => sse({ type: "response.created" }, { type: "response.output_text.delta", delta: "{" }, { type: "response.failed", response: { error: { message: `server exploded near ${KEY_TEXT}`, code: "server_error" } } })));
     const cost = new CostController(1, 1);
     const err = await structured(call(cost)).catch((e) => e);
     expect(err).toBeInstanceOf(ProviderError);

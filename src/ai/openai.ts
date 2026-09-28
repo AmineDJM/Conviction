@@ -155,7 +155,12 @@ export async function fetchWithRetry(url: string, init: RequestInit, retries = 4
   }
 }
 
-/** `state.accepted` is set once the provider accepted the request (HTTP 2xx): from then on a failure may still be billed. */
+/**
+ * `state.accepted` is set once the provider started generating (first output or reasoning event): from then on a failure
+ * may still be billed. An HTTP 200 followed by an immediate "error" / "unavailable" event produced nothing and is not billed.
+ */
+const GENERATING = /^response\.(output_|reasoning|content_part|web_search_call|completed|incomplete)/;
+
 async function post(body: Record<string, unknown>, signal?: AbortSignal, state: { accepted: boolean } = { accepted: false }): Promise<RawResponse> {
   let res: Response;
   try {
@@ -168,7 +173,6 @@ async function post(body: Record<string, unknown>, signal?: AbortSignal, state: 
     const json = (await res.json().catch(() => ({}))) as RawResponse;
     throw providerError("responses", res.status, json.error?.message ?? res.statusText, { code: json.error?.code ?? json.error?.type });
   }
-  state.accepted = true;
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buf = "";
@@ -190,6 +194,7 @@ async function post(body: Record<string, unknown>, signal?: AbortSignal, state: 
         } catch {
           continue;
         }
+        if (!state.accepted && GENERATING.test(ev.type ?? "")) state.accepted = true;
         if ((ev.type === "response.completed" || ev.type === "response.incomplete") && ev.response) final = ev.response;
         else if (ev.type === "response.failed")
           throw providerError("responses stream", null, ev.response?.error?.message ?? "response failed", { code: ev.response?.error?.code ?? ev.response?.error?.type, usage: ev.response?.usage ? usageOf(ev.response) : null });
@@ -336,7 +341,6 @@ export async function* stream(call: StreamCall): AsyncGenerator<{ type: "delta";
       const txt = await res.text().catch(() => "");
       throw providerError("responses (stream)", res.status, txt.slice(0, 1000), { code: txt });
     }
-    accepted = true;
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buf = "";
@@ -359,6 +363,7 @@ export async function* stream(call: StreamCall): AsyncGenerator<{ type: "delta";
         } catch {
           continue;
         }
+        if (!accepted && GENERATING.test(ev.type ?? "")) accepted = true;
         if (ev.type === "response.output_text.delta" && ev.delta) yield { type: "delta", text: ev.delta };
         else if ((ev.type === "response.completed" || ev.type === "response.incomplete") && ev.response) usage = usageOf(ev.response);
         else if (ev.type === "response.failed" || ev.type === "error") throw providerError("responses (stream)", null, payload.slice(0, 1000), { code: payload });

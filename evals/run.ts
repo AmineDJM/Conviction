@@ -125,8 +125,13 @@ async function main() {
     if (!cache.has(rel)) cache.set(rel, reuse(rel) ?? (await analyze(rel)));
     return cache.get(rel)!;
   };
-  /** Corpus deck or null when the budget does not allow analysing it (recorded, never silently dropped). */
+  /**
+   * Corpus deck or null when the budget does not allow analysing it (recorded, never silently dropped).
+   * A deck whose analysis fails (e.g. a provider outage) is recorded as a FAIL once and the run continues.
+   */
+  const failedDecks = new Set<string>();
   const tryGet = async (rel: string) => {
+    if (failedDecks.has(rel)) return null;
     try {
       return await get(rel);
     } catch (e) {
@@ -135,7 +140,9 @@ async function main() {
         console.log(`SKIP  ${e.message}`);
         return null;
       }
-      throw e;
+      failedDecks.add(rel);
+      record("pipeline", `${rel} analysis completes`, false, (e as Error).message);
+      return null;
     }
   };
 
