@@ -25,7 +25,7 @@
  * is never reached from metrics alone.
  */
 import type { CanonicalDeal } from "@/domain/canonical";
-import type { RubricRating } from "@/domain/enums";
+import type { OperationalMaturity, RubricRating } from "@/domain/enums";
 import type { BenchmarkRegistry, ProfileId, StageBand } from "../benchmarks/types";
 import { findBenchmark, interpolate } from "./curve";
 import { metricDef } from "../metrics/dictionary";
@@ -49,13 +49,27 @@ const BOTTOM = -1; // an expected signal that is not measured: below WEAK
 /** Order used for monotonicity checks: INSUFFICIENT_EVIDENCE (unmeasured) below WEAK. */
 export const pmfRank = (r: RubricRating | null) => (r === null || r === "INSUFFICIENT_EVIDENCE" ? BOTTOM : SCALE.indexOf(r));
 
-/** The PMF signal keys the registry can benchmark for this peer group — the signals a complete record would carry. */
-export function expectedPmfSignals(registry: BenchmarkRegistry, profile: ProfileId, stageBand: StageBand): string[] {
-  return PMF_SIGNAL_KEYS.filter((k) => findBenchmark(registry, k, profile, stageBand)?.curve);
+/**
+ * The PMF signal keys a complete record would carry for this peer group and operating maturity: a benchmark curve
+ * exists, and the registry's Traction/PMF component for that key applies at this stage band and maturity (retention is
+ * not meaningful before PMF_EMERGING; pilot conversion is an EARLY-band signal). Applicability comes from the registry
+ * and the company's classified maturity — never from which figures the deck chose to show.
+ */
+export function expectedPmfSignals(registry: BenchmarkRegistry, profile: ProfileId, stageBand: StageBand, maturity?: OperationalMaturity | null): string[] {
+  const dim = registry.dimensions.find((d) => d.id === "TRACTION_PMF");
+  const specs = dim ? (dim.profileOverrides?.[profile] ?? dim.components) : [];
+  return PMF_SIGNAL_KEYS.filter((k) => {
+    if (!findBenchmark(registry, k, profile, stageBand)?.curve) return false;
+    const spec = specs.find((c): c is Extract<typeof c, { kind: "METRIC" }> => c.kind === "METRIC" && c.metricKeys.includes(k as never));
+    if (!spec) return true;
+    if (spec.stageBands && !spec.stageBands.includes(stageBand)) return false;
+    if (spec.minMaturity && maturity && registry.maturityOrder.indexOf(maturity) < registry.maturityOrder.indexOf(spec.minMaturity)) return false;
+    return true;
+  });
 }
 
 export function measuredPmf(deal: CanonicalDeal, registry: BenchmarkRegistry, profile: ProfileId, stageBand: StageBand, modelRating: RubricRating | null): MeasuredPmf {
-  const expected = expectedPmfSignals(registry, profile, stageBand);
+  const expected = expectedPmfSignals(registry, profile, stageBand, deal.classification?.operationalMaturity ?? null);
   const signals: MeasuredPmf["signals"] = [];
   for (const key of expected) {
     // An undated figure is treated like a stale one (not current evidence): withholding the as-of date must not pay.

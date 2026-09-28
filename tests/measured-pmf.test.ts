@@ -41,7 +41,7 @@ describe("PMF quality anchored on measured signals", () => {
     const r = measuredPmf(d, reg, p.profile, p.stageBand, "STRONG");
     expect(r.mode).toBe("UNMEASURED");
     expect(r.effectiveRating).toBe("INSUFFICIENT_EVIDENCE");
-    expect(r.explanation).toMatch(/Only 1 of 4 expected/);
+    expect(r.explanation).toMatch(/Only 1 of 3 expected/);
     expect(r.explanation).toContain("STRONG");
   });
 
@@ -97,9 +97,10 @@ describe("PMF quality anchored on measured signals", () => {
     d.metrics.push(metric("pilot_to_production_rate", 30, { unit: "PERCENT", sampleSize: 60 }));
     const p = peer(d);
     const r = measuredPmf(d, reg, p.profile, p.stageBand, null);
-    // Two STRONG (NRR 140, logo 95), two WEAK/BELOW_BAR (GRR 60, pilot 30%): the lower middle.
+    // NRR 140 and logo 95 STRONG, GRR 60 weak: the middle of the three expected signals.
+    // Series A (GROWTH band): pilot conversion is an early-stage signal the registry does not score here, so 3 are expected.
     const sorted = r.signals.map((s) => pmfRank(s.rating)).sort((a, b) => a - b);
-    expect(r.signals).toHaveLength(4);
+    expect(r.signals.map((s) => s.key).sort()).toEqual(["grr", "logo_retention", "nrr"]);
     expect(pmfRank(r.effectiveRating)).toBe(sorted[1]);
   });
 
@@ -163,5 +164,32 @@ describe("PMF quality anchored on measured signals", () => {
       }
     }
     expect(checked).toBeGreaterThan(5000);
+  });
+});
+
+describe("expected PMF signals follow the registry's stage and maturity rules (just as demanding as the scoring)", () => {
+  it("a seed company at early revenue is expected to show pilot conversion, not retention it cannot have yet", () => {
+    expect(expectedPmfSignals(reg, "ENTERPRISE_SAAS" as never, "EARLY", "EARLY_REVENUE")).toEqual(["pilot_to_production_rate"]);
+    expect(expectedPmfSignals(reg, "ENTERPRISE_SAAS" as never, "EARLY", "PMF_EMERGING").sort()).toEqual(["grr", "logo_retention", "nrr", "pilot_to_production_rate"]);
+    expect(expectedPmfSignals(reg, "ENTERPRISE_SAAS" as never, "GROWTH", "PMF_EMERGING").sort()).toEqual(["grr", "logo_retention", "nrr"]);
+  });
+
+  it("an early-revenue seed deal with a measured pilot conversion is rated from it (the model clamped to it)", () => {
+    const d = makeDeal();
+    d.classification = { ...d.classification, financingStage: "SEED", operationalMaturity: "EARLY_REVENUE" };
+    d.metrics = d.metrics.filter((m) => !["nrr", "grr", "logo_retention"].includes(m.metricKey));
+    d.metrics.push(metric("pilot_to_production_rate", 80, { unit: "PERCENT", sampleSize: 20 }));
+    const p = peer(d);
+    const r = measuredPmf(d, reg, p.profile, p.stageBand, "EXCEPTIONAL");
+    expect(r.mode).toBe("CLAMPED");
+    expect(pmfRank(r.effectiveRating)).toBeLessThanOrEqual(pmfRank(r.measuredRating));
+  });
+
+  it("the same seed deal without pilot conversion is not rated (nothing measured)", () => {
+    const d = makeDeal();
+    d.classification = { ...d.classification, financingStage: "SEED", operationalMaturity: "EARLY_REVENUE" };
+    d.metrics = d.metrics.filter((m) => !["nrr", "grr", "logo_retention", "pilot_to_production_rate"].includes(m.metricKey));
+    const p = peer(d);
+    expect(measuredPmf(d, reg, p.profile, p.stageBand, "STRONG").effectiveRating).toBe("INSUFFICIENT_EVIDENCE");
   });
 });
