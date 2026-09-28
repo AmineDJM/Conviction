@@ -67,7 +67,10 @@ export function concernExercise(c: TrainingCase): Exercise | null {
   key.concepts = [top.concept];
   const others = c.concerns.filter((x) => !order.some((y) => y.metricKey === x.metricKey)).slice(0, 2);
   const factIds = [...order, ...others].map((x) => metricFactId({ id: x.metricId } as never));
-  const context = pickFacts(c, [...factIds, "F-RAISE", "F-PRE", "F-POST", "F-CASH", "F-BURN"]);
+  // Derived options (runway, payback, burn multiple) are shown with the deck inputs they come from.
+  const inputKeys = ["arr", "paying_customers", "acv", "cac", "gross_margin", "cash_balance", "monthly_net_burn"];
+  const inputFacts = inputKeys.map((k) => c.deckMetrics[k]).filter((x): x is NonNullable<typeof x> => !!x).map((x) => metricFactId(x));
+  const context = pickFacts(c, [...new Set([...factIds, ...inputFacts, "F-RAISE", "F-PRE", "F-POST", "F-CASH", "F-BURN"])]);
   const derivedNote = order.filter((x) => x.derived).map((x) => x.label);
   const numbers = order.map((x) => `${x.label} ${x.display}`).join(", ");
   const patterns: CasePattern[] = trap ? ["OBVIOUS_ANSWER_WRONG"] : [];

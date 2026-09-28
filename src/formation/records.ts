@@ -1,5 +1,6 @@
 /** The attempt record analytics run on (a stored attempt, decoupled from the DB row). */
 import type { Answer, Exercise, Grade } from "./types";
+import { DECISION_LABEL_F } from "./labels";
 
 export interface AttemptRecord {
   id: string;
@@ -37,7 +38,7 @@ export function answerSummary(a: Pick<AttemptRecord, "exercise" | "answer">): st
     case "questions":
       return ans.questions.filter(Boolean).map((q, i) => `${i + 1}. ${q}`).join(" ");
     case "decision":
-      return `${ans.decision.replace(/_/g, " ").toLowerCase()} — ${ans.justification}`;
+      return `${DECISION_LABEL_F[ans.decision]} — ${ans.justification}`;
     case "bullbear":
       return `Bull: ${ans.bull} Bear: ${ans.bear}`;
     case "outlier":

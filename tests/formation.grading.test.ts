@@ -197,6 +197,13 @@ describe("rubric composition", () => {
     expect(same.score - far.score).toBeGreaterThan(0.3);
     expect(same.decisionDistance).toBe(0);
   });
+  it("only model rubrics produce concept observations (heuristic grading is not weakness evidence)", () => {
+    const text = "Retention may not hold and runway is short.";
+    const h = grade({ ex: e, answer: { type: "text", text }, c, rubric: heuristicRubric(e, text) });
+    expect(h.observations).toEqual([]);
+    const m = grade({ ex: e, answer: { type: "text", text }, c, rubric: rubric() });
+    expect(m.observations.length).toBeGreaterThan(0);
+  });
   it("open exercises require a rubric", () => expect(() => grade({ ex: e, answer: { type: "text", text: "x" }, c })).toThrow());
   it.each([
     ["DECISION", true],

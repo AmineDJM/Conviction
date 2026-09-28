@@ -96,18 +96,18 @@ export default async function FormationPage() {
       <Section eyebrow="Skill profile" title="Estimated skill by area" action={<span className="text-[11.5px] text-ink-3">Glicko-style estimate · band = ±2 uncertainty</span>}>
         <div className="grid gap-x-12 gap-y-6 md:grid-cols-2">
           {SKILL_GROUPS.map((grp) => (
-            <div key={grp.label}>
+            <div key={grp.label} className="min-w-0">
               <div className="mb-1 text-[12px] font-medium text-ink-2">{grp.label}</div>
               <div className="divide-y divide-line border-y border-line">
                 {grp.skills.map((sk) => {
                   const st = o.profile[sk];
                   const b = band(st);
                   return (
-                    <div key={sk} className="flex items-center gap-3 py-2 text-[13px]">
-                      <span className="w-40 shrink-0 truncate text-ink">{SKILL_LABEL[sk]}</span>
-                      <RatingBar rating={st.rating} rd={st.rd} assessed={st.n > 0} width={120} />
-                      <span className={cx("ml-auto text-[12px]", st.n ? "text-ink-2" : "text-ink-3")}>{b}</span>
-                      <span className="num w-10 text-right text-[11.5px] text-ink-3">{st.n ? `n ${st.n}` : ""}</span>
+                    <div key={sk} className="grid grid-cols-[minmax(0,1fr)_88px_84px_32px] items-center gap-3 py-2 text-[13px] sm:grid-cols-[minmax(0,1fr)_120px_96px_36px]">
+                      <span className="truncate text-ink">{SKILL_LABEL[sk]}</span>
+                      <RatingBar rating={st.rating} rd={st.rd} assessed={st.n > 0} width="100%" />
+                      <span className={cx("text-right text-[12px]", st.n ? "text-ink-2" : "text-ink-3")}>{b}</span>
+                      <span className="num text-right text-[11.5px] text-ink-3">{st.n ? `n ${st.n}` : ""}</span>
                     </div>
                   );
                 })}

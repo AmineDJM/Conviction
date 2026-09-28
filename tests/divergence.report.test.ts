@@ -108,10 +108,14 @@ describe("divergence · robustness", () => {
     const d = derived(deal);
     const ctx = { asOf: AS_OF, market: d.market, financing: d.financing, economics: d.economics, latent: d.latent, economicsContext: { deal, registry: REG, fund: FUND, returns: d.returns, backwards: d.backwards, market: d.market } };
     divergenceReport(deal, REG, d.peerGroup, ctx); // warm-up
-    const n = 10;
-    const t0 = performance.now();
-    for (let i = 0; i < n; i++) divergenceReport(deal, REG, d.peerGroup, ctx);
-    expect((performance.now() - t0) / n).toBeLessThan(20);
+    // Median of per-run timings: robust to GC pauses and CPU contention from parallel test files.
+    const times: number[] = [];
+    for (let i = 0; i < 11; i++) {
+      const t0 = performance.now();
+      divergenceReport(deal, REG, d.peerGroup, ctx);
+      times.push(performance.now() - t0);
+    }
+    expect([...times].sort((a, b) => a - b)[5]!).toBeLessThan(20);
   });
 });
 

@@ -84,7 +84,7 @@ export function ReliabilityChart({ bins, className }: { bins: { lo: number; hi: 
 }
 
 /** Skill estimate on a fixed 900–1800 scale: the band is ±2 RD, the tick is the estimate. */
-export function RatingBar({ rating, rd, assessed, width = 160 }: { rating: number; rd: number; assessed: boolean; width?: number }) {
+export function RatingBar({ rating, rd, assessed, width = 160 }: { rating: number; rd: number; assessed: boolean; width?: number | string }) {
   const lo = 900;
   const hi = 1800;
   const p = (v: number) => Math.max(0, Math.min(100, ((v - lo) / (hi - lo)) * 100));

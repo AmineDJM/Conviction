@@ -95,8 +95,8 @@ export function selectNext(candidates: Exercise[], history: AttemptRecord[], pro
       : weak
         ? `Targets a recurring weakness: ${CONCEPT_LABEL[weak]}.`
         : st && st.rd > 200
-          ? `Your ${primary ? SKILL_LABEL[primary].toLowerCase() : "skill"} rating is still uncertain.`
-          : `Matched to your ${primary ? SKILL_LABEL[primary].toLowerCase() : "current"} level.`;
+          ? `Your estimate in ${primary ? SKILL_LABEL[primary] : "this skill"} is still uncertain.`
+          : `Matched to your level in ${primary ? SKILL_LABEL[primary] : "this skill"}.`;
     if (!best || score > best.score + 1e-9 || (Math.abs(score - best.score) <= 1e-9 && tie > best.tie)) best = { e, score, tie, b, why };
   }
   if (!best) return null;
