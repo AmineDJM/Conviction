@@ -210,7 +210,14 @@ export function splitRecording(buf: Buffer, filename: string, mime: string): { p
     const parts: AudioPart[] = [];
     for (let a = 0, i = 0; a < wav.dataBytes; a += step, i++) {
       const len = Math.min(step, wav.dataBytes - a);
-      parts.push({ data: Buffer.concat([wavHeader(wav, len), buf.subarray(wav.dataOffset + a, wav.dataOffset + a + len)]), filename: `${base}.part${i + 1}.wav`, mime: "audio/wav", offsetSec: a / bps, durationSec: len / bps });
+      const from = wav.dataOffset + a;
+      // Built on access (one part in memory at a time): a one-hour recording is ~115 MB of WAV.
+      parts.push(
+        Object.defineProperty({ filename: `${base}.part${i + 1}.wav`, mime: "audio/wav", offsetSec: a / bps, durationSec: len / bps } as AudioPart, "data", {
+          enumerable: true,
+          get: () => Buffer.concat([wavHeader(wav, len), buf.subarray(from, from + len)]),
+        }),
+      );
     }
     return { parts, durationSec: duration, kind: "wav" };
   }
