@@ -424,7 +424,11 @@ async function main() {
           if (!text) continue;
           excerptChecked++;
           if (cs.excerptInSource(e.excerpt, text)) excerptFound++;
-          analysisItems.push({ origin: "ANALYSIS", statement: `${cl.statement}${cl.valueText && !cl.statement.includes(cl.valueText) ? ` (${cl.valueText})` : ""}`, source: text, ref: `${c.identity.name} ${cl.id} ← ${src.id} p. ${page}` });
+          // Who authored the page and its title page, for attribution only ("X reports…", the deck's date) — never for figures.
+          const title = (pages.get(`${src.documentId}#1`) ?? "").slice(0, 300);
+          const doc = c.documents.find((x) => x.id === src.documentId);
+          const context = `DOCUMENT CONTEXT: page ${page} of "${doc?.filename ?? src.title}", the materials of ${c.identity.name} (the company itself). Title page: "${title}"\n\nPAGE ${page}:\n`;
+          analysisItems.push({ origin: "ANALYSIS", statement: `${cl.statement}${cl.valueText && !cl.statement.includes(cl.valueText) ? ` (${cl.valueText})` : ""}`, source: context + text, ref: `${c.identity.name} ${cl.id} ← ${src.id} p. ${page}` });
           break;
         }
       }
