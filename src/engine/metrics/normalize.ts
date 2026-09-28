@@ -321,6 +321,15 @@ export function normalizeObservation(input: MetricObservation, ctx: NormalizeCon
     }
   }
 
+  // 2a. The raw text says "92%" but the value came as a fraction (0.92): the raw text wins.
+  if (def.unit === "PERCENT" && value !== null && Math.abs(value) <= 1.5 && /%|percent/i.test(obs.rawText)) {
+    const pct = parseScaledNumber(obs.rawText);
+    if (pct !== null && Math.abs(pct) > 1.5 && Math.abs(pct - value * 100) <= Math.max(0.5, Math.abs(pct) * 0.01)) {
+      lineage.push({ step: "PERCENT_SCALE", detail: `${value} given as a fraction of "${obs.rawText}" → ${pct}%` });
+      value = pct;
+      flags.push("FRACTION_CONVERTED_TO_PERCENT");
+    }
+  }
   // 2. Percent sanity: a retention/margin given as 0.92 is almost certainly 92%.
   //    Rates that are genuinely small (default, loss, defect) are never rescaled.
   if (def.unit === "PERCENT" && SMALL_RATE_KEYS.has(def.key) && value !== null && Math.abs(value) <= 1.5 && !/%|percent/i.test(obs.rawText)) {

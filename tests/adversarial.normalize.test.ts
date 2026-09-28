@@ -330,3 +330,8 @@ describe("period parsing", () => {
   ])("%s → %s", (s, iso) => expect(parsePeriodDate(s)!.toISOString().slice(0, 10)).toBe(iso));
   it.each(["2026-02-30", "2026-13", "Foo 2025"])("%s is rejected", (s) => expect(parsePeriodDate(s)).toBeNull());
 });
+
+it("a percent given as a fraction while the raw text says '92%' is read as 92", () => {
+  expect(N("nrr", 0.92, { rawText: "92%", unit: "PERCENT", currency: null })!.normalizedValue).toBe(92);
+  expect(N("default_rate", 0.8, { rawText: "0.8%", unit: "PERCENT", currency: null })!.normalizedValue).toBe(0.8);
+});
