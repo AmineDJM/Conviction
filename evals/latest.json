@@ -1,6 +1,7 @@
 {
-  "at": "2026-09-27T23:28:15.992Z",
-  "spentUsd": 0.01366196,
+  "at": "2026-09-28T00:21:02.722Z",
+  "suites": "all",
+  "spentUsd": 0.004222259999999999,
   "results": [
     {
       "suite": "extraction",
@@ -132,56 +133,56 @@
       "suite": "adversarial",
       "check": "score not inflated vs clean control",
       "pass": true,
-      "detail": "\u0394OQI -1.1 (tolerance +8 for model variance)",
+      "detail": "ΔOQI -1.1 (tolerance +8 for model variance)",
       "hard": true
     },
     {
       "suite": "stability",
-      "check": "OQI within \u00b18 after marketing rewrite",
+      "check": "OQI within ±8 after marketing rewrite",
       "pass": true,
-      "detail": "|\u0394OQI| 4.0",
+      "detail": "|ΔOQI| 4.0",
       "hard": true
     },
     {
       "suite": "stability",
-      "check": "Traction/PMF within \u00b15 (metrics identical)",
+      "check": "Traction/PMF within ±5 (metrics identical)",
       "pass": false,
-      "detail": "|\u0394| 7.1",
+      "detail": "|Δ| 7.1",
       "hard": true
     },
     {
       "suite": "prestige",
       "check": "Team score not lifted by pedigree",
       "pass": true,
-      "detail": "\u0394Team 5.1 (tolerance +8)",
+      "detail": "ΔTeam 5.1 (tolerance +8)",
       "hard": true
     },
     {
       "suite": "prestige",
       "check": "OQI not lifted by pedigree",
       "pass": true,
-      "detail": "\u0394OQI 2.2",
+      "detail": "ΔOQI 2.2",
       "hard": true
     },
     {
       "suite": "missing",
       "check": "Traction coverage falls when retention is withheld",
       "pass": true,
-      "detail": "1 \u2192 0.857",
+      "detail": "1 → 0.857",
       "hard": true
     },
     {
       "suite": "missing",
       "check": "Traction conservative bound does not improve",
       "pass": true,
-      "detail": "75 \u2192 54.3",
+      "detail": "75 → 54.3",
       "hard": true
     },
     {
       "suite": "missing",
       "check": "OQI conservative bound does not improve",
       "pass": true,
-      "detail": "55.7 \u2192 44.5",
+      "detail": "55.7 → 44.5",
       "hard": true
     },
     {
@@ -207,44 +208,51 @@
     },
     {
       "suite": "chat",
-      "check": "absent metric (gmv) \u2192 \"On ne sait pas encore\"",
+      "check": "absent metric (gmv) → \"On ne sait pas encore\"",
       "pass": true,
-      "detail": "Le GMV de Ledgerline n\u2019est pas communiqu\u00e9 dans les donn\u00e9es disponibles. **On ne sait pas encore.** - La requ\u00eate structu",
+      "detail": "**On ne sait pas encore.** Le dossier de Ledgerline ne contient pas de GMV. **Prochaine action** : demander au fondateu",
       "hard": true
     },
     {
       "suite": "chat",
       "check": "fact question answered < 1 s",
-      "pass": false,
-      "detail": "3041 ms",
+      "pass": true,
+      "detail": "20 ms",
       "hard": true
     },
     {
       "suite": "chat",
       "check": "present metric answered from the record",
-      "pass": false,
-      "detail": "L\u2019ARR de Ledgerline est de **3,84 M$ en ao\u00fbt 2026** \u2014 fait **rapport\u00e9 par l\u2019entreprise**, non v\u00e9rifi\u00e9 ind\u00e9pendamment [6]",
+      "pass": true,
+      "detail": "**Ledgerline — ARR : $3.84M** au 2026-08 (déclaré par la société) [1] Source : p. 4 « ARR (Aug 2026) $3.84M » Points d",
       "hard": true
     },
     {
       "suite": "chat",
       "check": "unknown company: no invented figure",
       "pass": true,
-      "detail": "Nous ne savons pas encore. Aucun enregistrement fourni ne mentionne Zorblax Robotics ni son ARR. - Le seul ARR document\u00e9 concerne Ledgerline : **$3,8 M**, d\u00e9cl",
+      "detail": "Nous ne savons pas encore. Les enregistrements fournis ne contiennent aucune donnée sur **Zorblax Robotics** ; ils mentionnent uniquement Ledgerline et Parcelo ",
       "hard": true
     },
     {
       "suite": "chat",
+      "check": "answer in the question's language (FR)",
+      "pass": true,
+      "detail": "Nous ne savons pas encore. Les éléments disponibles ne contiennent aucune déclar",
+      "hard": false
+    },
+    {
+      "suite": "chat",
       "check": "IC member with no record: no fabricated opinion",
-      "pass": false,
-      "detail": "On ne sait pas encore ce que James Zhang a dit sur Ledgerline : aucun commentaire, pr\u00e9f\u00e9rence \u00e9crite ou observation de r\u00e9union attribu\u00e9 \u00e0 James Zhang ne figure ",
+      "pass": true,
+      "detail": "Nous ne savons pas encore. Les éléments disponibles ne contiennent aucune déclaration, préférence écrite ou observation attribuable à James Zhang concernant Led",
       "hard": true
     },
     {
       "suite": "chat",
       "check": "single-deal question first token < 2 s",
-      "pass": false,
-      "detail": "4530 ms",
+      "pass": true,
+      "detail": "680 ms",
       "hard": false
     },
     {
@@ -258,9 +266,8 @@
       "suite": "regression",
       "check": "engine drift vs stored results",
       "pass": false,
-      "detail": "Ledgerline: base MOIC 2.59 \u2192 2.51 | Ledgerline: base MOIC 1.31 \u2192 1.34 | Parcelo: base MOIC 1.33 \u2192 1.36",
+      "detail": "Ledgerline: base MOIC 2.59 → 2.51 | Ledgerline: base MOIC 1.31 → 1.34 | Parcelo: base MOIC 1.33 → 1.36",
       "hard": false
     }
-  ],
-  "suites": "all"
+  ]
 }

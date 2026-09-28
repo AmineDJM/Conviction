@@ -12,7 +12,10 @@ import { metricValue, usd } from "@/lib/format";
 export type Lang = "fr" | "en";
 
 export function detectLanguage(q: string): Lang {
-  return /[àâçéèêëîïôûùüÿœ]|\b(le|la|les|des|est|quel|quelle|quels|pourquoi|avons|combien|de|du)\b/i.test(q) ? "fr" : "en";
+  if (/[àâçéèêëîïôûùüÿœ]|\bqu['’]|\b[ldjcs]['’]\w/i.test(q)) return "fr";
+  const fr = (q.match(/\b(le|la|les|des|est|quel|quelle|quels|quelles|pourquoi|avons|combien|de|du|sur|dit|ce|que|qui|pour|avec|dans|une|un|il|elle|nous|vous|comment|où|ou|et|pas|sont|a|au|aux|son|sa|ses|leur)\b/gi) ?? []).length;
+  const en = (q.match(/\b(the|is|are|what|why|how|which|who|did|does|do|of|on|for|with|in|and|a|an|to|say|said|their|its)\b/gi) ?? []).length;
+  return fr > en ? "fr" : "en";
 }
 
 type FactKey = { kind: "METRIC"; key: string; related: string[] } | { kind: "VALUATION" } | { kind: "RAISE" };

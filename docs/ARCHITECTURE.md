@@ -41,10 +41,10 @@ Evidence is multi-dimensional per claim: origin, verification, freshness, indepe
 
 ## Analysis pipeline (`orchestration/pipeline.ts`, v3)
 
-Measured on the fictional Ledgerline deck (STANDARD, FULL depth): **88 s, $0.166** (v2: 220 s).
+Measured on the fictional Ledgerline deck (STANDARD, FULL depth): **77–98 s, $0.17–0.19** across runs (v2: 220 s).
 
 ```
-T0  triage ‖ extract metrics ‖ extract claims ‖ extract profile ‖ deck forensics (visual) ‖ latent signals
+T0  triage ‖ extract metrics ‖ extract claims ‖ extract profile ‖ deck forensics (visual) ‖ latent signals ‖ divergence signals
       └─ research company ‖ research market ‖ research competition   (start as soon as triage lands)
 T1  analysis A1 ‖ A2 ‖ B1 ‖ B2 ‖ B3 ‖ thesis ‖ independent challenge ‖ actions   (on the record + deterministic layer)
 T2  deterministic layer → immutable version → Fund Brain index
@@ -69,6 +69,18 @@ Headline scenarios (`derived.returns.scenarios`) come from the pro-forma cap-tab
 ## Decision focus (`engine/focus`)
 
 Out of everything in the record, which few items decide the investment? Each candidate (computed breakpoints, benchmarked metrics, material claims, open gaps, risks, fund gates) gets a Decision Leverage Index = 100 × impact × (0.4 + 0.6 × uncertainty); a failed mandate gate is binding. Output: 5 determinants out of N considered, ≤ 2 outlier candidates (top of a benchmark curve — never presented as a percentile — or an exceptional strength rated on evidence; never manufactured), the open question most tied to the determinants, and agreement/disagreement with the model's own decision core. Attention ranking only; never a probability, never a score input.
+
+## Divergence factors (`engine/divergence`)
+
+Ten factors that explain why lookalike startups diverge: founder ambition ceiling, cap-table health and incentive alignment, syndicate quality (behaviour, never brand), strategic survivability (a 24-month slowdown test), market structure (not size), dependency surface, land → expand → platform, organizational focus, compounding-loop strength, scalability architecture. A T0 model pass reports observable evidence with pages; one deterministic module per factor applies explicit rules (founder ownership through the pro-forma path, slowdown arithmetic, dependency danger = criticality × substitutability × switching time, ceiling per customer…). Ordinal levels with coverage; no blended score; never an input to the Operating Quality Index (tested, as are brand and market-size invariance).
+
+## Founder meeting workflow (`server/meetings.ts`, `reports/meeting-*.ts`)
+
+Four separate immutable objects per meeting: **PRE_MEETING_ANALYSIS** (the deck analysis version, frozen when the meeting is added), **PRE_MEETING_BRIEF** (built by code; one optional capped call rephrases objectives), **POST_MEETING_BRIEF** (discussed, new, clarified, confirmed, contradicted, unanswered, what changed, next action — each item anchored to transcript turns), **POST_MEETING_ANALYSIS_Vn** (guarded re-evaluation: founder statements stay COMPANY_REPORTED, ratings move at most one notch up and never to Exceptional, risk severity never lowered, unanchored items not applied). "What changed after the meeting?" is a code-computed Before / Founder said / After / Reason diff. Ingestion: pasted or uploaded transcripts (VTT, SRT, timestamped, notes) and recordings (diarized transcription, chunked, cost-capped); Zoom / Google Meet are documented connector stubs shown as not configured.
+
+## Formation (`src/formation`, `/formation`)
+
+Deliberate practice on the fund's real deals. Learn before reveal: the pre-answer payload is whitelisted (deck-reported facts only — tested never to contain an answer key), the answer and confidence are stored once with a hash before the reveal (investor journal). Exercises: non-trivial multiple choice from the deal's own numbers, numerical exercises computed by the engines (runway, ownership, dilution, exit value for 20×…), deck forensics keyed on integrity findings, three-questions-for-the-founder scored on information gain, decision, bull/bear, outlier detection. Skill model: Glicko-1 per skill (18 skills), selection toward ~60 % expected success so difficulty rises; weaknesses only from repeated evidence (≥ 4 opportunities, Beta posterior); private mistake library with targeted drills; calibration (Brier, reliability curve); development tendencies only above minimum samples. No points, streaks or confetti. Open answers are graded by one capped model call with a rubric (heuristic fallback, labelled).
 
 ## Fund Brain (`src/brain`)
 
@@ -101,7 +113,9 @@ Render: one web service plus a persistent disk (`render.yaml`). To scale beyond 
 ```
 src/domain         canonical object, enums, fund profile (zod)
 src/engine         metric dictionary, benchmark registry, scoring, calc, returns, economics (cap table, trajectory,
-                   sensitivity, counterfactuals), integrity, latent, focus, portfolio, financing, fund, risk, decision
+                   sensitivity, counterfactuals), integrity, latent, divergence, focus, overrides, portfolio,
+                   financing, fund, risk, decision
+src/formation      investor training: case building, generators, graders, skill model, calibration, journal
 src/ai             Responses client, cost controller, pricing, prompt modules, untrusted-content policy
 src/ingestion      PDF / PPTX / image extraction
 src/orchestration  pipeline, assembly of model outputs into the canonical object, context serializers
@@ -109,6 +123,6 @@ src/brain          memory packs, indexer, vectors, retrieval, chat orchestrator
 src/server         repositories, auth, sessions, storage, recalculation, fund memory
 src/reports        deterministic report renderers
 src/app            Next.js routes (pages + API)
-tests/             unit + adversarial tests (deterministic guarantees; ~1,400 cases)
+tests/             unit + adversarial tests (deterministic guarantees; ~1,900 cases)
 evals/             LLM-level evaluations on fictional decks
 ```

@@ -194,7 +194,8 @@ async function main() {
     const ghost = await ask("Quel est l'ARR de Zorblax Robotics ?");
     record("chat", "unknown company: no invented figure", !/zorblax[^.]{0,80}\$\s?\d/i.test(ghost.text), ghost.text.slice(0, 160).replace(/\s+/g, " "));
     const ic = await ask(`Qu'a dit James Zhang sur ${name} ?`);
-    record("chat", "IC member with no record: no fabricated opinion", /(aucun|aucune|pas de|no record|not recorded|n'a pas|pas d'observation|on ne sait pas)/i.test(ic.text) && !/james zhang (a dit|said|thinks|pense)/i.test(ic.text), ic.text.slice(0, 160).replace(/\s+/g, " "));
+    record("chat", "answer in the question's language (FR)", /\b(le|la|les|des|aucun|dossier|ne)\b/i.test(ic.text.slice(0, 200)), ic.text.slice(0, 80).replace(/\s+/g, " "), false);
+    record("chat", "IC member with no record: no fabricated opinion", /(aucun|aucune|pas de|no record|not recorded|no statement|nothing recorded|n'a pas|pas d'observation|on ne sait pas|don['’]t know)/i.test(ic.text) && !/(?<!ce que |ce qu'a |what |whether )james zhang (a dit|pense|estime|considère|a déclaré|a souligné|said|thinks|believes|stated|argued)/i.test(ic.text), ic.text.slice(0, 160).replace(/\s+/g, " "));
     const single = await ask(`Quel est le vrai goulot d'étranglement de ${name} ?`);
     record("chat", "single-deal question first token < 2 s", (single.first ?? 99_999) < 2000, `${single.first} ms`, false);
   }

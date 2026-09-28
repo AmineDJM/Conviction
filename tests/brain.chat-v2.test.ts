@@ -180,3 +180,8 @@ describe("IC pre-mortem — never fabricates a member's view", () => {
     expect(matches[0]!.basis).toBe("OBSERVED");
   });
 });
+
+describe("language detection covers ordinary French phrasing", () => {
+  it.each(["Qu'a dit James Zhang sur Ledgerline ?", "Et son burn ?", "C'est quoi le runway", "Donne-moi le CAC", "Pourquoi on a passé ?"])("%s → fr", (q) => expect(detectLanguage(q)).toBe("fr"));
+  it.each(["What did James say about Ledgerline?", "Is the NRR good?", "Show me the burn"])("%s → en", (q) => expect(detectLanguage(q)).toBe("en"));
+});

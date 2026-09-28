@@ -51,14 +51,16 @@ Hard invariants fail the run; variance-sensitive checks are reported against exp
 - **Prospective** (§128): `npx tsx evals/snapshot.ts` records every company's view at time T (recommendation, indices, evidence, base case). Fill outcomes at 6 / 12 / 24 months (new round, revenue progress, shutdown, acquisition) with sources. Later valuation alone is not proof of investment quality.
 - **Human utility** (§129): ask experienced investors whether the tool surfaced better questions, important risks, missing evidence and useful market insight; measure preparation time saved.
 
-## Latest run (2026-09-27, `evals/latest.json`)
+## Latest run (2026-09-28, `evals/latest.json`)
 
-31 passed, 4 failed, 2 warnings · model spend $0.014 on top of cached analyses.
+36 passed, 1 failed, 1 warning.
 
-- Extraction: 12/12 and 7/7 metrics exact; projections never used as current metrics; names, stage, founders, round and instrument correct.
-- Adversarial: injection flagged, clean control unflagged, no invest recommendation, ΔOQI −1.1 vs the clean control.
-- Stability: ΔOQI 4.0 (pass). **Traction/PMF Δ 7.1 (fail, tolerance 5)** — the same rubric step on `PMF_SIGNAL_QUALITY` as before (the marketing-inflated deck is rated *lower*). Tolerance deliberately not loosened; mitigation still planned (double rating keeping the more conservative, or measured PMF signals).
+- Extraction: 12/12 and 7/7 metrics exact; projections never used as current metrics; names, stage, founders, round, instrument correct.
+- Adversarial: injection flagged, clean control unflagged, no invest recommendation, ΔOQI −1.1 vs clean control.
+- Stability: ΔOQI 4.0 (pass). **Traction/PMF Δ 7.1 (fail, tolerance 5)** — one anchored rubric step on `PMF_SIGNAL_QUALITY` (the marketing-inflated deck is rated *lower*). Tolerance deliberately not loosened; mitigation still open (double rating keeping the more conservative, or measured PMF signals).
 - Prestige: ΔTeam +5.1, ΔOQI +2.2 (within tolerance). Missing data: coverage and conservative bounds fall as required.
-- Citations: 52/53 retrieved; 15/15 VERIFIED claims with an independent retrieved source.
-- Chat: absent metric answered « On ne sait pas encore »; unknown company given no invented figure. Two failures came from homonym dossiers in the eval database (several "Ledgerline" variants) bypassing the fast path — fixed by homonym resolution; one check was too strict (the answer correctly said nothing was recorded for James Zhang) — corrected.
-- Regression: base MOIC drift on stored versions (e.g. 2.59 → 2.51) from the deliberate move to cap-table returns.
+- Citations: 52/53 web sources retrieved; 15/15 VERIFIED claims with an independent retrieved source.
+- Chat (7/7, stable over 3 consecutive runs): absent metric → « On ne sait pas encore » in 21 ms without a model call; present metric read from the record; unknown company gets no invented figure; IC member with nothing recorded gets no attributed view; answers in the question's language; single-deal first token 657–731 ms.
+- Regression: base MOIC drift on older stored versions (e.g. 2.59 → 2.51) from the deliberate move to cap-table returns — reported for review, not hidden.
+
+Real STANDARD analyses of the Ledgerline deck after integration: 77–98 s, $0.18–0.19, FULL depth.
