@@ -10,6 +10,7 @@ import { makeDeal, metric } from "./fixtures";
 import { aggregate } from "@/engine/scoring/dimensions";
 import { resolvePeerGroup } from "@/engine/scoring/peer";
 import { interpolate } from "@/engine/scoring/curve";
+import { reconstructMarket } from "@/engine/market";
 
 const reg = getRegistry();
 const now = new Date("2026-09-27T00:00:00Z");
@@ -269,5 +270,28 @@ describe("founder call gate", () => {
     d.sources.push({ id: "SRC-900", kind: "TRANSCRIPT", title: "Call", url: null, documentId: null, publisher: null, publishedDate: null, retrievedAt: now.toISOString(), origin: "COMPANY", independenceGroup: "COMPANY", citationVerified: true });
     const r = derive(d, reg, DEFAULT_FUND_PROFILE, { now });
     expect(r.recommendation.status).not.toBe("NEEDS_FOUNDER_CALL");
+  });
+});
+
+describe("market reconstruction plausibility guards", () => {
+  const withBottomUp = (customerCountLow: number, customerCountHigh: number, annualSpendLowUsd: number, annualSpendHighUsd: number) => {
+    const d = makeDeal();
+    d.market = { ...d.market!, bottomUp: { customerDefinition: "mid-market firms", customerCountLow, customerCountHigh, annualSpendLowUsd, annualSpendHighUsd, spendBasis: "test" }, valueCapture: null, topDown: null };
+    return reconstructMarket(d);
+  };
+  it("a total spend put in the per-customer field is used as the total, never multiplied again", () => {
+    const r = withBottomUp(18_000, 20_000, 125_000_000, 1_200_000_000);
+    expect(r.primary!.highUsd).toBe(1_200_000_000);
+    expect(r.rejected.some((x) => x.startsWith("BOTTOM_UP reinterpreted"))).toBe(true);
+  });
+  it("a normal per-customer spend is multiplied", () => {
+    const r = withBottomUp(150_000, 200_000, 15_000, 25_000);
+    expect(r.primary!.highUsd).toBe(5_000_000_000);
+    expect(r.rejected).toEqual([]);
+  });
+  it("a trillion-scale product is rejected as a unit error", () => {
+    const r = withBottomUp(1_000_000, 50_000_000, 10_000, 20_000_000);
+    expect(r.ranges.some((x) => x.method === "BOTTOM_UP")).toBe(false);
+    expect(r.rejected.some((x) => x.includes("unit error") || x.includes("implausible"))).toBe(true);
   });
 });

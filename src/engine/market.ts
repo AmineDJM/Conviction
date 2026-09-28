@@ -28,8 +28,13 @@ export interface MarketReconstruction {
 }
 
 export const MIN_PLAUSIBLE_MARKET_USD = 5_000_000;
+/** Above this, a bottom-up "annual spend per customer" is almost certainly a total market figure. */
+export const MAX_PLAUSIBLE_SPEND_PER_CUSTOMER_USD = 25_000_000;
+/** No single-product serviceable market exceeds this; larger figures are unit errors. */
+export const MAX_PLAUSIBLE_MARKET_USD = 2_000_000_000_000;
 
 const fmt = (n: number) => {
+  if (n >= 1e12) return `$${(n / 1e12).toFixed(1)}T`;
   if (n >= 1e9) return `$${(n / 1e9).toFixed(1)}B`;
   if (n >= 1e6) return `$${(n / 1e6).toFixed(1)}M`;
   if (n >= 1e3) return `$${(n / 1e3).toFixed(0)}k`;
@@ -39,26 +44,33 @@ const fmt = (n: number) => {
 export function reconstructMarket(c: CanonicalDeal): MarketReconstruction {
   const ranges: MarketRange[] = [];
   const m = c.market;
+  const rejected: string[] = [];
   if (m?.bottomUp) {
     const b = m.bottomUp;
-    const lo = Math.min(b.customerCountLow, b.customerCountHigh) * Math.min(b.annualSpendLowUsd, b.annualSpendHighUsd);
-    const hi = Math.max(b.customerCountLow, b.customerCountHigh) * Math.max(b.annualSpendLowUsd, b.annualSpendHighUsd);
-    if (hi > 0)
-      ranges.push({
-        method: "BOTTOM_UP",
-        lowUsd: lo,
-        highUsd: hi,
-        formula: `${b.customerCountLow.toLocaleString("en-US")}–${b.customerCountHigh.toLocaleString("en-US")} ${b.customerDefinition} × ${fmt(b.annualSpendLowUsd)}–${fmt(b.annualSpendHighUsd)} / yr`,
-        basis: b.spendBasis,
-      });
+    const cLo = Math.min(b.customerCountLow, b.customerCountHigh);
+    const cHi = Math.max(b.customerCountLow, b.customerCountHigh);
+    const sLo = Math.min(b.annualSpendLowUsd, b.annualSpendHighUsd);
+    const sHi = Math.max(b.annualSpendLowUsd, b.annualSpendHighUsd);
+    const perCustomer = `${cLo.toLocaleString("en-US")}–${cHi.toLocaleString("en-US")} ${b.customerDefinition} × ${fmt(sLo)}–${fmt(sHi)} / yr`;
+    if (sHi > MAX_PLAUSIBLE_SPEND_PER_CUSTOMER_USD && cHi > 1) {
+      // "Annual spend" of $125M–$1.2B per customer is a total market figure put in the per-customer field:
+      // use it as the total when the implied spend per customer is plausible, never multiply it again.
+      const impliedHi = sHi / Math.max(1, cLo);
+      if (impliedHi <= MAX_PLAUSIBLE_SPEND_PER_CUSTOMER_USD && sHi >= MIN_PLAUSIBLE_MARKET_USD) {
+        ranges.push({ method: "BOTTOM_UP", lowUsd: sLo, highUsd: sHi, formula: `${fmt(sLo)}–${fmt(sHi)} total annual spend across ${cLo.toLocaleString("en-US")}–${cHi.toLocaleString("en-US")} ${b.customerDefinition}`, basis: b.spendBasis });
+        rejected.push(`BOTTOM_UP reinterpreted: ${fmt(sLo)}–${fmt(sHi)} was given as spend per customer but is a total (×${cHi.toLocaleString("en-US")} customers would give ${fmt(cHi * sHi)})`);
+      } else rejected.push(`BOTTOM_UP rejected: ${perCustomer} — spend per customer above ${fmt(MAX_PLAUSIBLE_SPEND_PER_CUSTOMER_USD)} is implausible`);
+    } else if (cHi * sHi > MAX_PLAUSIBLE_MARKET_USD) {
+      rejected.push(`BOTTOM_UP rejected: ${perCustomer} = ${fmt(cHi * sHi)}, above ${fmt(MAX_PLAUSIBLE_MARKET_USD)} (unit error)`);
+    } else if (cHi * sHi > 0) ranges.push({ method: "BOTTOM_UP", lowUsd: cLo * sLo, highUsd: cHi * sHi, formula: perCustomer, basis: b.spendBasis });
   }
-  const rejected: string[] = [];
   if (m?.valueCapture) {
     const v = m.valueCapture;
     const lo = v.economicValueCreatedLowUsd * (v.captureShareLowPct / 100);
     const hi = v.economicValueCreatedHighUsd * (v.captureShareHighPct / 100);
     // A serviceable market below $5M is almost always a per-customer figure mislabelled as a market.
     if (hi > 0 && hi < MIN_PLAUSIBLE_MARKET_USD) rejected.push(`VALUE_CAPTURE rejected: ${fmt(lo)}–${fmt(hi)} is below ${fmt(MIN_PLAUSIBLE_MARKET_USD)} (likely per-customer value, not a market)`);
+    else if (hi > MAX_PLAUSIBLE_MARKET_USD) rejected.push(`VALUE_CAPTURE rejected: ${fmt(lo)}–${fmt(hi)} is above ${fmt(MAX_PLAUSIBLE_MARKET_USD)} (unit error)`);
     else if (hi > 0)
       ranges.push({
         method: "VALUE_CAPTURE",
