@@ -379,3 +379,24 @@ describe("corpus regressions (second full eval run)", () => {
     expect(findingsOf(run(d), "GMV_AS_REVENUE").map((f) => f.severity)).toContain("CRITICAL");
   });
 });
+
+describe("corpus regressions (third full eval run)", () => {
+  it("Drypoint: the headline ARR and its footnote are one figure carrying the footnote's inclusion", () => {
+    const d = pipelineDeal([
+      obs("arr", 2_400_000, { label: "ARR", rawText: "$2.4M", periodType: "ANNUAL", periodEnd: null }),
+      obs("arr", 2_400_000, { label: "ARR including signed utility contracts not yet deployed", rawText: "$2.4M", periodType: "ANNUAL", periodEnd: null, definitionAsStated: "ARR includes $2.09M of signed utility contracts not yet deployed" }),
+      obs("arr", 310_000, { label: "Live subscription ARR", rawText: "$0.31M", periodType: "ANNUAL", periodEnd: null, definitionAsStated: "ARR from live subscriptions." }),
+    ]);
+    expect(d.metrics.find((x) => x.metricKey === "arr" && x.isPrimary)!.normalizedValue).toBe(310_000);
+  });
+
+  it("Clausewren: pilots stated as included in the customer count are reported without any customer metric", () => {
+    const d = pipelineDeal([obs("pilots", 27, { label: "Paid pilots", rawText: "27 paid pilots", unit: "COUNT", currency: null, periodEnd: "2026-07", definitionAsStated: "Enterprise customers that are paid pilots", components: ["included in enterprise customer count"] })]);
+    expect(findingsOf(run(d), "PILOTS_AS_CUSTOMERS").map((f) => f.severity)).toContain("HIGH");
+  });
+
+  it("pilots mentioned without being counted as customers are not reported", () => {
+    const d = pipelineDeal([obs("pilots", 12, { label: "Active paid pilots", rawText: "12", unit: "COUNT", currency: null, periodEnd: "2026-07" })]);
+    expect(kinds(run(d))).not.toContain("PILOTS_AS_CUSTOMERS");
+  });
+});

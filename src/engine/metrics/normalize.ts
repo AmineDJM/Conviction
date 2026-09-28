@@ -466,14 +466,31 @@ export function normalizeObservation(input: MetricObservation, ctx: NormalizeCon
 }
 
 /** Remove exact duplicates (same key, value, period and method) produced by repeated extraction. */
+/**
+ * One figure extracted twice (a headline "ARR $2.4M" and its footnote "ARR includes $2.09M signed…") is one metric:
+ * the first instance is kept and carries the union of both instances' quality flags and definitions.
+ */
 export function dedupeMetrics(metrics: MetricInstance[]): MetricInstance[] {
-  const seen = new Set<string>();
-  return metrics.filter((m) => {
+  const byKey = new Map<string, MetricInstance>();
+  const out: MetricInstance[] = [];
+  for (const m of metrics) {
     const k = `${m.metricKey}|${m.normalizedValue}|${m.periodEnd}|${m.calculationMethod}|${m.state}`;
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
+    const first = byKey.get(k);
+    if (!first) {
+      const copy = { ...m, qualityFlags: [...m.qualityFlags] };
+      byKey.set(k, copy);
+      out.push(copy);
+      continue;
+    }
+    const extra = m.qualityFlags.filter((f) => !first.qualityFlags.includes(f));
+    const substantive = extra.filter((f) => f !== "DEFINITION_NOT_STATED");
+    first.qualityFlags.push(...substantive);
+    if (substantive.length || (!first.definitionUsed && m.definitionUsed)) {
+      first.qualityFlags = first.qualityFlags.filter((f) => !(f === "DEFINITION_NOT_STATED" && m.definitionUsed));
+      first.definitionUsed = first.definitionUsed ?? m.definitionUsed;
+    }
+  }
+  return out;
 }
 
 /** Mark one primary instance per metric key: freshest observed value wins. */

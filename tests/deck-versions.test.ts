@@ -435,13 +435,15 @@ describe("duplicate companies", () => {
     expect(ok).toHaveLength(1);
     await (ok[0] as PromiseFulfilledResult<Awaited<ReturnType<typeof mergeIntoCompany>>>).value.promise;
     for (const x of both.filter((x) => x.status === "rejected")) expect((x as PromiseRejectedResult).reason).toBeInstanceOf(AnalysisRequestError);
-    expect(repo.listCompanies(ws.workspaceId).map((c) => c.id)).toEqual([r1.company.id]);
-    expect(deckLineage(r1.company.id).map((e) => e.seq)).toEqual([1, 2]);
-    expect(repo.listHistory(r1.company.id).filter((h) => h.type === "COMPANY_MERGED")).toHaveLength(1);
+    // Whichever merge claims first wins (the reverse merge can win under load); exactly one dossier survives with both decks.
+    const survivor = both.indexOf(ok[0]!) === 2 ? r2.company.id : r1.company.id;
+    expect(repo.listCompanies(ws.workspaceId).map((c) => c.id)).toEqual([survivor]);
+    expect(deckLineage(survivor).map((e) => e.seq)).toEqual([1, 2]);
+    expect(repo.listHistory(survivor).filter((h) => h.type === "COMPANY_MERGED")).toHaveLength(1);
     // A merge that cannot start (target busy) leaves the duplicate live.
     const r3 = await upload([DECK3()], deckV3);
-    const run = repo.createRun({ workspaceId: ws.workspaceId, companyId: r1.company.id, mode: "FAST_SCREEN", model: "m", promptVersions: {}, registryId: "r", budgetUsd: 0.1, steps: [] });
-    await expect(mergeIntoCompany({ workspaceId: ws.workspaceId, userId: ws.userId, sourceId: r3.company.id, targetId: r1.company.id })).rejects.toThrow(/running/);
+    const run = repo.createRun({ workspaceId: ws.workspaceId, companyId: survivor, mode: "FAST_SCREEN", model: "m", promptVersions: {}, registryId: "r", budgetUsd: 0.1, steps: [] });
+    await expect(mergeIntoCompany({ workspaceId: ws.workspaceId, userId: ws.userId, sourceId: r3.company.id, targetId: survivor })).rejects.toThrow(/running/);
     repo.finishRun(run.id, "COMPLETED", 0, "FULL");
     expect(repo.getCompany(ws.workspaceId, r3.company.id)).toBeDefined();
   });

@@ -259,6 +259,25 @@ function pilotsAndLogos(ctx: IntegrityContext, out: IntegrityFinding[]) {
     (m) => m.metricKey === "paying_customers" && m.calculationMethod !== "DERIVED" && !flagged.includes(m) && NON_PAYING_RE.test([m.definitionUsed ?? "", m.components.join(" "), m.label].join(" ").toLowerCase()),
   );
   const hits = [...confirmed, ...textual];
+  // The materials say it in words ("27 paid pilots … included in the enterprise customer count", "customers include 27 pilots").
+  const INCL = /\b(pilots?|trials?|pocs?|design partners?|lois?)\b[^.;]{0,60}\b(included|counted|part of)\b[^.;]{0,30}\b(customers?|clients?|customer count)\b|\b(customers?|clients?)\b[^.;]{0,40}\b(includ\w*|incl\.?|comprising|of which)\b[^.;]{0,40}\b(pilots?|trials?|pocs?|design partners?|lois?)\b/i;
+  const saidObs = ctx.observations.filter((o) => (o.metricKey === "pilots" || o.metricKey === "paying_customers" || o.metricKey === "OTHER") && INCL.test([o.label, o.rawText, o.definitionAsStated ?? "", ...(o.components ?? [])].join(" ")));
+  const saidClaims = ctx.claims.filter((c) => INCL.test(`${c.statement} ${c.valueText ?? ""}`));
+  if (!hits.length && (saidObs.length || saidClaims.length)) {
+    out.push(
+      finding({
+        kind: "PILOTS_AS_CUSTOMERS",
+        key: "stated",
+        module: M,
+        severity: pilots && isNum(pilots.normalizedValue) && pilots.normalizedValue >= 5 ? "HIGH" : "MODERATE",
+        title: "The materials count pilots or trials as customers",
+        detail: `The customer count includes non-paying relationships, as stated: ${[...saidObs.map((o) => `"${o.label}${o.definitionAsStated ? ` — ${o.definitionAsStated}` : ""}"`), ...saidClaims.map((c) => `"${c.statement}"`)].slice(0, 3).join("; ")}. Ask for paying customers in production separately from pilots and LOIs.`,
+        metricIds: [pilots?.id],
+        claimIds: saidClaims.map((c) => c.id),
+        pages: [...saidObs.map((o) => o.page), ...saidClaims.flatMap((c) => ctx.claimPages(c))],
+      }),
+    );
+  }
   if (hits.length) {
     const heavyPilots = pilots && customers && isNum(pilots.normalizedValue) && isNum(customers.normalizedValue) && pilots.normalizedValue >= 0.5 * customers.normalizedValue;
     out.push(
