@@ -98,6 +98,14 @@ export function buildMemoryPack(company: { id: string; slug: string }, versionId
     if (dv.unread.length) L.push(`Divergence factors not readable yet: ${dv.unread.join(", ")}`);
   }
 
+  // Decision focus: the few items that decide the case, ranked by code (attention, not a probability). Absent on older versions.
+  if (d.focus?.determinants.length) {
+    L.push(`## What decides this investment (code-ranked): ${d.focus.determinants.map((x) => `${x.label} [${x.status.toLowerCase().replace("_", " ")}]`).join(" | ")}`);
+    if (d.focus.outlierCandidates.length) L.push(`Outlier candidates: ${d.focus.outlierCandidates.map((o) => `${o.label} (${o.basis})`).join(" | ")}`);
+    else L.push("Outlier candidates: none evidenced.");
+    if (d.focus.reversingQuestion) L.push(`Question that could reverse the decision: ${d.focus.reversingQuestion.question}`);
+  }
+
   if (c.founders.length || c.foundersFromDeck.length) {
     L.push(`## Founders`);
     for (const f of c.founders.length ? c.founders : c.foundersFromDeck.map((x) => ({ name: x.name, role: x.role, summary: x.backgroundFromDeck, founderMarketFit: "" }))) {

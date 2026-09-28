@@ -78,6 +78,15 @@ export function derivedDigest(d: DerivedAnalysis) {
     divergence: d.divergence
       ? { headline: d.divergence.summary.headline, factors: d.divergence.summary.factors.map((f) => `${f.n}. ${f.name}: ${f.level} (${f.reading}) — ${f.why}${f.numbers.length ? ` [${f.numbers.join("; ")}]` : ""}`) }
       : null,
+    // Code-ranked decision focus (Decision Leverage Index — attention, not a probability). Absent on older versions.
+    decisionFocus: d.focus
+      ? {
+          headline: d.focus.headline,
+          determinants: d.focus.determinants.map((x) => `${x.label} — leverage ${x.leverage} (${x.status}; ${x.why.slice(0, 2).join("; ")})${x.refs.length ? ` [${x.refs.slice(0, 4).join(", ")}]` : ""}`),
+          outlierCandidates: d.focus.outlierCandidates.map((o) => `${o.label} — ${o.basis} (${o.status})`),
+          reversingQuestion: d.focus.reversingQuestion?.question ?? null,
+        }
+      : null,
   };
 }
 

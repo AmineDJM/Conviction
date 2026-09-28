@@ -7,6 +7,7 @@ import { coreMetrics, MetricCell } from "@/components/deal/metric";
 import { DECISION_LABEL, decisionTone, titleCase } from "@/lib/format";
 import { RichText } from "@/components/deal/rich-text";
 import { DecisionCore, RealityCheck } from "@/components/deal/decision-core";
+import { DecisionFocusPanel } from "@/components/deal/decision-focus";
 import { IntegrityGlance } from "@/components/deal/integrity/glance";
 
 export default async function DealOverview({ params }: { params: Promise<{ slug: string }> }) {
@@ -63,6 +64,8 @@ export default async function DealOverview({ params }: { params: Promise<{ slug:
       </section>
 
       <DecisionCore c={c} slug={slug} />
+
+      <DecisionFocusPanel focus={d.focus} slug={slug} />
 
       <ScoreStrip d={d} />
 

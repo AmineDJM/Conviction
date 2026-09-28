@@ -31,6 +31,7 @@ import { integrityReport, type IntegrityReport } from "./integrity";
 import { economicsReport, type EconomicsReport } from "./economics";
 import { latentReport, type LatentReport } from "./latent";
 import { divergenceReport, type DivergenceReport } from "./divergence";
+import { decisionFocus, type DecisionFocus } from "./focus";
 import { applyOverrides } from "./overrides";
 
 export interface ResearchPriority {
@@ -74,6 +75,8 @@ export interface DerivedAnalysis {
   latent: LatentReport;
   /** Divergence factors: why this company could diverge from lookalikes. Ten ordinal levels; never part of the OQI. */
   divergence: DivergenceReport;
+  /** Decision focus: the few items that actually decide the investment (attention ranking; absent on versions before engine 3.1). */
+  focus?: DecisionFocus;
 }
 
 export function researchPriorityIndex(g: Pick<InformationGap, "decisionImportance" | "uncertainty" | "researchability">): number {
@@ -169,5 +172,7 @@ export function derive(deal: CanonicalDeal, registry: BenchmarkRegistry, fund: F
     latent,
     // Computed last, from the finished layer; nothing above reads it (the OQI never sees divergence).
     divergence: divergenceReport(deal, registry, peerGroup, { asOf: opts.now, market, financing, economics, latent, economicsContext }),
+    // Attention only: which few items decide the case. Never read by any score above.
+    focus: decisionFocus(deal, registry, peerGroup, { sensitivity: economics.sensitivity.rows, gates: ff.gates }),
   };
 }
