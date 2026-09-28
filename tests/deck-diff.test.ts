@@ -239,4 +239,34 @@ describe("§11 deck-to-deck reveal", () => {
     expect(deckDiff(previousDeck(), cur).changedNumbers).toEqual([]);
     expect(deckDiff(previousDeck(), cur, { tolerance: 0.001 }).changedNumbers).toHaveLength(1);
   });
+  it("does not report one metric as both removed and added when only its key assignment changed", () => {
+    const prev = previousDeck();
+    prev.metricObservations.push(obs("OTHER" as MetricObservation["metricKey"], 38, { label: "Company headcount", rawText: "38 people", unit: "COUNT", currency: null, periodEnd: "2026-02", page: 10 }));
+    const cur = currentDeck();
+    cur.metricObservations.push(obs("headcount", 52, { label: "Headcount", rawText: "52 FTE", unit: "COUNT", currency: null, periodEnd: "2026-08", page: 11 }));
+    const d = deckDiff(prev, cur);
+    expect(d.metricsRemoved.map((m) => m.label)).not.toContain("Company headcount");
+    expect(d.metricsAdded.map((m) => m.metricKey)).not.toContain("headcount");
+    expect(d.changedNumbers.find((c) => c.metricKey === "headcount")).toMatchObject({ kind: "UPDATED", previous: { value: 38 }, current: { value: 52 } });
+  });
+
+  it("matches two OTHER labels that differ only by filler words", () => {
+    const prev = previousDeck();
+    prev.metricObservations.push(obs("OTHER" as MetricObservation["metricKey"], 12, { label: "Total integrations", rawText: "12 integrations", unit: "COUNT", currency: null, periodEnd: "2026-02", page: 8 }));
+    const cur = currentDeck();
+    cur.metricObservations.push(obs("OTHER" as MetricObservation["metricKey"], 12, { label: "Integrations", rawText: "12 integrations", unit: "COUNT", currency: null, periodEnd: "2026-08", page: 8 }));
+    const d = deckDiff(prev, cur);
+    expect([...d.metricsRemoved, ...d.metricsAdded].map((m) => m.label)).not.toContain("Integrations");
+    expect([...d.metricsRemoved, ...d.metricsAdded].map((m) => m.label)).not.toContain("Total integrations");
+  });
+
+  it("keeps genuinely different OTHER metrics apart", () => {
+    const prev = previousDeck();
+    prev.metricObservations.push(obs("OTHER" as MetricObservation["metricKey"], 12, { label: "Integrations", rawText: "12 integrations", unit: "COUNT", currency: null, periodEnd: "2026-02", page: 8 }));
+    const cur = currentDeck();
+    cur.metricObservations.push(obs("OTHER" as MetricObservation["metricKey"], 4, { label: "Countries", rawText: "4 countries", unit: "COUNT", currency: null, periodEnd: "2026-08", page: 8 }));
+    const d = deckDiff(prev, cur);
+    expect(d.metricsRemoved.map((m) => m.label)).toContain("Integrations");
+    expect(d.metricsAdded.map((m) => m.label)).toContain("Countries");
+  });
 });

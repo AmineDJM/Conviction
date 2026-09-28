@@ -158,7 +158,42 @@ function actuals(d: CanonicalDeal): Pt[] {
       .filter((p) => Number.isFinite(p.value));
   return (d.metrics ?? [])
     .filter((m) => m.normalizedValue !== null && CURRENT_BASES.has(m.basis) && m.calculationMethod !== "DERIVED" && (m.state === "OBSERVED" || m.state === "INFERRED" || m.state === "STALE"))
-    .map((m) => ({ key: m.metricKey, label: m.label, value: m.normalizedValue!, rawText: m.rawValue, period: m.periodEnd, page: pageFromLocation(m.location) }));
+    .map((m) => ({ key: identity(m), label: m.label, value: m.normalizedValue!, rawText: m.rawValue, period: m.periodEnd, page: pageFromLocation(m.location) }));
+}
+
+const LABEL_FILLER = /\b(company|total|overall|current|our|the|reported|of|de|la|le|les|du|des|nombre|number)\b/g;
+const labelKey = (s: string) => norm(s).replace(LABEL_FILLER, " ").replace(/\s+/g, " ").trim();
+
+/**
+ * One metric can be keyed from the dictionary in one deck and as OTHER:<label> in the other
+ * (extraction is per deck). Remap such OTHER keys onto the dictionary key when the labels agree,
+ * so the metric is compared instead of being reported as both "no longer reported" and "newly reported".
+ */
+function reconcileKeys(a: Pt[], b: Pt[]): void {
+  const byLabel = new Map<string, string>();
+  for (const p of [...a, ...b]) {
+    if (p.key.startsWith("OTHER:")) continue;
+    byLabel.set(labelKey(p.label), p.key);
+    const d = metricDef(p.key);
+    if (d) {
+      byLabel.set(labelKey(d.name), p.key);
+      byLabel.set(labelKey(d.shortName), p.key);
+    }
+  }
+  for (const p of [...a, ...b]) {
+    if (!p.key.startsWith("OTHER:")) continue;
+    const k = byLabel.get(labelKey(p.label));
+    if (k) p.key = k;
+  }
+  // Two OTHER labels that differ only by filler words ("Company headcount" / "Headcount (total)").
+  const others = new Map<string, string>();
+  for (const p of [...a, ...b]) {
+    if (!p.key.startsWith("OTHER:")) continue;
+    const lk = labelKey(p.label);
+    const first = others.get(lk);
+    if (first) p.key = first;
+    else others.set(lk, p.key);
+  }
 }
 
 function forwards(d: CanonicalDeal): (MetricObservation & { key: string })[] {
@@ -252,6 +287,7 @@ export function deckDiff(previous: CanonicalDeal, current: CanonicalDeal, opts: 
   const curAsOf = deckDate(current, opts.currentAsOf);
   const prevPts = actuals(previous);
   const curPts = actuals(current);
+  reconcileKeys(prevPts, curPts);
 
   /* Changed numbers ------------------------------------------------ */
   const changedNumbers: MetricValueChange[] = [];

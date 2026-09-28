@@ -8,7 +8,7 @@ import { lineageData } from "@/components/deal/lineage/data";
 import { canWrite } from "@/server/session";
 import { deckLineage } from "@/server/deck-versions";
 import { deckOfDocuments } from "@/engine/deck-lineage";
-import { duplicateSuggestions } from "@/server/company-merge";
+import { distinctFrom, duplicateSuggestions, sameCompanySignals } from "@/server/company-merge";
 import { DuplicateBanner } from "@/components/deal/deck/duplicate-banner";
 import { companyAliases } from "@/brain/retrieval";
 
@@ -23,7 +23,7 @@ export default async function DealLayout({ children, params }: { children: React
   const deck = version ? deckOfDocuments(decks, version.canonical.documents.map((d) => d.id)) : null;
   // After triage (identity known): does this dossier duplicate an older one? Asked, never merged silently.
   const duplicates = version ? duplicateSuggestions(loaded.session.workspaceId, company.id) : [];
-  const aliases = companyAliases(loaded.session.workspaceId, company.id);
+  const aliases = sameCompanySignals(companyAliases(loaded.session.workspaceId, company.id), duplicates, distinctFrom(company.id));
   return (
     <div>
       <div className="no-print sticky top-0 z-30 border-b border-line bg-bg/90 backdrop-blur-md">

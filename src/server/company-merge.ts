@@ -71,6 +71,22 @@ export function duplicateSuggestions(workspaceId: string, companyId: string, db:
   return matchCompanies({ name: eff.identity.name, nameSource: "IDENTITY", website: eff.identity.website, founders: (eff.founders.length ? eff.founders : eff.foundersFromDeck).map((f) => f.name) }, pool).map((m) => ({ ...m, slug: bySlug.get(m.companyId)! }));
 }
 
+/**
+ * The deal header's single view of "same company" signals. Entity resolution links
+ * (ALIAS_OF / POSSIBLY_SAME_AS) and the duplicate prompt come from different engines; this
+ * keeps them consistent: a company the user confirmed as different is never shown as linked,
+ * and a company already offered for merge in the duplicate banner is not repeated as an
+ * unconfirmed link in the header.
+ */
+export function sameCompanySignals<L extends { companyId: string; type: "ALIAS_OF" | "POSSIBLY_SAME_AS" }, A extends { linked: L[] }>(
+  aliases: A,
+  duplicates: { companyId: string }[],
+  distinct: Set<string>,
+): A {
+  const offered = new Set(duplicates.map((d) => d.companyId));
+  return { ...aliases, linked: aliases.linked.filter((l) => !distinct.has(l.companyId) && !(l.type === "POSSIBLY_SAME_AS" && offered.has(l.companyId))) };
+}
+
 /** Before an upload starts: the name (typed, else from the file name) and URL against existing companies. */
 export function uploadMatches(workspaceId: string, probe: { name?: string | null; url?: string | null; filenames: string[] }, db: DB = getDb()): DuplicateSuggestion[] {
   const typed = probe.name?.trim() || null;

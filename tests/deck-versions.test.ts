@@ -63,7 +63,7 @@ import * as repo from "@/server/repo";
 import * as meetings from "@/server/meetings";
 import { AnalysisRequestError, startAnalysis } from "@/server/analyze";
 import { deckAnalysisRow, deckChangeLines, deckComparison, deckComparisonForVersion, deckLineage, deckView } from "@/server/deck-versions";
-import { dismissDuplicate, duplicateSuggestions, mergeIntoCompany, uploadMatches } from "@/server/company-merge";
+import { dismissDuplicate, duplicateSuggestions, mergeIntoCompany, sameCompanySignals, uploadMatches } from "@/server/company-merge";
 import { commitOverride } from "@/server/overrides";
 import { buildMemoryPack } from "@/brain/memory-pack";
 import { DECK_CHANGE_QUESTION } from "@/brain/chat";
@@ -453,5 +453,22 @@ describe("legacy corrections stored before the consolidation", () => {
     const stored = next.canonical as CanonicalDeal;
     expect(stored.metrics.some((x) => x.calculationMethod === "USER_CORRECTED")).toBe(false);
     expect(stored.overrides.map((x) => x.id)).toEqual(["OVR-001", "OVR-002"]);
+  });
+});
+
+describe("deal header — one consistent view of same-company signals", () => {
+  const link = (companyId: string, type: "ALIAS_OF" | "POSSIBLY_SAME_AS") => ({ companyId, slug: companyId, name: companyId.toUpperCase(), type, reasons: "" });
+  const aliases = { formerNames: [], linked: [link("a", "ALIAS_OF"), link("b", "POSSIBLY_SAME_AS"), link("c", "POSSIBLY_SAME_AS")] };
+
+  it("does not repeat a company already offered for merge as an unconfirmed link", () => {
+    expect(sameCompanySignals(aliases, [{ companyId: "b" }], new Set()).linked.map((l) => l.companyId)).toEqual(["a", "c"]);
+  });
+
+  it("never shows a company the user confirmed as different", () => {
+    expect(sameCompanySignals(aliases, [], new Set(["a", "c"])).linked.map((l) => l.companyId)).toEqual(["b"]);
+  });
+
+  it("keeps a confirmed alias even when a merge is offered for it", () => {
+    expect(sameCompanySignals(aliases, [{ companyId: "a" }], new Set()).linked.map((l) => l.companyId)).toEqual(["a", "b", "c"]);
   });
 });
