@@ -36,7 +36,8 @@ export function UploadForm() {
 
   const add = (list: FileList | null) => {
     if (!list) return;
-    setFiles((f) => [...f, ...Array.from(list)].slice(0, 10));
+    const picked = Array.from(list); // copied now: the input is reset right after (so the same file can be picked again)
+    setFiles((f) => [...f, ...picked].slice(0, 10));
     setMatches(null);
   };
 
@@ -98,14 +99,23 @@ export function UploadForm() {
             add(e.dataTransfer.files);
           }}
           onClick={() => input.current?.click()}
+          role="button"
+          tabIndex={0}
+          aria-label="Choose documents to analyse: pitch deck, one-pager or financials (PDF, PPTX or images). You can also drop files here."
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              input.current?.click();
+            }
+          }}
           className={cx(
-            "flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed px-6 py-14 text-center transition-colors",
+            "flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed px-6 py-14 text-center outline-none transition-colors focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/30",
             drag ? "border-accent bg-accent-soft/50" : "border-line-strong bg-surface hover:border-ink-3",
           )}
         >
           <div className="text-[14px] font-medium">Drop the pitch deck here</div>
           <div className="mt-1 text-ink-3">PDF, PPTX or images — several documents allowed (deck, one-pager, financials)</div>
-          <input ref={input} type="file" multiple accept={ACCEPT} className="hidden" onChange={(e) => add(e.target.files)} />
+          <input ref={input} type="file" multiple accept={ACCEPT} className="hidden" tabIndex={-1} aria-hidden onChange={(e) => (add(e.target.files), (e.target.value = ""))} />
         </div>
 
         {files.length > 0 && (
@@ -115,10 +125,14 @@ export function UploadForm() {
                 <span className="truncate">{f.name}</span>
                 <span className="flex items-center gap-3 text-[12px] text-ink-3">
                   <span className="num">{(f.size / 1024 / 1024).toFixed(1)} MB</span>
-                  <button onClick={() => {
+                  <button
+                    aria-label={`Remove ${f.name}`}
+                    onClick={() => {
                       setFiles(files.filter((_, j) => j !== i));
                       setMatches(null);
-                    }} className="hover:text-risk">
+                    }}
+                    className="hover:text-risk"
+                  >
                     Remove
                   </button>
                 </span>
@@ -184,6 +198,7 @@ export function UploadForm() {
             <button
               key={m.id}
               onClick={() => setMode(m.id)}
+              aria-pressed={mode === m.id}
               className={cx("w-full rounded-lg border px-3.5 py-3 text-left transition-colors", mode === m.id ? "border-ink bg-surface" : "border-line hover:border-line-strong")}
             >
               <div className="flex items-baseline justify-between gap-2">

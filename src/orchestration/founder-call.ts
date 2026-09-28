@@ -29,6 +29,7 @@ import { buildPostMeetingBrief } from "@/reports/meeting-briefs";
 import { applyFounderCall } from "./assemble";
 import { claimsDigest, metricsTable } from "./context";
 import { ensurePreMeetingBrief } from "./pre-meeting-brief";
+import { CancelledError, registerRun, releaseRun, throwIfCancelled } from "./run-control";
 import * as repo from "@/server/repo";
 import * as meetings from "@/server/meetings";
 import { storeFile } from "@/server/storage";
@@ -116,9 +117,6 @@ export async function startFounderCall(inp: StartFounderCallInput) {
   if (!company) throw new FounderCallError("Not found", 404);
   const current = repo.getCurrentVersion(company);
   if (!current) throw new FounderCallError("The deck analysis has not produced a version yet", 409);
-  const latest = repo.latestRun(company.id);
-  if (latest && (latest.status === "RUNNING" || latest.status === "QUEUED")) throw new FounderCallError("An analysis run is already in progress for this company", 409);
-
   const day = inp.callDate && /^\d{4}-\d{2}-\d{2}$/.test(inp.callDate) ? inp.callDate : new Date().toISOString().slice(0, 10);
   const participants = (inp.participants ?? []).map((p) => MeetingParticipant.parse(p)).slice(0, 20);
   let segments: TranscriptSegment[] | null = null;
@@ -136,6 +134,39 @@ export async function startFounderCall(inp: StartFounderCallInput) {
     if (!segments.length) throw new FounderCallError("The transcript contains no text");
   }
 
+  // The same input for the same meeting date, already turned into a post-meeting analysis, is not processed twice (re-submitted after an error).
+  const inputSha = createHash("sha256").update(inp.recording ? inp.recording.data : Buffer.from(transcript!, "utf8")).digest("hex");
+  const shaOf = new Map(repo.listDocuments(company.id).map((d) => [d.id, d.sha256]));
+  const done = meetings.listMeetings(company.id).find((m) => m.postAnalysisVersionId && m.heldAt === day && [m.transcriptDocumentId, m.recordingDocumentId].some((id) => id && shaOf.get(id) === inputSha));
+  if (done) throw new FounderCallError(`This ${inp.recording ? "recording" : "transcript"} was already processed as meeting #${done.seq} (${done.heldAt})`, 409);
+
+  // From the in-progress check to the run row there is no await: two simultaneous submissions cannot both start a run.
+  const latest = repo.latestRun(company.id);
+  if (latest && (latest.status === "RUNNING" || latest.status === "QUEUED")) throw new FounderCallError("An analysis run is already in progress for this company", 409);
+  const run = repo.createRun({
+    workspaceId: inp.workspaceId,
+    companyId: company.id,
+    kind: "FOUNDER_CALL",
+    mode: "STANDARD",
+    model: PRIMARY_MODEL,
+    promptVersions: { [FOUNDER_CALL_UPDATE.id]: FOUNDER_CALL_UPDATE.version, ...(inp.recording ? { transcription: TRANSCRIBE_MODEL } : {}) },
+    registryId: current.row.registryId,
+    budgetUsd: FOUNDER_CALL_BUDGET.hardCapUsd + (inp.recording ? TRANSCRIPTION_BUDGET_USD : 0),
+    steps: FOUNDER_CALL_STEPS,
+  });
+  try {
+    return await ingestMeeting(inp, { company, current, run, day, participants, segments, transcript });
+  } catch (e) {
+    repo.finishRun(run.id, "FAILED", 0, null, `Could not store the meeting: ${(e as Error).message.slice(0, 200)}`);
+    throw e;
+  }
+}
+
+async function ingestMeeting(
+  inp: StartFounderCallInput,
+  x: { company: repo.CompanyRow; current: repo.LoadedVersion; run: repo.RunRow; day: string; participants: MeetingParticipant[]; segments: TranscriptSegment[] | null; transcript: string | null },
+) {
+  const { company, current, run, day, participants, segments, transcript } = x;
   // The meeting is held against the version that is current now: freeze it as PRE_MEETING_ANALYSIS and make sure its brief exists.
   const preBrief = await ensurePreMeetingBrief({ workspaceId: inp.workspaceId, userId: inp.userId, company, version: current, useModel: false, note: "No pre-meeting brief had been generated before the meeting; this one was rendered from the same pre-meeting analysis at ingestion." });
 
@@ -152,17 +183,6 @@ export async function startFounderCall(inp: StartFounderCallInput) {
     recordingDocumentId = repo.saveDocument({ workspaceId: inp.workspaceId, companyId: company.id, filename: r.filename, mime: mimeFor(r.filename, r.mime), kind: "OTHER", sizeBytes: r.data.length, sha256, storagePath, pages: [] });
   }
 
-  const run = repo.createRun({
-    workspaceId: inp.workspaceId,
-    companyId: company.id,
-    kind: "FOUNDER_CALL",
-    mode: "STANDARD",
-    model: PRIMARY_MODEL,
-    promptVersions: { [FOUNDER_CALL_UPDATE.id]: FOUNDER_CALL_UPDATE.version, ...(inp.recording ? { transcription: TRANSCRIBE_MODEL } : {}) },
-    registryId: current.row.registryId,
-    budgetUsd: FOUNDER_CALL_BUDGET.hardCapUsd + (inp.recording ? TRANSCRIPTION_BUDGET_USD : 0),
-    steps: FOUNDER_CALL_STEPS,
-  });
   const source: meetings.MeetingSource = inp.source ?? (inp.recording ? "RECORDING_UPLOAD" : inp.filename ? "TRANSCRIPT_FILE" : "PASTED_TRANSCRIPT");
   const meeting = meetings.createMeeting({
     workspaceId: inp.workspaceId,
@@ -204,6 +224,9 @@ export async function runFounderCall(inp: RunFounderCallInput): Promise<void> {
   const spent = () => cost.spentUsd + audioCost.spentUsd;
   const step = (s: string, status: "RUNNING" | "DONE" | "SKIPPED" | "FAILED", detail?: string) => repo.updateRunStep(inp.runId, s, status, detail);
   let current = inp.recording ? "TRANSCRIBE" : "CALL";
+  // Cancellable through POST /api/runs/:id/cancel, like deck analyses and refreshes.
+  const signal = registerRun(inp.runId);
+  let committed: { versionNo: number; seq: number } | null = null;
   try {
     const company0 = repo.getCompany(inp.workspaceId, inp.companyId);
     let meeting = company0 && meetings.getMeeting(inp.companyId, inp.meetingId);
@@ -215,7 +238,7 @@ export async function runFounderCall(inp: RunFounderCallInput): Promise<void> {
     /* ---------------- TRANSCRIBE (recordings) ---------------- */
     if (inp.recording) {
       step("TRANSCRIBE", "RUNNING");
-      const t = await transcribeRecording({ ...inp.recording, cost: audioCost, onPart: (i, n) => n > 1 && step("TRANSCRIBE", "RUNNING", `part ${i} of ${n}`) });
+      const t = await transcribeRecording({ ...inp.recording, cost: audioCost, signal, onPart: (i, n) => n > 1 && step("TRANSCRIBE", "RUNNING", `part ${i} of ${n}`) });
       if (!t.segments.length) throw new Error("The recording produced no speech");
       meetings.saveSegments(meeting.id, t.segments);
       const text = renderTranscript(t.segments);
@@ -267,7 +290,9 @@ export async function runFounderCall(inp: RunFounderCallInput): Promise<void> {
       maxOutputTokens: MAX_OUTPUT_TOKENS,
       effort: "low",
       cost,
+      signal,
     });
+    throwIfCancelled(signal);
     meetings.updateMeeting(meeting.id, { extraction: { promptVersion: FOUNDER_CALL_UPDATE.version, model: PRIMARY_MODEL, output: out.data, guards: [] } });
     step("CALL", "DONE", `${out.data.questionUpdates.length} question updates, ${out.data.claimUpdates.length} claim updates, ${out.data.newClaims.length} new claims, ${out.data.contradictions.length} contradictions`);
 
@@ -306,6 +331,7 @@ export async function runFounderCall(inp: RunFounderCallInput): Promise<void> {
       },
       audit: { action: "FOUNDER_CALL_APPLIED", detail: `${inp.runId} ${meeting.id} → V${seq} ${changes.confirmed}/${changes.clarified}/${changes.changed}/${changes.contradicted}/${changes.unresolved}/${changes.newClaims}` },
     });
+    committed = { versionNo: res.version.versionNo, seq };
     meetings.updateMeeting(meeting.id, { postAnalysisVersionId: res.version.id, extraction: { promptVersion: FOUNDER_CALL_UPDATE.version, model: PRIMARY_MODEL, output: out.data, guards } });
     step("UPDATE", "DONE", `POST_MEETING_ANALYSIS_V${seq} (v${res.version.versionNo}) — ${res.derived.recommendation.status}${res.recommendationChanged ? " (changed)" : ""}${guards.length ? `; ${guards.length} guarded change(s)` : ""}`);
 
@@ -347,12 +373,23 @@ export async function runFounderCall(inp: RunFounderCallInput): Promise<void> {
     repo.finishRun(inp.runId, "COMPLETED", spent(), deal.analysis.depth);
     log.info({ spentUsd: spent(), changes, seq }, "founder meeting applied");
   } catch (e) {
-    const msg = e instanceof BudgetExceededError ? e.message : `Founder meeting update failed: ${(e as Error).message.slice(0, 300)}`;
-    log.error({ err: (e as Error).message }, "founder meeting failed");
-    step(current, "FAILED", msg.slice(0, 160));
+    const cancelled = !committed && (signal.aborted || e instanceof CancelledError);
+    const reason = cancelled ? "Cancelled by user" : e instanceof BudgetExceededError ? e.message : (e as Error).message.slice(0, 300);
     const order = FOUNDER_CALL_STEPS.map((s) => s.step);
-    for (const s of order.slice(order.indexOf(current) + 1)) step(s, "SKIPPED", "Not reached");
-    meetings.updateMeeting(inp.meetingId, { status: "FAILED", error: msg.slice(0, 500) });
-    repo.finishRun(inp.runId, "FAILED", spent(), null, msg);
+    if (!cancelled) log.error({ err: (e as Error).message }, "founder meeting failed");
+    step(current, cancelled ? "SKIPPED" : "FAILED", reason.slice(0, 160));
+    for (const s of order.slice(order.indexOf(current) + 1)) step(s, "SKIPPED", cancelled ? "Cancelled" : "Not reached");
+    if (committed) {
+      // The post-meeting analysis is saved: the meeting is done (re-submitting it would only duplicate that version); what failed is noted.
+      const note = `POST_MEETING_ANALYSIS_V${committed.seq} (v${committed.versionNo}) was saved; the ${current.toLowerCase()} step failed afterwards: ${reason}`;
+      meetings.updateMeeting(inp.meetingId, { status: "READY", error: note.slice(0, 500) });
+      repo.finishRun(inp.runId, "PARTIAL", spent(), null, note);
+    } else {
+      const msg = cancelled ? "Cancelled by user — no version was created" : e instanceof BudgetExceededError ? e.message : `Founder meeting update failed: ${reason}`;
+      meetings.updateMeeting(inp.meetingId, { status: "FAILED", error: msg.slice(0, 500) });
+      repo.finishRun(inp.runId, cancelled ? "CANCELLED" : "FAILED", spent(), null, msg);
+    }
+  } finally {
+    releaseRun(inp.runId);
   }
 }

@@ -6,6 +6,7 @@
  * into relational tables at write time (metric_facts, entities, relations,
  * chunks) so the Fund Brain can answer with structured queries first.
  */
+import { sql } from "drizzle-orm";
 import { sqliteTable, text, integer, real, blob, index, uniqueIndex, primaryKey, foreignKey } from "drizzle-orm/sqlite-core";
 
 const ts = (name: string) => text(name).notNull();
@@ -569,7 +570,12 @@ export const meetingBriefs = sqliteTable(
     createdBy: text("created_by"),
     createdAt: ts("created_at"),
   },
-  (t) => [index("meeting_briefs_version_idx").on(t.versionId, t.kind), index("meeting_briefs_company_idx").on(t.companyId, t.createdAt)],
+  (t) => [
+    index("meeting_briefs_version_idx").on(t.versionId, t.kind),
+    index("meeting_briefs_company_idx").on(t.companyId, t.createdAt),
+    // One PRE_MEETING_BRIEF per (version, builder version): concurrent requests converge on the same row.
+    uniqueIndex("meeting_briefs_pre_unique_idx").on(t.versionId, t.kind, t.builderVersion).where(sql`${t.kind} = 'PRE_MEETING_BRIEF'`),
+  ],
 );
 
 /* ------------------------------ Meeting integrations (Zoom, Google Meet) ------------------------------ */

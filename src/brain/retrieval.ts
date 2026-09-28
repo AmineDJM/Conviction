@@ -453,7 +453,7 @@ export function fundMemory(workspaceId: string, icMemberIds: string[], includeKn
   });
   if (includeKnowledge) {
     for (const k of db.select().from(s.fundKnowledge).where(eq(s.fundKnowledge.workspaceId, workspaceId)).orderBy(desc(s.fundKnowledge.updatedAt)).limit(12).all())
-      out.push({ kind: "FUND", title: `${k.kind.replace("_", " ").toLowerCase()}: ${k.title} [${k.provenance}]`, text: k.body.slice(0, 2000), href: `/fund#${k.id}`, label: k.provenance });
+      out.push({ kind: "FUND", title: `${k.kind.replace("_", " ").toLowerCase()}: ${k.title} [${k.provenance}]`, text: k.body.slice(0, 2000), href: `/fund?tab=knowledge#${k.id}`, label: k.provenance });
   }
   const members = icMemberIds.length ? db.select().from(s.icMembers).where(inArray(s.icMembers.id, icMemberIds)).all() : [];
   for (const m of members) {
@@ -461,7 +461,7 @@ export function fundMemory(workspaceId: string, icMemberIds: string[], includeKn
       kind: "IC",
       title: `IC member ${m.name} — profile [DOCUMENTED]`,
       text: `${m.name}, ${m.role}. ${m.bio ?? ""} Focus: ${m.focus.join(", ") || "n/a"}. Documented preferences: ${m.documentedPreferences ?? "none documented"}.`,
-      href: `/fund/ic#${m.id}`,
+      href: `/fund?tab=ic#${m.id}`,
       label: "DOCUMENTED",
     });
     const obs = db.select().from(s.icObservations).where(eq(s.icObservations.memberId, m.id)).orderBy(desc(s.icObservations.observedAt)).limit(25).all();
@@ -469,7 +469,7 @@ export function fundMemory(workspaceId: string, icMemberIds: string[], includeKn
       kind: "IC",
       title: `IC member ${m.name} — ${obs.length} recorded observation(s)`,
       text: obs.length ? obs.map((o) => `${o.observedAt.slice(0, 10)} [${o.provenance}] ${o.kind}: ${o.statement}${o.quote ? ` — "${o.quote}"` : ""}`).join("\n") : "No meeting observations recorded for this member. Do not speculate about their views.",
-      href: `/fund/ic#${m.id}`,
+      href: `/fund?tab=ic#${m.id}`,
       label: obs.length ? "OBSERVED" : "NONE",
     });
   }

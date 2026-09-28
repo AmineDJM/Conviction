@@ -77,6 +77,9 @@ function Palette() {
         : []),
       { id: "a-fund", label: "Fund profile & IC memory", group: "Actions", run: go("/fund") },
       { id: "a-quality", label: "Quality & reliability", group: "Actions", run: go("/quality") },
+      { id: "a-portfolio", label: "Portfolio", group: "Actions", run: go("/portfolio") },
+      { id: "a-ic", label: "Investment committee", group: "Actions", run: go("/ic") },
+      { id: "a-settings", label: "Settings", hint: "Members, audit log, data & backups, integrations, account", group: "Actions", run: go("/settings") },
     ];
     const ql = q.toLowerCase();
     const filteredActions = ql ? actions.filter((a) => a.label.toLowerCase().includes(ql)) : actions;

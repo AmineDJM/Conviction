@@ -71,6 +71,9 @@ export async function ensurePreMeetingBrief(v: {
     }
   }
 
+  // Another request may have built the same brief while the model call was awaited: from this check to the insert there is no await.
+  const raced = meetings.preBriefForVersion(version.row.id, PRE_MEETING_BRIEF_BUILDER);
+  if (raced) return raced;
   const row = meetings.insertBrief({
     workspaceId: v.workspaceId,
     companyId: v.company.id,

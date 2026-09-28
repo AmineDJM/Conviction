@@ -104,6 +104,11 @@ function companyChunks(slug: string, c: CanonicalDeal, db: DB): ChunkDraft[] {
 
 const pendingEmbeds = new Map<string, Promise<Buffer | null>>();
 
+/** Company memory is written only for a live company: one deleted or merged while it was being indexed never gets it back. */
+function isLiveCompany(tx: Pick<DB, "select">, companyId: string) {
+  return !!tx.select({ id: s.companies.id }).from(s.companies).where(and(eq(s.companies.id, companyId), isNull(s.companies.deletedAt))).get();
+}
+
 async function writeChunks(workspaceId: string, companyId: string | null, versionId: string | null, drafts: ChunkDraft[], cost: CostController, db: DB, scopeKinds?: ChunkKind[]) {
   // Existing embeddings by text hash (workspace-wide) so unchanged text is never re-embedded.
   const hashes = drafts.map((d) => sha(`${d.title}\n${d.text}`));
@@ -139,7 +144,8 @@ async function writeChunks(workspaceId: string, companyId: string | null, versio
     for (const x of toEmbed) pendingEmbeds.delete(x.h);
   }
 
-  db.transaction((tx) => {
+  const written = db.transaction((tx) => {
+    if (companyId && !isLiveCompany(tx, companyId)) return false;
     if (companyId) tx.delete(s.chunks).where(and(eq(s.chunks.workspaceId, workspaceId), eq(s.chunks.companyId, companyId))).run();
     else if (scopeKinds?.length) tx.delete(s.chunks).where(and(eq(s.chunks.workspaceId, workspaceId), inArray(s.chunks.kind, scopeKinds))).run();
     drafts.forEach((d, i) => {
@@ -165,7 +171,9 @@ async function writeChunks(workspaceId: string, companyId: string | null, versio
         })
         .run();
     });
+    return true;
   });
+  if (!written) return { chunks: 0, embedded: 0, reused: 0, embedError };
   invalidateVectors(workspaceId);
   return { chunks: drafts.length, embedded: fresh.size, reused: drafts.length - toEmbed.length, embedError };
 }
@@ -241,6 +249,7 @@ interface PersonAttrs {
 export function writeGraph(workspaceId: string, companyId: string, c: CanonicalDeal, db: DB = getDb()) {
   const texts = selfDescriptions(c, db);
   db.transaction((tx) => {
+    if (!isLiveCompany(tx, companyId)) return;
     tx.delete(s.relations).where(and(eq(s.relations.workspaceId, workspaceId), eq(s.relations.companyId, companyId))).run();
     const t = tx as unknown as DB;
     const rel = (from: string, to: string, type: RelationType, note?: string | null, sourceRef?: string) =>
@@ -357,6 +366,7 @@ export function pruneOrphanEntities(tx: DB, workspaceId: string): number {
 
 export function writeFacts(workspaceId: string, companyId: string, versionId: string, c: CanonicalDeal, db: DB = getDb()) {
   db.transaction((tx) => {
+    if (!isLiveCompany(tx, companyId)) return;
     tx.delete(s.metricFacts).where(eq(s.metricFacts.companyId, companyId)).run();
     for (const m of c.metrics.filter((x) => x.isPrimary)) {
       tx.insert(s.metricFacts)
@@ -391,13 +401,17 @@ function deckChangesFor(companyId: string, versionId: string, db: DB): string[] 
 }
 
 export async function indexCompanyForBrain(v: { workspaceId: string; companyId: string; versionId: string; canonical: CanonicalDeal; derived: DerivedAnalysis; cost?: CostController }, db: DB = getDb()) {
-  const company = db.select().from(s.companies).where(eq(s.companies.id, v.companyId)).get()!;
+  const company = db.select().from(s.companies).where(and(eq(s.companies.id, v.companyId), isNull(s.companies.deletedAt))).get();
+  if (!company) return { chunks: 0, embedded: 0, reused: 0, embedError: null, facts: 0, packTokens: 0 };
   const cost = v.cost ?? new CostController(0.05, 0.05, (e) => repo.recordCost(v.workspaceId, null, "EMBEDDING", e));
   const { pack, tokens } = buildMemoryPack(company, v.versionId, v.canonical, v.derived, { deckChanges: deckChangesFor(v.companyId, v.versionId, db) });
-  db.insert(s.memoryPacks)
-    .values({ companyId: v.companyId, workspaceId: v.workspaceId, versionId: v.versionId, pack, text: pack.text, tokenEstimate: tokens, updatedAt: nowIso() })
-    .onConflictDoUpdate({ target: s.memoryPacks.companyId, set: { versionId: v.versionId, pack, text: pack.text, tokenEstimate: tokens, updatedAt: nowIso() } })
-    .run();
+  db.transaction((tx) => {
+    if (!isLiveCompany(tx, v.companyId)) return;
+    tx.insert(s.memoryPacks)
+      .values({ companyId: v.companyId, workspaceId: v.workspaceId, versionId: v.versionId, pack, text: pack.text, tokenEstimate: tokens, updatedAt: nowIso() })
+      .onConflictDoUpdate({ target: s.memoryPacks.companyId, set: { versionId: v.versionId, pack, text: pack.text, tokenEstimate: tokens, updatedAt: nowIso() } })
+      .run();
+  });
   writeFacts(v.workspaceId, v.companyId, v.versionId, v.canonical, db);
   writeGraph(v.workspaceId, v.companyId, v.canonical, db);
   const drafts = companyChunks(company.slug, v.canonical, db);

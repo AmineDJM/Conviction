@@ -14,11 +14,23 @@ import { overrideRows } from "@/components/deal/overrides/rows";
 import { deckComparison } from "@/server/deck-versions";
 import { DeckChanges } from "@/components/deal/deck/deck-changes";
 
-export default async function DealOverview({ params }: { params: Promise<{ slug: string }> }) {
+export default async function DealOverview({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ dedup?: string; merged?: string }> }) {
   const { slug } = await params;
+  const sp = await searchParams;
   const { company, version, run } = await loadDeal(slug);
+  // Redirect outcomes: an upload of documents already analysed (?dedup=1), or a merged dossier forwarded here (?merged=1).
+  const notice =
+    sp.dedup === "1" ? (
+      <Callout tone="accent" title="Already analysed">
+        These documents were already analysed — showing the existing analysis; no new analysis ran.
+      </Callout>
+    ) : sp.merged === "1" ? (
+      <Callout tone="accent" title="Dossier merged">
+        The dossier you opened was merged into {company.name} as a new deck version — showing {company.name}.
+      </Callout>
+    ) : null;
   // Pages render alongside the layout; while the first analysis is running there is no version yet.
-  if (!version) return null;
+  if (!version) return notice ? <main className="mx-auto max-w-[1180px] px-4 py-8 sm:px-8">{notice}</main> : null;
   const c = version!.canonical;
   const securityFlags = dedupeSecurityFlags(c.analysis.securityFlags);
   const d = version!.derived;
@@ -33,6 +45,7 @@ export default async function DealOverview({ params }: { params: Promise<{ slug:
 
   return (
     <main className="mx-auto max-w-[1180px] space-y-10 px-4 py-8 sm:px-8">
+      {notice}
       {(c.analysis.depth === "PARTIAL" || securityFlags.length > 0) && (
         <div className="grid gap-4 md:grid-cols-2">
           {c.analysis.depth === "PARTIAL" && (
@@ -132,15 +145,15 @@ export default async function DealOverview({ params }: { params: Promise<{ slug:
       <div className="grid gap-10 md:grid-cols-[1.2fr_1fr]">
         <Section eyebrow="Next best action" title={c.nextBestAction?.action ?? "—"}>
           {c.nextBestAction && <p className="text-ink-2"><RichText text={c.nextBestAction.rationale} slug={slug} /></p>}
-          {c.whatILike.length > 0 && (
+          {(c.whatILike.length > 0 || c.whatWorriesMe.length > 0) && (
             <div className="mt-6 grid gap-6 sm:grid-cols-2">
               <div>
                 <div className="t-eyebrow mb-2">What I like</div>
-                <Bullets items={c.whatILike.map((t, i) => <RichText key={i} text={t} slug={slug} />)} tone="ok" />
+                {c.whatILike.length > 0 ? <Bullets items={c.whatILike.map((t, i) => <RichText key={i} text={t} slug={slug} />)} tone="ok" /> : <p className="text-[12.5px] text-ink-3">Nothing stood out yet.</p>}
               </div>
               <div>
                 <div className="t-eyebrow mb-2">What worries me</div>
-                <Bullets items={c.whatWorriesMe.map((t, i) => <RichText key={i} text={t} slug={slug} />)} tone="warn" />
+                {c.whatWorriesMe.length > 0 ? <Bullets items={c.whatWorriesMe.map((t, i) => <RichText key={i} text={t} slug={slug} />)} tone="warn" /> : <p className="text-[12.5px] text-ink-3">No specific worry recorded.</p>}
               </div>
             </div>
           )}

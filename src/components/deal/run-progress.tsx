@@ -7,7 +7,7 @@ import { cx } from "@/components/ui";
 type Step = { step: string; label: string; status: string; at: string; detail?: string };
 
 /** Meaningful progress (no fake loading): each step reflects a real pipeline stage. */
-export function RunProgress({ runId, initial, hasVersion, title }: { runId: string; initial: Step[]; hasVersion: boolean; title?: string }) {
+export function RunProgress({ runId, initial, hasVersion, title, canStop = false }: { runId: string; initial: Step[]; hasVersion: boolean; title?: string; canStop?: boolean }) {
   const router = useRouter();
   const [steps, setSteps] = useState<Step[]>(initial);
   const [spent, setSpent] = useState<number | null>(null);
@@ -58,15 +58,17 @@ export function RunProgress({ runId, initial, hasVersion, title }: { runId: stri
             {status === "QUEUED" ? "Queued — waiting for a free analysis slot" : `${done}/${steps.length} steps`}
             {spent !== null ? ` · $${spent.toFixed(3)} spent` : ""}
           </div>
-          <button
-            type="button"
-            onClick={cancel}
-            disabled={cancelling}
-            className="text-[12px] text-ink-3 underline-offset-2 hover:text-risk hover:underline disabled:opacity-50"
-            title="Stop the analysis. Work already done is kept as a partial version."
-          >
-            {cancelling ? "Stopping…" : "Stop"}
-          </button>
+          {canStop && (
+            <button
+              type="button"
+              onClick={cancel}
+              disabled={cancelling}
+              className="text-[12px] text-ink-3 underline-offset-2 hover:text-risk hover:underline disabled:opacity-50"
+              title="Stop the analysis. Work already done is kept as a partial version."
+            >
+              {cancelling ? "Stopping…" : "Stop"}
+            </button>
+          )}
         </div>
       </div>
       <ol className="grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-3">

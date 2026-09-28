@@ -7,16 +7,26 @@ import { apiSession, canWrite } from "@/server/session";
 import { AnalysisRequestError, startAnalysis } from "@/server/analyze";
 import { AnalysisMode } from "@/domain/enums";
 import { logger } from "@/lib/log";
+import { BodyLimitError, bodyLimitResponse, readFormData } from "@/server/upload-limits";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 800;
 
+/** Whole request: up to 20 files of ≤ 50 MB each (server/analyze.ts), 200 MB in total. */
+const MAX_REQUEST_BYTES = 200 * 1024 * 1024;
+
 export async function POST(req: Request) {
   const s = await apiSession();
   if (s instanceof Response) return s;
   if (!canWrite(s)) return Response.json({ error: "Read-only role" }, { status: 403 });
-  const form = await req.formData();
+  let form: FormData;
+  try {
+    form = await readFormData(req, MAX_REQUEST_BYTES);
+  } catch (e) {
+    if (e instanceof BodyLimitError) return bodyLimitResponse(e);
+    throw e;
+  }
   const files = form.getAll("files").filter((f): f is File => f instanceof File && f.size > 0);
   const mode = AnalysisMode.safeParse(form.get("mode") ?? "STANDARD");
   if (!mode.success) return Response.json({ error: "Invalid mode" }, { status: 400 });

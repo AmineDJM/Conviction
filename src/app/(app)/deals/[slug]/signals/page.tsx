@@ -5,6 +5,19 @@ import { LatentModules, RevealedBeyondPitch } from "@/components/deal/signals/la
 
 export const metadata = { title: "Signals" };
 
+const LATENT_NAV = [
+  { href: "#maturity", label: "Operating maturity" },
+  { href: "#thinking", label: "Quality of thinking" },
+  { href: "#metric-selection", label: "Metric selection" },
+  { href: "#inflation", label: "Narrative inflation" },
+  { href: "#missing", label: "Missing information" },
+  { href: "#precision", label: "Precision" },
+  { href: "#causal", label: "Causal understanding" },
+  { href: "#ambition", label: "Ambition" },
+  { href: "#efficiency", label: "Resource efficiency" },
+  { href: "#disclosure", label: "Disclosure quality" },
+];
+
 export default async function SignalsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { version } = await loadDeal(slug);
@@ -19,16 +32,8 @@ export default async function SignalsPage({ params }: { params: Promise<{ slug: 
       <InPageNav
         items={[
           { href: "#beyond", label: "Beyond the pitch" },
-          { href: "#maturity", label: "Operating maturity" },
-          { href: "#thinking", label: "Quality of thinking" },
-          { href: "#metric-selection", label: "Metric selection" },
-          { href: "#inflation", label: "Narrative inflation" },
-          { href: "#missing", label: "Missing information" },
-          { href: "#precision", label: "Precision" },
-          { href: "#causal", label: "Causal understanding" },
-          { href: "#ambition", label: "Ambition" },
-          { href: "#efficiency", label: "Resource efficiency" },
-          { href: "#disclosure", label: "Disclosure quality" },
+          // The module anchors exist only when the latent report was computed.
+          ...(lt ? LATENT_NAV : []),
         ]}
       />
 

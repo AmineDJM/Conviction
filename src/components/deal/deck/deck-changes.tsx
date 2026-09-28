@@ -47,7 +47,7 @@ export function DeckChanges({ comparison: c, slug, compact = false }: { comparis
   );
   if (!c.diff)
     return (
-      <Section id={compact ? "deck-changes" : "deck"} eyebrow={`Deck v${c.current.seq}`} title={title}>
+      <Section id={compact ? "deck-changes" : `deck-v${c.current.seq}`} eyebrow={`Deck v${c.current.seq}`} title={title}>
         {provenance}
         <p className="text-ink-3">Comparison unavailable: {c.unavailable}.</p>
       </Section>
@@ -73,7 +73,7 @@ export function DeckChanges({ comparison: c, slug, compact = false }: { comparis
         eyebrow={`Deck v${c.previous.seq} → v${c.current.seq}`}
         title={title}
         action={
-          <Link href={`/deals/${slug}/history#deck`} className="text-[12.5px] text-ink-3 hover:text-ink">
+          <Link href={`/deals/${slug}/history#deck-v${c.current.seq}`} className="text-[12.5px] text-ink-3 hover:text-ink">
             Full comparison →
           </Link>
         }
@@ -108,7 +108,7 @@ export function DeckChanges({ comparison: c, slug, compact = false }: { comparis
   const th = "px-3 py-1.5 text-left text-[11.5px] font-medium text-ink-3";
   const td = "border-t border-line px-3 py-1.5 align-top";
   return (
-    <Section id="deck" eyebrow="Deck versions" title={title}>
+    <Section id={`deck-v${c.current.seq}`} eyebrow="Deck versions" title={title}>
       {provenance}
       <div className="space-y-6">
         {d.changedNumbers.length > 0 && (

@@ -166,7 +166,21 @@ function compactReport(r: unknown, max = 12_000): unknown {
   return summary ?? { truncated: true, excerpt: s.slice(0, max) };
 }
 
-async function execute(inp: RunDeckAnalysisInput, signal: AbortSignal): Promise<void> {
+async function execute(inp: RunDeckAnalysisInput, runSignal: AbortSignal): Promise<void> {
+  // Pipeline-local signal, chained to the run's: a failed run aborts its outstanding calls (research runs past T0) before it is finished.
+  const local = new AbortController();
+  const chain = () => local.abort(runSignal.reason);
+  if (runSignal.aborted) chain();
+  else runSignal.addEventListener("abort", chain, { once: true });
+  try {
+    await executeWith(inp, runSignal, local);
+  } finally {
+    runSignal.removeEventListener("abort", chain);
+  }
+}
+
+async function executeWith(inp: RunDeckAnalysisInput, runSignal: AbortSignal, local: AbortController): Promise<void> {
+  const signal = local.signal;
   const log = logger.child({ runId: inp.runId, companyId: inp.companyId, mode: inp.mode });
   const t0 = Date.now();
   const registry = getRegistry();
@@ -200,11 +214,18 @@ async function execute(inp: RunDeckAnalysisInput, signal: AbortSignal): Promise<
   const researchNotCompleted: string[] = [];
   let identified = false;
 
+  // Human decisions are not the analysis's to reset: every version this run saves takes them from the version current at save time.
+  const withDecisions = (d: CanonicalDeal) => {
+    const cur = repo.getCurrentVersion(repo.getCompany(inp.workspaceId, inp.companyId) ?? company);
+    if (cur) Object.assign(d, { icDecision: cur.canonical.icDecision, executionStatus: cur.canonical.executionStatus });
+    return d;
+  };
   const saveProgress = (summary: string) => {
-    const d = derive(deal, registry, inp.fund);
+    const d = derive(withDecisions(deal), registry, inp.fund);
     repo.saveVersion({ company, canonical: deal, derived: d, reason: "DECK_ANALYSIS", runId: inp.runId, summary, userId: inp.userId, preliminary: true });
     return d;
   };
+  let researchP: Promise<unknown> | null = null;
 
   try {
     /* ---------------- INGEST ---------------- */
@@ -284,7 +305,7 @@ async function execute(inp: RunDeckAnalysisInput, signal: AbortSignal): Promise<
     /* ---------------- RESEARCH (parallel with the rest of T0) ---------------- */
     const clearlyOut = prelim.fundFit.mandate === "FAIL";
     const keyClaims = triage.data.keyClaims;
-    const researchP = runResearch();
+    researchP = runResearch();
 
     async function runResearch() {
       const out: { step: string; result: Awaited<ReturnType<typeof structured<typeof ResearchOutput>>> }[] = [];
@@ -395,7 +416,7 @@ async function execute(inp: RunDeckAnalysisInput, signal: AbortSignal): Promise<
     saveProgress("Preliminary: extraction");
 
     /* ---------------- research results ---------------- */
-    const research = await researchP;
+    const research = await (researchP as ReturnType<typeof runResearch>);
     throwIfCancelled(signal);
     const keyToClaim = linkKeyClaims(keyClaims, deal.claims);
     for (const { step: s, result } of research) {
@@ -471,7 +492,7 @@ async function execute(inp: RunDeckAnalysisInput, signal: AbortSignal): Promise<
 
     /* ---------------- MEMO: finalize canonical + deterministic layer ---------------- */
     step("MEMO", "RUNNING");
-    const derived = finalize(deal, { inp, skipped, researchNotCompleted, clearlyOut, t0 });
+    const derived = finalize(withDecisions(deal), { inp, skipped, researchNotCompleted, clearlyOut, t0 });
     const version = repo.saveVersion({
       company,
       canonical: deal,
@@ -508,11 +529,15 @@ async function execute(inp: RunDeckAnalysisInput, signal: AbortSignal): Promise<
     log.info({ spentUsd: cost.spentUsd, depth: deal.analysis.depth, ms: Date.now() - t0 }, "analysis finished");
   } catch (e) {
     for (const r of reservations) cost.release(r);
-    if (isCancel(e, signal)) {
+    // Stop and settle whatever is still in flight (research) so it can neither touch the finished run nor keep spending.
+    local.abort(runSignal.reason ?? new Error("Run failed"));
+    await researchP?.catch(() => undefined);
+    if (isCancel(e, runSignal)) {
       log.info("analysis cancelled");
-      if (identified) {
+      // A company deleted or merged away (which cancels its run) gets no partial version.
+      if (identified && repo.getCompany(inp.workspaceId, inp.companyId)) {
         deal.analysis.cancelled = true;
-        const d = finalize(deal, { inp, skipped: [...skipped, { step: "RUN", reason: "Cancelled by user" }], researchNotCompleted, clearlyOut: false, t0 });
+        const d = finalize(withDecisions(deal), { inp, skipped: [...skipped, { step: "RUN", reason: "Cancelled by user" }], researchNotCompleted, clearlyOut: false, t0 });
         repo.saveVersion({ company, canonical: deal, derived: d, reason: "DECK_ANALYSIS", runId: inp.runId, summary: `${inp.mode} analysis cancelled (partial)`, userId: inp.userId, preliminary: true });
       }
       repo.finishRun(inp.runId, "CANCELLED", cost.spentUsd, identified ? "PARTIAL" : null, "Cancelled by user");

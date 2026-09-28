@@ -35,6 +35,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     dismissDuplicate(s.workspaceId, s.userId, company.id, b.otherId);
     return Response.json({ ok: true });
   }
+  // A merge soft-deletes this company: same roles as deletion.
+  if (s.role !== "OWNER" && s.role !== "PARTNER") return Response.json({ error: "Only owners and partners can merge companies" }, { status: 403 });
   try {
     const started = await mergeIntoCompany({ workspaceId: s.workspaceId, userId: s.userId, sourceId: company.id, targetId: b.targetId, mode: b.mode });
     started.promise.catch((e) => logger.error({ err: (e as Error).message, runId: started.run.id }, "background analysis crashed"));

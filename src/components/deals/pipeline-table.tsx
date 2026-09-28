@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Badge, cx, Empty, IndexBar, Button } from "@/components/ui";
-import { DECISION_LABEL, STAGE_LABEL, decisionTone, evidenceTone, levelTone, relative, titleCase, usd } from "@/lib/format";
+import { Ago, Badge, cx, Empty, IndexBar, Button } from "@/components/ui";
+import { DECISION_LABEL, STAGE_LABEL, decisionTone, evidenceTone, levelTone, titleCase, usd } from "@/lib/format";
 
 export interface PipelineRow {
   id: string;
@@ -269,7 +269,7 @@ export function PipelineTable({ rows }: { rows: PipelineRow[] }) {
                   </td>
                 )}
                 {show("Base MOIC") && <td className={cx("num border-t border-line px-3 text-right group-hover:bg-surface-2", py)}>{r.baseMoic !== null ? `${r.baseMoic.toFixed(1)}×` : "—"}</td>}
-                {show("Updated") && <td className={cx("num border-t border-line px-3 text-right text-[12px] text-ink-3 group-hover:bg-surface-2", py)}>{relative(r.updatedAt)}</td>}
+                {show("Updated") && <td className={cx("num border-t border-line px-3 text-right text-[12px] text-ink-3 group-hover:bg-surface-2", py)}><Ago at={r.updatedAt} /></td>}
               </tr>
             ))}
           </tbody>

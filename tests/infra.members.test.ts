@@ -7,6 +7,7 @@ import { openDb, schema, type DB } from "@/db/client";
 import { createSession, createWorkspaceWithOwner, login, resolveSession } from "@/server/auth";
 import * as members from "@/server/members";
 import * as repo from "@/server/repo";
+import * as meetings from "@/server/meetings";
 import { buildExport, ExportTooLargeError } from "@/server/export";
 import { LocalDiskStorage, setStorageAdapter, storeFile } from "@/server/storage";
 
@@ -78,6 +79,8 @@ describe("full export", () => {
         const key = await storeFile(ws.workspaceId, `sha${ws.workspaceId}`, "deck.pdf", bytes);
         repo.saveDocument({ workspaceId: ws.workspaceId, companyId: c.id, filename: "deck.pdf", mime: "application/pdf", kind: "PDF", sizeBytes: bytes.length, sha256: "x", storagePath: key, pages: [{ pageNo: 1, text: "page one" }] }, db);
         db.insert(schema.chunks).values({ id: `chk_${ws.workspaceId}`, workspaceId: ws.workspaceId, companyId: c.id, kind: "PAGE", title: "t", text: "page one", textHash: "h", embedding: Buffer.alloc(16), embeddingDim: 4, createdAt: "2026-01-01" }).run();
+        const mt = meetings.createMeeting({ workspaceId: ws.workspaceId, companyId: c.id, title: "Call", heldAt: "2026-01-01", participants: [], source: "PASTED_TRANSCRIPT", status: "READY", preAnalysisVersionId: "ver_x", preBriefId: null, transcriptDocumentId: null, recordingDocumentId: null, runId: null, createdBy: null }, db);
+        meetings.saveSegments(mt.id, [{ idx: 0, speaker: "A", startSec: null, endSec: null, text: `said in ${ws.workspaceId}` }], db);
       }
       repo.saveDocument({ workspaceId: a.workspaceId, companyId: repo.listCompanies(a.workspaceId, db)[0]!.id, filename: "gone.pdf", mime: "application/pdf", kind: "PDF", sizeBytes: 3, sha256: "y", storagePath: `${a.workspaceId}/missing.pdf`, pages: [] }, db);
 
@@ -92,9 +95,13 @@ describe("full export", () => {
       expect(m.documents.files).toBe(1);
       expect(m.documents.missing).toHaveLength(1);
       expect(manifest.counts.document_pages).toBe(1);
-      for (const t of ["companies", "company_versions", "documents", "document_pages", "analysis_runs", "cost_records", "history_events", "fund_knowledge", "ic_members", "ic_observations", "meetings", "chat_threads", "chat_messages", "funds", "memory_packs", "metric_facts", "entities", "relations", "audit_log", "chunks"])
+      for (const t of ["companies", "company_versions", "documents", "document_pages", "analysis_runs", "cost_records", "history_events", "fund_knowledge", "ic_members", "ic_observations", "meetings", "chat_threads", "chat_messages", "funds", "memory_packs", "metric_facts", "entities", "relations", "audit_log", "chunks", "founder_meetings", "meeting_segments", "meeting_briefs", "question_feedback", "analysis_feedback", "formation_attempts", "formation_mistakes", "integration_imports"])
         expect(loaded.file(`tables/${t}.json`), t).not.toBeNull();
+      // OAuth tokens and pending authorizations never leave the instance.
+      for (const t of ["integration_connections", "integration_oauth_states", "sessions", "users", "memberships"]) expect(loaded.file(`tables/${t}.json`), t).toBeNull();
 
+      expect((await read("tables/founder_meetings.json")).map((x: { workspaceId: string }) => x.workspaceId)).toEqual([a.workspaceId]);
+      expect((await read("tables/meeting_segments.json")).map((x: { text: string }) => x.text)).toEqual([`said in ${a.workspaceId}`]);
       const companies = await read("tables/companies.json");
       expect(companies.every((c: { workspaceId: string }) => c.workspaceId === a.workspaceId)).toBe(true);
       const chunks = await read("tables/chunks.json");

@@ -275,11 +275,15 @@ export function createRun(
   return db.select().from(s.analysisRuns).where(eq(s.analysisRuns.id, id)).get()!;
 }
 
+/** Step progress of a live run. A finished run (COMPLETED / PARTIAL / FAILED / CANCELLED) is never reopened by a late step update. */
 export function updateRunStep(runId: string, step: string, status: "RUNNING" | "DONE" | "SKIPPED" | "FAILED", detail?: string, db: DB = getDb()) {
   const run = db.select().from(s.analysisRuns).where(eq(s.analysisRuns.id, runId)).get();
-  if (!run) return;
+  if (!run || (run.status !== "QUEUED" && run.status !== "RUNNING")) return;
   const progress = run.progress.map((p) => (p.step === step ? { ...p, status, at: nowIso(), ...(detail ? { detail } : {}) } : p));
-  db.update(s.analysisRuns).set({ progress, status: "RUNNING" }).where(eq(s.analysisRuns.id, runId)).run();
+  db.update(s.analysisRuns)
+    .set({ progress, status: "RUNNING" })
+    .where(and(eq(s.analysisRuns.id, runId), inArray(s.analysisRuns.status, ["QUEUED", "RUNNING"])))
+    .run();
 }
 
 export function finishRun(runId: string, status: RunRow["status"], spentUsd: number, depth: string | null, error?: string, db: DB = getDb()) {
@@ -429,9 +433,22 @@ export function mergedTarget(workspaceId: string, idOrSlug: string, db: DB = get
   return row?.mergedIntoId ? getCompany(workspaceId, row.mergedIntoId, db) : undefined;
 }
 
-/** Soft-deletes a company merged into another one. Its versions, documents and history are kept (audit); it leaves the pipeline. */
-export function markCompanyMerged(sourceId: string, targetId: string, db: DB = getDb()) {
-  db.update(s.companies).set({ mergedIntoId: targetId, deletedAt: nowIso(), updatedAt: nowIso() }).where(eq(s.companies.id, sourceId)).run();
+/**
+ * Soft-deletes a company merged into another one. Its versions, documents and history are kept (audit); it leaves the pipeline.
+ * Conditional: only a live source into a live target — false when either was merged or deleted meanwhile (so a merge happens once).
+ */
+export function markCompanyMerged(sourceId: string, targetId: string, db: DB = getDb()): boolean {
+  const r = db
+    .update(s.companies)
+    .set({ mergedIntoId: targetId, deletedAt: nowIso(), updatedAt: nowIso() })
+    .where(and(eq(s.companies.id, sourceId), isNull(s.companies.deletedAt), sql`exists (select 1 from companies t where t.id = ${targetId} and t.deleted_at is null)`))
+    .run();
+  return r.changes === 1;
+}
+
+/** Undoes markCompanyMerged when the merge could not start. */
+export function unmarkCompanyMerged(sourceId: string, targetId: string, db: DB = getDb()) {
+  db.update(s.companies).set({ mergedIntoId: null, deletedAt: null, updatedAt: nowIso() }).where(and(eq(s.companies.id, sourceId), eq(s.companies.mergedIntoId, targetId))).run();
 }
 
 export function getDocumentPages(documentId: string, db: DB = getDb()) {

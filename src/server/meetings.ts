@@ -136,9 +136,15 @@ export function insertBrief(
   db: DB = getDb(),
 ): BriefRow {
   const id = newId("brf");
-  db.insert(s.meetingBriefs)
+  // PRE_MEETING_BRIEF is unique per (version, builder version) (meeting_briefs_pre_unique_idx): a concurrent insert returns the existing row.
+  const r = db.insert(s.meetingBriefs)
     .values({ id, workspaceId: v.workspaceId, companyId: v.companyId, kind: v.kind, versionId: v.versionId, meetingId: v.meetingId, builderVersion: v.builderVersion, content: v.content as never, generation: v.generation, createdBy: v.createdBy, createdAt: nowIso() })
+    .onConflictDoNothing()
     .run();
+  if (r.changes === 0 && v.kind === "PRE_MEETING_BRIEF") {
+    const existing = preBriefForVersion(v.versionId, v.builderVersion, db);
+    if (existing) return existing;
+  }
   return db.select().from(s.meetingBriefs).where(eq(s.meetingBriefs.id, id)).get()!;
 }
 

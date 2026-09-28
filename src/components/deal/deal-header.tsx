@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useShell } from "@/components/shell/shell-context";
-import { Badge, Button } from "@/components/ui";
-import { DECISION_LABEL, STAGE_LABEL, decisionTone, relative, titleCase, usd } from "@/lib/format";
+import { Ago, Badge, Button } from "@/components/ui";
+import { DECISION_LABEL, STAGE_LABEL, decisionTone, titleCase, usd } from "@/lib/format";
 import { DeckUpload } from "@/components/deal/deck/deck-upload";
 
 export function DealHeader(p: {
@@ -32,6 +32,8 @@ export function DealHeader(p: {
   companyId?: string;
   deck?: { seq: number; filename: string; total: number } | null;
   canWrite?: boolean;
+  /** Deleting a company is reserved to owners and partners (the API refuses anyone else). */
+  canDelete?: boolean;
   running?: boolean;
 }) {
   const { ask } = useShell();
@@ -86,7 +88,9 @@ export function DealHeader(p: {
                 </Badge>
               </Link>
             )}
-            <span>Updated {relative(p.updatedAt)}</span>
+            <span>
+              Updated <Ago at={p.updatedAt} />
+            </span>
           </div>
           {p.aliases && (p.aliases.formerNames.length > 0 || p.aliases.linked.length > 0) && (
             <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-ink-3">
@@ -121,19 +125,26 @@ export function DealHeader(p: {
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" variant="ghost" onClick={remove} title="Delete this company and all its data">
-            Delete
-          </Button>
+          {p.canDelete && (
+            <Button size="sm" variant="ghost" onClick={remove} title="Delete this company and all its data">
+              Delete
+            </Button>
+          )}
           {p.canWrite && p.companyId && <DeckUpload companyId={p.companyId} slug={p.slug} nextDeck={(p.deck?.total ?? 0) + 1} defaultMode={p.mode ?? "STANDARD"} disabled={p.running} />}
           <Button size="sm" variant="ghost" onClick={() => ask(`Challenge the investment thesis for ${p.name}.`)}>
             Challenge thesis
           </Button>
-          <Button size="sm" href={`/deals/${p.slug}/quick`}>
-            Quick Memo
-          </Button>
-          <Button size="sm" href={`/deals/${p.slug}/memo`}>
-            Investment Memo
-          </Button>
+          {/* The memos render from a stored version: nothing to open while the first analysis is running. */}
+          {p.versionNo !== null && (
+            <>
+              <Button size="sm" href={`/deals/${p.slug}/quick`}>
+                Quick Memo
+              </Button>
+              <Button size="sm" href={`/deals/${p.slug}/memo`}>
+                Investment Memo
+              </Button>
+            </>
+          )}
         </div>
       </div>
     </header>

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { loadDeal } from "@/server/deal";
 import * as repo from "@/server/repo";
 import * as meetings from "@/server/meetings";
+import { applyOverrides } from "@/engine/overrides";
 import type { FounderCallOutput } from "@/ai/prompts/founder-call";
 import type { MeetingGuard } from "@/orchestration/assemble";
 import { meetingDiff, sortChanges } from "@/reports/meeting-diff";
@@ -20,9 +21,12 @@ export default async function MeetingChangesPage({ params, searchParams }: { par
   if (!version) return null;
   const m = meetings.getMeeting(company.id, meetingId);
   if (!m || !m.postAnalysisVersionId) notFound();
-  const pre = repo.getVersion(company.id, m.preAnalysisVersionId);
-  const post = repo.getVersion(company.id, m.postAnalysisVersionId);
-  if (!pre || !post) notFound();
+  const preRaw = repo.getVersion(company.id, m.preAnalysisVersionId);
+  const postRaw = repo.getVersion(company.id, m.postAnalysisVersionId);
+  if (!preRaw || !postRaw) notFound();
+  // Compare the effective deals (raw extraction + analyst overrides) — the objects each version's derived analysis scored.
+  const pre = { ...preRaw, canonical: applyOverrides(preRaw.canonical) };
+  const post = { ...postRaw, canonical: applyOverrides(postRaw.canonical) };
   const stages = meetings.versionStages(company.id);
   const ex = m.extraction as { promptVersion: string; output: FounderCallOutput; guards: MeetingGuard[] } | null;
   const rows = sortChanges(meetingDiff(pre, post, { extraction: ex?.output ?? null, segments: meetings.getSegments(m.id), guards: ex?.guards ?? [] }));

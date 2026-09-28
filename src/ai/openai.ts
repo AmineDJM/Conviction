@@ -14,6 +14,7 @@ import { eq, sql } from "drizzle-orm";
 import { toStrictJsonSchema } from "./json-schema";
 import type { CostController, Reservation } from "./cost";
 import type { Usage } from "./pricing";
+import { ProviderError, providerError } from "./errors";
 
 const BASE_URL = process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1";
 export const PRIMARY_MODEL = process.env.CONVICTION_MODEL ?? "gpt-5.6-luna";
@@ -74,7 +75,7 @@ export class ModelOutputError extends Error {}
 
 interface RawResponse {
   status?: string;
-  error?: { message?: string } | null;
+  error?: { message?: string; code?: string | null; type?: string | null } | null;
   incomplete_details?: { reason?: string } | null;
   output?: {
     type: string;
@@ -89,6 +90,9 @@ interface RawResponse {
   };
   tool_usage?: { web_search?: { num_requests?: number } };
 }
+
+const NO_USAGE: Usage = { inputTokens: 0, cachedTokens: 0, outputTokens: 0, reasoningTokens: 0, webSearches: 0 };
+const isAbort = (e: unknown, signal?: AbortSignal | null) => !!signal?.aborted || (e as Error)?.name === "AbortError";
 
 function usageOf(r: RawResponse): Usage {
   const webFromOutput = (r.output ?? []).filter((o) => o.type === "web_search_call").length;
@@ -151,38 +155,52 @@ export async function fetchWithRetry(url: string, init: RequestInit, retries = 4
   }
 }
 
-async function post(body: Record<string, unknown>, signal?: AbortSignal): Promise<RawResponse> {
-  const res = await fetchWithRetry(`${BASE_URL}/responses`, { method: "POST", headers: headers(), body: JSON.stringify({ ...body, stream: true }), signal });
+/** `state.accepted` is set once the provider accepted the request (HTTP 2xx): from then on a failure may still be billed. */
+async function post(body: Record<string, unknown>, signal?: AbortSignal, state: { accepted: boolean } = { accepted: false }): Promise<RawResponse> {
+  let res: Response;
+  try {
+    res = await fetchWithRetry(`${BASE_URL}/responses`, { method: "POST", headers: headers(), body: JSON.stringify({ ...body, stream: true }), signal });
+  } catch (e) {
+    if (isAbort(e, signal)) throw e;
+    throw providerError("responses", null, (e as Error).message, { code: (e as Error).name === "TimeoutError" ? "timeout" : null });
+  }
   if (!res.ok || !res.body) {
     const json = (await res.json().catch(() => ({}))) as RawResponse;
-    throw new Error(`OpenAI ${res.status}: ${json.error?.message ?? res.statusText}`);
+    throw providerError("responses", res.status, json.error?.message ?? res.statusText, { code: json.error?.code ?? json.error?.type });
   }
+  state.accepted = true;
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buf = "";
   let final: RawResponse | null = null;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    let idx: number;
-    while ((idx = buf.indexOf("\n\n")) >= 0) {
-      const event = buf.slice(0, idx);
-      buf = buf.slice(idx + 2);
-      const dataLine = event.split("\n").find((l) => l.startsWith("data: "));
-      if (!dataLine || dataLine === "data: [DONE]") continue;
-      let ev: { type?: string; response?: RawResponse; error?: { message?: string } };
-      try {
-        ev = JSON.parse(dataLine.slice(6));
-      } catch {
-        continue;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let idx: number;
+      while ((idx = buf.indexOf("\n\n")) >= 0) {
+        const event = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+        const dataLine = event.split("\n").find((l) => l.startsWith("data: "));
+        if (!dataLine || dataLine === "data: [DONE]") continue;
+        let ev: { type?: string; response?: RawResponse; error?: { message?: string; code?: string | null; type?: string | null } };
+        try {
+          ev = JSON.parse(dataLine.slice(6));
+        } catch {
+          continue;
+        }
+        if ((ev.type === "response.completed" || ev.type === "response.incomplete") && ev.response) final = ev.response;
+        else if (ev.type === "response.failed")
+          throw providerError("responses stream", null, ev.response?.error?.message ?? "response failed", { code: ev.response?.error?.code ?? ev.response?.error?.type, usage: ev.response?.usage ? usageOf(ev.response) : null });
+        else if (ev.type === "error") throw providerError("responses stream", null, ev.error?.message ?? dataLine.slice(0, 200), { code: ev.error?.code ?? ev.error?.type });
       }
-      if ((ev.type === "response.completed" || ev.type === "response.incomplete") && ev.response) final = ev.response;
-      else if (ev.type === "response.failed") throw new Error(`OpenAI response failed: ${ev.response?.error?.message ?? "unknown"}`);
-      else if (ev.type === "error") throw new Error(`OpenAI stream error: ${ev.error?.message ?? dataLine.slice(0, 200)}`);
     }
+  } catch (e) {
+    if (e instanceof ProviderError || isAbort(e, signal)) throw e;
+    throw providerError("responses stream", null, (e as Error).message);
   }
-  if (!final) throw new Error("OpenAI stream ended without a final response");
+  if (!final) throw providerError("responses stream", null, "stream ended without a final response");
   return final;
 }
 
@@ -225,11 +243,15 @@ export async function structured<T extends z.ZodType>(call: StructuredCall<T>): 
     }
     const t0 = Date.now();
     let raw: RawResponse | null = null;
+    const state = { accepted: false };
     try {
-      raw = await post(body, call.signal);
+      raw = await post(body, call.signal, state);
     } catch (e) {
       lastErr = e;
-      await call.cost.record({ step: call.step, model, promptVersion: call.promptVersion, usage: { inputTokens: 0, cachedTokens: 0, outputTokens: 0, reasoningTokens: 0, webSearches: 0 }, estimatedUsd: estimated, latencyMs: Date.now() - t0, toolCalls: 0 });
+      // Refused requests are not billed; an accepted request that then failed may be: its reported usage, else the worst case.
+      const reported = e instanceof ProviderError ? e.usage : null;
+      await call.cost.record({ step: call.step, model, promptVersion: call.promptVersion, usage: reported ?? NO_USAGE, estimatedUsd: estimated, ...(reported ? {} : { actualUsd: state.accepted ? estimated : 0 }), latencyMs: Date.now() - t0, toolCalls: 0 });
+      if (isAbort(e, call.signal)) break;
       if (attempt < maxAttempts) await new Promise((r) => setTimeout(r, 1500 * attempt));
       continue;
     }
@@ -239,7 +261,12 @@ export async function structured<T extends z.ZodType>(call: StructuredCall<T>): 
     const text = outputText(raw);
     try {
       if (raw.status === "incomplete") throw new ModelOutputError(`Incomplete response: ${raw.incomplete_details?.reason ?? "unknown"}`);
-      const parsed = JSON.parse(text);
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        throw new ModelOutputError("The model returned malformed JSON");
+      }
       const result = call.schema.safeParse(parsed);
       if (!result.success) throw new ModelOutputError(`Schema validation failed: ${result.error.message.slice(0, 500)}`);
       const searchSources: { url: string; title?: string }[] = [];
@@ -295,41 +322,56 @@ export async function* stream(call: StreamCall): AsyncGenerator<{ type: "delta";
     body.tools = [{ type: "web_search" }];
     body.max_tool_calls = call.webSearch.maxCalls;
   }
-  const res = await fetchWithRetry(`${BASE_URL}/responses`, { method: "POST", headers: headers(), body: JSON.stringify(body), signal: call.signal }, 2);
-  if (!res.ok || !res.body) {
-    const txt = await res.text().catch(() => "");
-    throw new Error(`OpenAI ${res.status}: ${txt.slice(0, 300)}`);
-  }
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buf = "";
-  let usage: Usage = { inputTokens: 0, cachedTokens: 0, outputTokens: 0, reasoningTokens: 0, webSearches: 0 };
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    let idx: number;
-    while ((idx = buf.indexOf("\n\n")) >= 0) {
-      const event = buf.slice(0, idx);
-      buf = buf.slice(idx + 2);
-      const dataLine = event.split("\n").find((l) => l.startsWith("data: "));
-      if (!dataLine) continue;
-      const payload = dataLine.slice(6);
-      if (payload === "[DONE]") continue;
-      let ev: { type?: string; delta?: string; response?: RawResponse };
-      try {
-        ev = JSON.parse(payload);
-      } catch {
-        continue;
-      }
-      if (ev.type === "response.output_text.delta" && ev.delta) yield { type: "delta", text: ev.delta };
-      else if ((ev.type === "response.completed" || ev.type === "response.incomplete") && ev.response) usage = usageOf(ev.response);
-      else if (ev.type === "response.failed" || ev.type === "error") throw new Error(`Stream failed: ${payload.slice(0, 300)}`);
+  let accepted = false;
+  let recorded = false;
+  try {
+    let res: Response;
+    try {
+      res = await fetchWithRetry(`${BASE_URL}/responses`, { method: "POST", headers: headers(), body: JSON.stringify(body), signal: call.signal }, 2);
+    } catch (e) {
+      if (isAbort(e, call.signal)) throw e;
+      throw providerError("responses (stream)", null, (e as Error).message);
     }
+    if (!res.ok || !res.body) {
+      const txt = await res.text().catch(() => "");
+      throw providerError("responses (stream)", res.status, txt.slice(0, 1000), { code: txt });
+    }
+    accepted = true;
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    let usage: Usage = NO_USAGE;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let idx: number;
+      while ((idx = buf.indexOf("\n\n")) >= 0) {
+        const event = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+        const dataLine = event.split("\n").find((l) => l.startsWith("data: "));
+        if (!dataLine) continue;
+        const payload = dataLine.slice(6);
+        if (payload === "[DONE]") continue;
+        let ev: { type?: string; delta?: string; response?: RawResponse };
+        try {
+          ev = JSON.parse(payload);
+        } catch {
+          continue;
+        }
+        if (ev.type === "response.output_text.delta" && ev.delta) yield { type: "delta", text: ev.delta };
+        else if ((ev.type === "response.completed" || ev.type === "response.incomplete") && ev.response) usage = usageOf(ev.response);
+        else if (ev.type === "response.failed" || ev.type === "error") throw providerError("responses (stream)", null, payload.slice(0, 1000), { code: payload });
+      }
+    }
+    const latencyMs = Date.now() - t0;
+    recorded = true;
+    await call.cost.record({ step: call.step, model, promptVersion: call.promptVersion, usage, estimatedUsd: estimated, latencyMs, toolCalls: usage.webSearches });
+    yield { type: "done", usage, latencyMs };
+  } finally {
+    // Failure, cancellation or an abandoned stream: release the in-flight hold (worst case charged once the request was accepted).
+    if (!recorded) await call.cost.record({ step: call.step, model, promptVersion: call.promptVersion, usage: NO_USAGE, estimatedUsd: estimated, actualUsd: accepted ? estimated : 0, latencyMs: Date.now() - t0, toolCalls: 0 });
   }
-  const latencyMs = Date.now() - t0;
-  await call.cost.record({ step: call.step, model, promptVersion: call.promptVersion, usage, estimatedUsd: estimated, latencyMs, toolCalls: usage.webSearches });
-  yield { type: "done", usage, latencyMs };
 }
 
 /* ---------------------------------------------------------------- */
@@ -345,13 +387,24 @@ export async function embed(texts: string[], cost: CostController, step = "embed
     const chars = batch.reduce((a, t) => a + t.length, 0);
     const estimated = cost.authorize(step, EMBEDDING_MODEL, chars, 0);
     const t0 = Date.now();
-    const res = await fetchWithRetry(`${BASE_URL}/embeddings`, {
-      method: "POST",
-      headers: headers(),
-      body: JSON.stringify({ model: EMBEDDING_MODEL, input: batch, dimensions: EMBEDDING_DIM }),
-    });
-    const json = (await res.json()) as { data?: { embedding: number[]; index: number }[]; usage?: { prompt_tokens?: number }; error?: { message?: string } };
-    if (!res.ok || !json.data) throw new Error(`Embeddings ${res.status}: ${json.error?.message ?? ""}`);
+    type EmbedJson = { data?: { embedding: number[]; index: number }[]; usage?: { prompt_tokens?: number }; error?: { message?: string; code?: string | null } };
+    let res: Response;
+    let json: EmbedJson;
+    try {
+      res = await fetchWithRetry(`${BASE_URL}/embeddings`, {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify({ model: EMBEDDING_MODEL, input: batch, dimensions: EMBEDDING_DIM }),
+      });
+      json = (await res.json().catch(() => ({}))) as EmbedJson;
+    } catch (e) {
+      await cost.record({ step, model: EMBEDDING_MODEL, promptVersion: null, usage: NO_USAGE, estimatedUsd: estimated, actualUsd: 0, latencyMs: Date.now() - t0, toolCalls: 0 });
+      throw providerError("embeddings", null, (e as Error).message);
+    }
+    if (!res.ok || !json.data) {
+      await cost.record({ step, model: EMBEDDING_MODEL, promptVersion: null, usage: NO_USAGE, estimatedUsd: estimated, actualUsd: 0, latencyMs: Date.now() - t0, toolCalls: 0 });
+      throw providerError("embeddings", res.status, json.error?.message ?? res.statusText, { code: json.error?.code });
+    }
     await cost.record({
       step,
       model: EMBEDDING_MODEL,

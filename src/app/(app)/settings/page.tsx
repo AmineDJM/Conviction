@@ -3,6 +3,7 @@ import Link from "next/link";
 import path from "node:path";
 import { headers } from "next/headers";
 import { requireSession } from "@/server/session";
+import { isInstanceOwner } from "@/server/auth";
 import { auditActions, listAudit, listMembers, ROLE_DESCRIPTION } from "@/server/members";
 import { backupDir, backupScheduleDescription, listBackups, offsiteDescription, RETENTION } from "@/server/backup";
 import { storageDescription, storageKind } from "@/server/storage";
@@ -69,7 +70,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             filter={{ action: sp.action ?? "", user: sp.user ?? "", q: sp.q ?? "" }}
           />
         )}
-        {tab === "data" && <DataTab isOwner={isOwner} canAudit={canAudit} workspaceId={s.workspaceId} />}
+        {tab === "data" && <DataTab isOwner={isOwner} canBackup={isInstanceOwner(s)} canAudit={canAudit} workspaceId={s.workspaceId} />}
         {tab === "integrations" && (
           <IntegrationsPanel
             connectors={connectorStatuses(process.env, { origin: appOrigin(await headers()), connection: viewerConnections(s.workspaceId, s.userId) })}
@@ -88,7 +89,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   );
 }
 
-function DataTab({ isOwner, canAudit, workspaceId }: { isOwner: boolean; canAudit: boolean; workspaceId: string }) {
+function DataTab({ isOwner, canBackup, canAudit, workspaceId }: { isOwner: boolean; canBackup: boolean; canAudit: boolean; workspaceId: string }) {
   const kind = storageKind();
   const dir = backupDir();
   const consistency = canAudit ? checkConsistency(workspaceId) : null;
@@ -103,11 +104,12 @@ function DataTab({ isOwner, canAudit, workspaceId }: { isOwner: boolean; canAudi
       />
       <BackupPanel
         isOwner={isOwner}
+        canBackup={canBackup}
         dir={dir}
         schedule={backupScheduleDescription()}
         retention={`${RETENTION.daily} daily · ${RETENTION.manual} manual · ${RETENTION["pre-migration"]} pre-migration`}
         offsite={offsiteDescription()}
-        backups={isOwner ? listBackups(dir).map((b) => ({ name: b.name, reason: b.reason, createdAt: b.createdAt, sizeBytes: b.sizeBytes, integrity: b.integrity, companies: b.counts.companies ?? null, documents: b.counts.documents ?? null, remote: b.remote ? ("key" in b.remote ? "uploaded" : `failed: ${b.remote.error}`) : null, detail: b.detail ?? null })) : []}
+        backups={canBackup ? listBackups(dir).map((b) => ({ name: b.name, reason: b.reason, createdAt: b.createdAt, sizeBytes: b.sizeBytes, integrity: b.integrity, companies: b.counts.companies ?? null, documents: b.counts.documents ?? null, remote: b.remote ? ("key" in b.remote ? "uploaded" : `failed: ${b.remote.error}`) : null, detail: b.detail ?? null })) : []}
         consistency={consistency ? { checked: consistency.companiesChecked, inFlight: consistency.skippedInFlight.length, violations: consistency.violations.slice(0, 50).map((v) => ({ company: v.companyName, kind: v.kind, message: v.message })), total: consistency.violations.length } : null}
       />
     </div>

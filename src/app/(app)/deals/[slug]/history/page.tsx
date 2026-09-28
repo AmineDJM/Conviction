@@ -92,7 +92,7 @@ export default async function HistoryPage({ params, searchParams }: { params: Pr
                 </span>
                 <span className="text-[12px] text-ink-3">
                   {row ? (
-                    <Link href={`/deals/${company.slug}/history?to=${row.id}#compare`} className="hover:text-accent-text">
+                    <Link href={`/deals/${company.slug}/history?${prevOf(row.id) ? `from=${prevOf(row.id)!.id}&` : ""}to=${row.id}#compare`} className="hover:text-accent-text">
                       analysed in v{row.versionNo}
                     </Link>
                   ) : (

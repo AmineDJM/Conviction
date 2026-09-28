@@ -12,7 +12,7 @@
 import JSZip from "jszip";
 import fs from "node:fs";
 import path from "node:path";
-import { eq, getTableColumns, inArray } from "drizzle-orm";
+import { and, eq, getTableColumns, inArray } from "drizzle-orm";
 import { getDb, schema as s, type DB } from "@/db/client";
 import { readStoredFile } from "./storage";
 
@@ -59,6 +59,8 @@ export function exportTables(workspaceId: string, db: DB = getDb()): Record<stri
   const threadIds = threads.map((t) => t.id);
   const { embedding, ...chunkCols } = getTableColumns(s.chunks); // embeddings are not portable data
   void embedding;
+  const founderMeetings = inChunks(companyIds, (b) => db.select().from(s.founderMeetings).where(and(eq(s.founderMeetings.workspaceId, workspaceId), inArray(s.founderMeetings.companyId, b))).all());
+  const meetingIds = founderMeetings.map((m) => m.id);
   return {
     funds: db.select().from(s.funds).where(eq(s.funds.workspaceId, workspaceId)).all(),
     companies,
@@ -81,6 +83,15 @@ export function exportTables(workspaceId: string, db: DB = getDb()): Record<stri
     relations: db.select().from(s.relations).where(eq(s.relations.workspaceId, workspaceId)).all(),
     chunks: db.select(chunkCols).from(s.chunks).where(eq(s.chunks.workspaceId, workspaceId)).all(),
     audit_log: db.select().from(s.auditLog).where(eq(s.auditLog.workspaceId, workspaceId)).all(),
+    founder_meetings: founderMeetings,
+    meeting_segments: inChunks(meetingIds, (b) => db.select().from(s.meetingSegments).where(inArray(s.meetingSegments.meetingId, b)).all()),
+    meeting_briefs: inChunks(companyIds, (b) => db.select().from(s.meetingBriefs).where(and(eq(s.meetingBriefs.workspaceId, workspaceId), inArray(s.meetingBriefs.companyId, b))).all()),
+    question_feedback: db.select().from(s.questionFeedback).where(eq(s.questionFeedback.workspaceId, workspaceId)).all(),
+    analysis_feedback: db.select().from(s.analysisFeedback).where(eq(s.analysisFeedback.workspaceId, workspaceId)).all(),
+    formation_attempts: db.select().from(s.formationAttempts).where(eq(s.formationAttempts.workspaceId, workspaceId)).all(),
+    formation_mistakes: db.select().from(s.formationMistakes).where(eq(s.formationMistakes.workspaceId, workspaceId)).all(),
+    // Provenance of imported recordings only: integration_connections (OAuth tokens) and integration_oauth_states are never exported.
+    integration_imports: db.select().from(s.integrationImports).where(eq(s.integrationImports.workspaceId, workspaceId)).all(),
   };
 }
 
@@ -157,6 +168,7 @@ export async function buildExport(workspaceId: string, opts: BuildExportOptions 
       "Rows are JSON with camelCase column names; JSON columns are parsed.",
       "chunks are exported without embeddings (re-computable from text).",
       "members.json never contains password hashes or sessions.",
+      "Meeting-integration OAuth tokens and pending authorizations are never exported (reconnect after a restore).",
       "Original documents are decrypted in this archive — store it encrypted.",
     ],
   };

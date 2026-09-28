@@ -139,19 +139,27 @@ export async function mergeIntoCompany(v: { workspaceId: string; userId: string 
       return buf;
     }),
   );
+  // Claim the merge before starting it (conditional update, no await since the checks above): a second merge of the same
+  // duplicate — or a merge of the target into this company — started meanwhile is refused instead of running twice.
+  if (!repo.markCompanyMerged(source.id, target.id, db)) throw new AnalysisRequestError(`${source.name} was already merged or deleted`, 409);
   // The duplicate's run (if still going) is cancelled: its result would be discarded anyway.
   const sRun = repo.latestRun(source.id, db);
   if (sRun && (sRun.status === "RUNNING" || sRun.status === "QUEUED")) cancelRun(sRun.id);
-  const started = await startAnalysis({
-    workspaceId: v.workspaceId,
-    userId: v.userId,
-    mode: v.mode ?? (current?.canonical.analysis.mode ?? "STANDARD"),
-    files: deckFirst.map((d, i) => ({ filename: d.filename, mime: d.mime, data: bytes[i]! })),
-    target: { companyId: target.id, intent: "NEW_DECK_VERSION" },
-    mergedFrom: { companyId: source.id, name: source.name },
-  });
+  let started: Awaited<ReturnType<typeof startAnalysis>>;
+  try {
+    started = await startAnalysis({
+      workspaceId: v.workspaceId,
+      userId: v.userId,
+      mode: v.mode ?? (current?.canonical.analysis.mode ?? "STANDARD"),
+      files: deckFirst.map((d, i) => ({ filename: d.filename, mime: d.mime, data: bytes[i]! })),
+      target: { companyId: target.id, intent: "NEW_DECK_VERSION" },
+      mergedFrom: { companyId: source.id, name: source.name },
+    });
+  } catch (e) {
+    repo.unmarkCompanyMerged(source.id, target.id, db);
+    throw e;
+  }
 
-  repo.markCompanyMerged(source.id, target.id, db);
   forgetCompanyMemory(v.workspaceId, source.id, db);
   const as = started.deckVersion ? `as deck v${started.deckVersion}` : "(its documents were already on record here)";
   repo.addHistory({ workspaceId: v.workspaceId, companyId: source.id, type: "COMPANY_MERGED", summary: `Merged into ${target.name} ${as}. This dossier is kept for audit and redirects there.`, payload: { targetId: target.id, runId: started.run.id }, userId: v.userId });

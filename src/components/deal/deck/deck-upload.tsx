@@ -70,15 +70,24 @@ export function DeckUpload({ companyId, slug, nextDeck, defaultMode, disabled }:
               ["ADD_DOCUMENTS", "Add documents", "Financials, one-pager, data room extract — read with the current deck."],
             ] as const
           ).map(([id, label, detail]) => (
-            <button key={id} type="button" onClick={() => setIntent(id)} className={cx("rounded-lg border px-3 py-2 text-left", intent === id ? "border-ink bg-surface-2" : "border-line hover:border-line-strong")}>
+            <button key={id} type="button" onClick={() => setIntent(id)} aria-pressed={intent === id} className={cx("rounded-lg border px-3 py-2 text-left", intent === id ? "border-ink bg-surface-2" : "border-line hover:border-line-strong")}>
               <div className="text-[13px] font-medium">{label}</div>
               <div className="mt-0.5 text-[12px] text-ink-3">{detail}</div>
             </button>
           ))}
         </div>
         <div
-          className="flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-line-strong px-4 py-6 text-center text-[13px] text-ink-2 hover:border-ink-3"
+          className="flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-line-strong px-4 py-6 text-center text-[13px] text-ink-2 outline-none hover:border-ink-3 focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/30"
           onClick={() => input.current?.click()}
+          role="button"
+          tabIndex={0}
+          aria-label={`${intent === "NEW_DECK_VERSION" ? "Choose the new deck" : "Choose documents to add"} (PDF, PPTX or images). You can also drop files here.${files.length ? ` Selected: ${files.map((f) => f.name).join(", ")}.` : ""}`}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              input.current?.click();
+            }
+          }}
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => {
             e.preventDefault();
@@ -86,12 +95,25 @@ export function DeckUpload({ companyId, slug, nextDeck, defaultMode, disabled }:
           }}
         >
           {files.length ? files.map((f) => f.name).join(", ") : intent === "NEW_DECK_VERSION" ? "Drop the new deck here (PDF, PPTX or images)" : "Drop the documents here"}
-          <input ref={input} type="file" multiple accept={ACCEPT} className="hidden" onChange={(e) => e.target.files && setFiles((f) => [...f, ...Array.from(e.target.files!)].slice(0, 10))} />
+          <input
+            ref={input}
+            type="file"
+            multiple
+            accept={ACCEPT}
+            className="hidden"
+            tabIndex={-1}
+            aria-hidden
+            onChange={(e) => {
+              const picked = Array.from(e.target.files ?? []);
+              e.target.value = "";
+              setFiles((f) => [...f, ...picked].slice(0, 10));
+            }}
+          />
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2 text-[12.5px]">
           <span className="text-ink-3">Depth</span>
           {MODES.map((m) => (
-            <button key={m.id} type="button" onClick={() => setMode(m.id)} className={cx("rounded-md border px-2 py-0.5", mode === m.id ? "border-ink text-ink" : "border-line text-ink-3 hover:text-ink")}>
+            <button key={m.id} type="button" onClick={() => setMode(m.id)} aria-pressed={mode === m.id} className={cx("rounded-md border px-2 py-0.5", mode === m.id ? "border-ink text-ink" : "border-line text-ink-3 hover:text-ink")}>
               {m.label}
             </button>
           ))}

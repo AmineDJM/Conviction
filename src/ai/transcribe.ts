@@ -16,6 +16,7 @@
 import type { CostController } from "./cost";
 import { OPENAI_BASE_URL, authHeaders, fetchWithRetry } from "./openai";
 import { transcriptionCost, worstCaseTranscriptionCost } from "./pricing";
+import { providerError } from "./errors";
 import { segmentRef, type TranscriptSegment } from "@/domain/meetings";
 
 export const TRANSCRIBE_MODEL = process.env.CONVICTION_TRANSCRIBE_MODEL ?? "gpt-4o-transcribe-diarize";
@@ -30,7 +31,15 @@ const MIN_BYTES_PER_SECOND = 2000;
 
 export const AUDIO_EXTENSIONS = /\.(wav|mp3|m4a|mp4|mpeg|mpga|webm|ogg|oga|flac)$/i;
 
-export class TranscriptionError extends Error {}
+export class TranscriptionError extends Error {
+  constructor(
+    message: string,
+    /** HTTP status of a provider rejection (the message is then the user-safe provider message). */
+    readonly status: number | null = null,
+  ) {
+    super(message);
+  }
+}
 
 /* ---------------------------------------------------------------- */
 /* Container probing and splitting                                    */
@@ -211,7 +220,7 @@ interface ApiResponse {
   duration?: number;
   segments?: ApiSegment[];
   usage?: { type?: string; seconds?: number; input_tokens?: number; output_tokens?: number; input_token_details?: { audio_tokens?: number; text_tokens?: number } };
-  error?: { message?: string };
+  error?: { message?: string; code?: string | null };
 }
 
 async function requestPart(
@@ -243,7 +252,8 @@ async function requestPart(
     res = await fetchWithRetry(`${OPENAI_BASE_URL}/audio/transcriptions`, { method: "POST", headers: authHeaders(), body: form, signal }, 2);
   } catch (e) {
     await cost.record({ step: "TRANSCRIBE", model, promptVersion: null, usage: { inputTokens: 0, cachedTokens: 0, outputTokens: 0, reasoningTokens: 0, webSearches: 0 }, estimatedUsd: estimated, actualUsd: 0, latencyMs: Date.now() - t0, toolCalls: 0 });
-    throw e;
+    if (signal?.aborted || (e as Error).name === "AbortError") throw e;
+    throw providerError("audio/transcriptions", null, (e as Error).message);
   }
   const json = (await res.json().catch(() => ({}))) as ApiResponse;
   const u = json.usage;
@@ -265,7 +275,7 @@ async function requestPart(
     latencyMs: Date.now() - t0,
     toolCalls: 0,
   });
-  if (!res.ok) throw new TranscriptionError(`Transcription ${res.status}: ${json.error?.message ?? res.statusText}`);
+  if (!res.ok) throw new TranscriptionError(providerError("audio/transcriptions", res.status, json.error?.message ?? res.statusText, { code: json.error?.code }).message, res.status);
   const segments = json.segments?.length ? json.segments : json.text ? [{ text: json.text, start: 0, end: json.duration ?? part.durationSec ?? undefined }] : [];
   return { segments, seconds: json.duration ?? part.durationSec, costUsd: usd };
 }
@@ -297,7 +307,7 @@ export async function transcribeRecording(v: { data: Buffer; filename: string; m
       r = await requestPart(part, model, known, v.cost, v.signal);
     } catch (e) {
       // The diarizing model rejected the file (format, duration): fall back to timestamps only, once, for the whole recording.
-      if (!(e instanceof TranscriptionError) || model === FALLBACK_TRANSCRIBE_MODEL || i > 0 || !/\b400\b/.test(e.message)) throw e;
+      if (!(e instanceof TranscriptionError) || model === FALLBACK_TRANSCRIBE_MODEL || i > 0 || e.status !== 400) throw e;
       model = FALLBACK_TRANSCRIBE_MODEL;
       r = await requestPart(part, model, [], v.cost, v.signal);
     }

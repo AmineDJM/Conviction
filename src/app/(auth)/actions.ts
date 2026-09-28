@@ -1,8 +1,8 @@
 "use server";
 
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { createSession, createWorkspaceWithOwner, destroySession, hasAnyUser, login, SESSION_COOKIE } from "@/server/auth";
+import { createSession, createWorkspaceWithOwner, destroySession, hasAnyUser, login, LoginThrottledError, SESSION_COOKIE } from "@/server/auth";
 import { audit } from "@/server/repo";
 
 async function setCookie(value: string, expires: string) {
@@ -13,7 +13,16 @@ async function setCookie(value: string, expires: string) {
 export async function loginAction(_: unknown, form: FormData): Promise<{ error?: string }> {
   const email = String(form.get("email") ?? "");
   const password = String(form.get("password") ?? "");
-  const s = login(email, password);
+  const h = await headers();
+  // The right-most X-Forwarded-For entry is the one added by our proxy (the left-most is client-supplied).
+  const ip = h.get("x-forwarded-for")?.split(",").at(-1)?.trim() || h.get("x-real-ip") || null;
+  let s: ReturnType<typeof login>;
+  try {
+    s = login(email, password, undefined, { ip });
+  } catch (e) {
+    if (e instanceof LoginThrottledError) return { error: e.message };
+    throw e;
+  }
   if (!s) return { error: "Email or password is incorrect." };
   await setCookie(s.cookie, s.expires);
   redirect("/");

@@ -14,6 +14,7 @@ const NAV = [
   { href: "/benchmarks", label: "Benchmarks", match: (p: string) => p.startsWith("/benchmarks") },
   { href: "/fund", label: "Fund", match: (p: string) => p.startsWith("/fund") },
   { href: "/quality", label: "Quality", match: (p: string) => p.startsWith("/quality") },
+  { href: "/settings", label: "Settings", match: (p: string) => p.startsWith("/settings") },
 ];
 
 export function Sidebar({ workspace, user, logout }: { workspace: string; user: string; logout: () => Promise<void> }) {
@@ -39,6 +40,7 @@ export function Sidebar({ workspace, user, logout }: { workspace: string; user: 
           <Link
             key={n.href}
             href={n.href}
+            aria-current={n.match(path) ? "page" : undefined}
             className={cx("rounded-md px-2 py-1.5 text-[13px] transition-colors", n.match(path) ? "bg-surface-3 font-medium text-ink" : "text-ink-2 hover:bg-surface-2 hover:text-ink")}
           >
             {n.label}
@@ -74,21 +76,29 @@ export function Sidebar({ workspace, user, logout }: { workspace: string; user: 
 /** Mobile: compact top bar. The full analytics desktop is not recreated on phones (§109). */
 export function MobileNav({ workspace }: { workspace: string }) {
   const path = usePathname();
-  const { toggleBrain } = useShell();
+  const { toggleBrain, setPaletteOpen } = useShell();
   return (
-    <div className="no-print sticky top-0 z-40 flex items-center gap-3 overflow-x-auto border-b border-line bg-bg/95 px-4 py-2.5 backdrop-blur md:hidden">
-      <Link href="/" className="flex shrink-0 items-center gap-2 text-[13px] font-semibold">
-        <span className="grid h-5 w-5 place-items-center rounded-[5px] bg-ink text-[11px] text-bg">C</span>
-        {workspace}
-      </Link>
-      {NAV.slice(0, 5).map((n) => (
-        <Link key={n.href} href={n.href} className={cx("shrink-0 text-[13px]", n.match(path) ? "font-medium text-ink" : "text-ink-3")}>
-          {n.label}
+    <div className="no-print sticky top-0 z-40 border-b border-line bg-bg/95 backdrop-blur md:hidden">
+      <div className="flex items-center gap-3 px-4 pt-2.5">
+        <Link href="/" className="flex min-w-0 items-center gap-2 text-[13px] font-semibold">
+          <span className="grid h-5 w-5 shrink-0 place-items-center rounded-[5px] bg-ink text-[11px] text-bg">C</span>
+          <span className="truncate">{workspace}</span>
         </Link>
-      ))}
-      <button onClick={toggleBrain} className="ml-auto shrink-0 text-[13px] text-accent-text">
-        Brain
-      </button>
+        <button onClick={() => setPaletteOpen(true)} className="ml-auto shrink-0 text-[13px] text-ink-2">
+          Search
+        </button>
+        <button onClick={toggleBrain} className="shrink-0 text-[13px] text-accent-text">
+          Brain
+        </button>
+      </div>
+      {/* Every section stays reachable on a phone: the row scrolls horizontally. */}
+      <nav aria-label="Sections" className="flex gap-3 overflow-x-auto px-4 pb-2.5 pt-2">
+        {NAV.map((n) => (
+          <Link key={n.href} href={n.href} aria-current={n.match(path) ? "page" : undefined} className={cx("shrink-0 text-[13px]", n.match(path) ? "font-medium text-ink" : "text-ink-3")}>
+            {n.label}
+          </Link>
+        ))}
+      </nav>
     </div>
   );
 }

@@ -4,7 +4,7 @@
  * exactly one workspace; all repository queries are scoped by it.
  */
 import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
-import { and, eq, gt } from "drizzle-orm";
+import { and, asc, eq, gt } from "drizzle-orm";
 import { getDb, schema, type DB } from "@/db/client";
 import { newId, nowIso } from "./ids";
 import { DEFAULT_FUND_PROFILE } from "@/domain/fund";
@@ -93,12 +93,47 @@ export function destroySession(cookieValue: string | undefined, db: DB = getDb()
   if (id) db.delete(schema.sessions).where(eq(schema.sessions.id, id)).run();
 }
 
-export function login(email: string, password: string, db: DB = getDb()) {
-  const user = db.select().from(schema.users).where(eq(schema.users.email, email.toLowerCase().trim())).get();
-  if (!user || !verifyPassword(password, user.passwordHash)) return null;
-  const m = db.select().from(schema.memberships).where(eq(schema.memberships.userId, user.id)).get();
-  if (!m) return null;
+/* Login throttling: in-memory, per (email, client IP). Failures only; a success clears the key. */
+export const LOGIN_MAX_FAILURES = 10;
+export const LOGIN_WINDOW_MS = 15 * 60_000;
+const failures = new Map<string, { n: number; since: number }>();
+
+export class LoginThrottledError extends Error {
+  constructor(readonly retryAfterSec: number) {
+    super(`Too many sign-in attempts. Try again in ${Math.ceil(retryAfterSec / 60)} minute(s).`);
+  }
+}
+
+let dummyHash: string | null = null;
+
+/** Throws LoginThrottledError after LOGIN_MAX_FAILURES failures within LOGIN_WINDOW_MS for the same email and IP. */
+export function login(email: string, password: string, db: DB = getDb(), client: { ip?: string | null } = {}) {
+  const addr = email.toLowerCase().trim();
+  const key = `${addr}|${client.ip ?? ""}`;
+  const now = Date.now();
+  const f = failures.get(key);
+  if (f && now - f.since < LOGIN_WINDOW_MS && f.n >= LOGIN_MAX_FAILURES) throw new LoginThrottledError((f.since + LOGIN_WINDOW_MS - now) / 1000);
+  const user = db.select().from(schema.users).where(eq(schema.users.email, addr)).get();
+  // Unknown emails pay the same scrypt cost as known ones (no timing oracle on account existence).
+  const ok = verifyPassword(password, user?.passwordHash ?? (dummyHash ??= hashPassword(randomBytes(16).toString("hex"))));
+  const m = user && ok ? db.select().from(schema.memberships).where(eq(schema.memberships.userId, user.id)).get() : undefined;
+  if (!user || !ok || !m) {
+    if (failures.size > 10_000) for (const [k, v] of failures) if (now - v.since >= LOGIN_WINDOW_MS) failures.delete(k);
+    failures.set(key, f && now - f.since < LOGIN_WINDOW_MS ? { n: f.n + 1, since: f.since } : { n: 1, since: now });
+    return null;
+  }
+  failures.delete(key);
   return createSession(user.id, m.workspaceId, db);
+}
+
+/**
+ * Backups hold the whole SQLite file (every workspace): only owners of the instance's setup workspace — the
+ * first one created — manage them. Owners of other workspaces use the per-workspace export.
+ */
+export function isInstanceOwner(s: Pick<SessionContext, "role" | "workspaceId">, db: DB = getDb()) {
+  if (s.role !== "OWNER") return false;
+  const first = db.select({ id: schema.workspaces.id }).from(schema.workspaces).orderBy(asc(schema.workspaces.createdAt), asc(schema.workspaces.id)).limit(1).get();
+  return first?.id === s.workspaceId;
 }
 
 /** Create a user + workspace (used by setup and seed). */

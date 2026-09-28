@@ -4,7 +4,7 @@
  */
 import Link from "next/link";
 import type { ReactNode } from "react";
-import type { Tone } from "@/lib/format";
+import { date, relative, type Tone } from "@/lib/format";
 
 export function cx(...c: (string | false | null | undefined)[]) {
   return c.filter(Boolean).join(" ");
@@ -56,6 +56,7 @@ export function Button({
   disabled,
   className,
   title,
+  "aria-label": ariaLabel,
 }: {
   children: ReactNode;
   variant?: "primary" | "secondary" | "ghost" | "danger";
@@ -66,6 +67,7 @@ export function Button({
   disabled?: boolean;
   className?: string;
   title?: string;
+  "aria-label"?: string;
 }) {
   const cls = cx(
     "inline-flex select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-md font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
@@ -78,12 +80,12 @@ export function Button({
   );
   if (href)
     return (
-      <Link href={href} className={cls} title={title}>
+      <Link href={href} className={cls} title={title} aria-label={ariaLabel}>
         {children}
       </Link>
     );
   return (
-    <button type={type} onClick={onClick} disabled={disabled} className={cls} title={title}>
+    <button type={type} onClick={onClick} disabled={disabled} className={cls} title={title} aria-label={ariaLabel}>
       {children}
     </button>
   );
@@ -151,6 +153,15 @@ export function Bullets({ items, tone }: { items: ReactNode[]; tone?: Tone }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+/** Relative time ("5m ago"). Server and browser clocks differ by the render delay, so the text may legitimately differ at hydration. */
+export function Ago({ at, className }: { at: string; className?: string }) {
+  return (
+    <time dateTime={at} title={date(at)} className={className} suppressHydrationWarning>
+      {relative(at)}
+    </time>
   );
 }
 

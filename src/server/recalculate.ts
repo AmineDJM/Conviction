@@ -26,9 +26,15 @@ export async function recalculatePortfolio(workspaceId: string, userId: string, 
   const registry = getRegistry(registryId);
   const fund = repo.getDefaultFund(workspaceId);
   const out: RecalcRow[] = [];
-  for (const company of repo.listCompanies(workspaceId)) {
+  for (const listed of repo.listCompanies(workspaceId)) {
+    // Re-read right before building on it (earlier iterations awaited indexing): from here to saveVersion there is no await,
+    // so an edit made meanwhile is never overwritten by a stale version. Companies being analysed are left to their run.
+    const company = repo.getCompany(workspaceId, listed.id);
+    if (!company || company.status === "PROCESSING") continue;
+    const last = repo.latestRun(company.id);
+    if (last && (last.status === "RUNNING" || last.status === "QUEUED")) continue;
     const current = repo.getCurrentVersion(company);
-    if (!current || company.status === "PROCESSING") continue;
+    if (!current) continue;
     const derived = derive(current.canonical, registry, fund);
     const before = current.derived;
     const changed =

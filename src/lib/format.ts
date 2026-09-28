@@ -43,9 +43,11 @@ export function date(s: string | null | undefined): string {
   if (!s) return "—";
   const d = new Date(s);
   if (Number.isNaN(d.getTime())) return s;
-  return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+  // Fixed time zone: the server (UTC) and the browser must render the same text (hydration).
+  return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" });
 }
 
+/** Depends on the current time: in client components render it through <Ago> (ui.tsx), which tolerates the server/client clock difference. */
 export function relative(s: string | null | undefined): string {
   if (!s) return "—";
   const d = new Date(s).getTime();

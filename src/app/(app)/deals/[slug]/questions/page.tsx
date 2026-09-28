@@ -3,6 +3,7 @@ import { loadDeal } from "@/server/deal";
 import * as repo from "@/server/repo";
 import { canWrite } from "@/server/session";
 import { founderCallChanges } from "@/reports/version-diff";
+import { applyOverrides } from "@/engine/overrides";
 import { Badge, Button, IndexBar, Section } from "@/components/ui";
 import { titleCase } from "@/lib/format";
 import { QuestionList } from "@/components/deal/questions/question-list";
@@ -36,7 +37,7 @@ export default async function QuestionsPage({ params }: { params: Promise<{ slug
       const payload = (ev?.payload ?? null) as { modelSummary?: string } | null;
       whatChanged = (
         <WhatChanged
-          changes={founderCallChanges(before.canonical, after.canonical)}
+          changes={founderCallChanges(applyOverrides(before.canonical), applyOverrides(after.canonical))}
           slug={company.slug}
           versionNo={after.row.versionNo}
           prevVersionNo={before.row.versionNo}
@@ -160,7 +161,7 @@ export default async function QuestionsPage({ params }: { params: Promise<{ slug
                 {priority.map((p) => {
                   const g = gapById.get(p.gapId);
                   return (
-                    <tr key={p.gapId} className="align-top">
+                    <tr key={p.gapId} id={p.gapId} className="scroll-mt-40 align-top">
                       <td className="border-t border-line px-3 py-2.5">
                         <div className="flex items-center gap-2">
                           <span className="num w-7 text-right font-medium text-ink">{p.index}</span>
@@ -202,7 +203,7 @@ export default async function QuestionsPage({ params }: { params: Promise<{ slug
             </summary>
             <ul className="mt-2 space-y-1.5">
               {closedGaps.map((g) => (
-                <li key={g.id} className="grid grid-cols-[64px_110px_1fr] gap-3">
+                <li key={g.id} id={g.id} className="grid scroll-mt-40 grid-cols-[64px_110px_1fr] gap-3">
                   <span className="font-mono text-[11px] text-ink-3">{g.id}</span>
                   <span className="text-ink-3">{GAP_STATUS_TEXT[g.status]}</span>
                   <span className="text-ink-2">

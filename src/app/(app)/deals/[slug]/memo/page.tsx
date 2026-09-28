@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { loadDeal } from "@/server/deal";
 import * as repo from "@/server/repo";
+import { applyOverrides } from "@/engine/overrides";
 import { buildInvestmentMemo } from "@/reports/investment-memo";
 import { EvidenceDrawerProvider } from "@/components/deal/reports/evidence-drawer";
 import { MemoNav } from "@/components/deal/reports/memo-nav";
@@ -30,7 +31,9 @@ export default async function MemoPage({ params, searchParams }: { params: Promi
   const { company, version: current } = await loadDeal(slug);
   // Pages render alongside the layout; while the first analysis is running there is no version yet.
   if (!current) return null;
-  const version = (v && repo.getVersion(company.id, v)) || current!;
+  const picked = v && v !== current.row.id ? repo.getVersion(company.id, v) : null;
+  // The effective canonical (raw extraction + analyst overrides) is what derive() scored; the same rule for any version.
+  const version = picked ? { ...picked, canonical: applyOverrides(picked.canonical) } : current;
   const historical = version.row.id !== company.currentVersionId;
   const c = version.canonical;
   const d = version.derived;

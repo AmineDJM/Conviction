@@ -8,6 +8,7 @@ import { z } from "zod";
 import { apiSession, canWrite } from "@/server/session";
 import { FounderCallError, MAX_TRANSCRIPT_CHARS, startFounderCall } from "@/orchestration/founder-call";
 import { logger } from "@/lib/log";
+import { BodyLimitError, bodyLimitResponse, readFormData, readJson } from "@/server/upload-limits";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -23,10 +24,13 @@ const Body = z.object({
     .optional(),
 });
 
+/** A ≤ 2 MB transcript file or field, plus small form fields. */
+const MAX_BODY_BYTES = 4 * 1024 * 1024;
+
 async function readBody(req: Request): Promise<unknown> {
   const type = req.headers.get("content-type") ?? "";
   if (type.includes("multipart/form-data")) {
-    const form = await req.formData();
+    const form = await readFormData(req, MAX_BODY_BYTES, 1);
     const file = form.get("file");
     let transcript = (form.get("transcript") as string | null) ?? "";
     let filename = (form.get("filename") as string | null) ?? null;
@@ -38,7 +42,7 @@ async function readBody(req: Request): Promise<unknown> {
     }
     return { transcript, filename, callDate: (form.get("callDate") as string | null) || null };
   }
-  return req.json().catch(() => null);
+  return readJson(req, MAX_BODY_BYTES);
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -60,6 +64,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return Response.json({ runId: run.id }, { status: 202 });
   } catch (e) {
     if (e instanceof FounderCallError) return Response.json({ error: e.message }, { status: e.status });
+    if (e instanceof BodyLimitError) return bodyLimitResponse(e);
     return Response.json({ error: `Could not start founder call update: ${(e as Error).message.slice(0, 200)}` }, { status: 500 });
   }
 }

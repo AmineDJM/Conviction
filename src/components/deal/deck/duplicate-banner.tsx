@@ -25,7 +25,8 @@ const VERDICT: Record<DuplicateView["verdict"], { text: string; tone: "warn" | "
   DIFFERENT_LIKELY: { text: "Same name — likely a different company", tone: "unknown" },
 };
 
-export function DuplicateBanner({ companyId, name, matches, canWrite, running }: { companyId: string; name: string; matches: DuplicateView[]; canWrite: boolean; running: boolean }) {
+/** `canMerge`: merging soft-deletes this dossier, so it is reserved to owners and partners; any writer may answer "different company". */
+export function DuplicateBanner({ companyId, name, matches, canWrite, canMerge, running }: { companyId: string; name: string; matches: DuplicateView[]; canWrite: boolean; canMerge: boolean; running: boolean }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -63,9 +64,11 @@ export function DuplicateBanner({ companyId, name, matches, canWrite, running }:
             </div>
             {canWrite && (
               <div className="flex gap-1.5">
-                <Button size="sm" variant={m.verdict === "DIFFERENT_LIKELY" ? "ghost" : "primary"} disabled={busy !== null} onClick={() => act({ action: "merge", targetId: m.companyId }, `m${m.companyId}`)} title={`Re-analyse these documents on ${m.name} as its next deck version; this dossier then redirects there`}>
-                  {busy === `m${m.companyId}` ? "Merging…" : `Merge into ${m.name} as new deck version`}
-                </Button>
+                {canMerge && (
+                  <Button size="sm" variant={m.verdict === "DIFFERENT_LIKELY" ? "ghost" : "primary"} disabled={busy !== null} onClick={() => act({ action: "merge", targetId: m.companyId }, `m${m.companyId}`)} title={`Re-analyse these documents on ${m.name} as its next deck version; this dossier then redirects there`}>
+                    {busy === `m${m.companyId}` ? "Merging…" : `Merge into ${m.name} as new deck version`}
+                  </Button>
+                )}
                 <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => act({ action: "dismiss", otherId: m.companyId }, `d${m.companyId}`)}>
                   {busy === `d${m.companyId}` ? "Saving…" : "Different company"}
                 </Button>
@@ -74,7 +77,8 @@ export function DuplicateBanner({ companyId, name, matches, canWrite, running }:
           </li>
         ))}
       </ul>
-      {running && <p className="mt-2 text-[12px] text-ink-3">Merging now cancels this analysis; the documents are re-analysed on the other company (identical model calls are served from cache).</p>}
+      {canWrite && !canMerge && strong.length > 0 && <p className="mt-2 text-[12px] text-ink-3">Only owners and partners can merge dossiers.</p>}
+      {running && canMerge && <p className="mt-2 text-[12px] text-ink-3">Merging now cancels this analysis; the documents are re-analysed on the other company (identical model calls are served from cache).</p>}
       {error && <p className="mt-2 text-[12.5px] text-risk">{error}</p>}
     </div>
   );

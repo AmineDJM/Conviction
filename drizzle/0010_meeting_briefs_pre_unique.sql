@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `meeting_briefs_pre_unique_idx` ON `meeting_briefs` (`version_id`,`kind`,`builder_version`) WHERE "meeting_briefs"."kind" = 'PRE_MEETING_BRIEF';

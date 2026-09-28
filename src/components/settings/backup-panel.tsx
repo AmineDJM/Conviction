@@ -36,7 +36,7 @@ function Row({ k, children }: { k: string; children: React.ReactNode }) {
   );
 }
 
-export function BackupPanel({ isOwner, dir, schedule, retention, offsite, backups, consistency }: { isOwner: boolean; dir: string; schedule: string; retention: string; offsite: string | null; backups: BackupRow[]; consistency: Consistency | null }) {
+export function BackupPanel({ isOwner, canBackup, dir, schedule, retention, offsite, backups, consistency }: { isOwner: boolean; canBackup: boolean; dir: string; schedule: string; retention: string; offsite: string | null; backups: BackupRow[]; consistency: Consistency | null }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ tone: "ok" | "risk"; text: string } | null>(null);
@@ -64,7 +64,7 @@ export function BackupPanel({ isOwner, dir, schedule, retention, offsite, backup
         eyebrow="Backups"
         title="Database backups"
         action={
-          isOwner && (
+          canBackup && (
             <Button variant="primary" size="sm" onClick={backupNow} disabled={busy}>
               {busy ? "Backing up…" : "Create backup now"}
             </Button>
@@ -81,7 +81,7 @@ export function BackupPanel({ isOwner, dir, schedule, retention, offsite, backup
           <Row k="Verification">Each backup is opened read-only, must pass PRAGMA integrity_check, and its key table counts are recorded.</Row>
         </div>
         {msg && <div className={msg.tone === "ok" ? "mt-3 text-[12.5px] text-ok" : "mt-3 text-[12.5px] text-risk"}>{msg.text}</div>}
-        {isOwner && (
+        {canBackup && (
           <div className="mt-6">
             {backups.length === 0 ? (
               <Empty title="No backups yet">The first daily backup runs shortly after the server starts. Use “Create backup now” before risky changes.</Empty>

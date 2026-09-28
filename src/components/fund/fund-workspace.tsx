@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { FundProfile } from "@/domain/fund";
 import { FINANCING_STAGES, INDUSTRIES } from "@/domain/enums";
@@ -25,8 +25,40 @@ async function api(method: string, body?: unknown, query = "") {
   return json;
 }
 
-export function FundWorkspace({ profile, memory, companies, welcome, canWrite }: { profile: FundProfile; memory: Memory; companies: { id: string; name: string }[]; welcome: boolean; canWrite: boolean }) {
-  const [tab, setTab] = useState<"profile" | "knowledge" | "ic" | "meetings">(welcome ? "profile" : "knowledge");
+export type FundTab = "profile" | "knowledge" | "ic" | "meetings";
+
+export function FundWorkspace({ profile, memory, companies, welcome, initialTab, canWrite }: { profile: FundProfile; memory: Memory; companies: { id: string; name: string }[]; welcome: boolean; initialTab: FundTab; canWrite: boolean }) {
+  const [tab, setTab] = useState<FundTab>(initialTab);
+  const [anchor, setAnchor] = useState<string | null>(null);
+  // Fund Brain citations link to /fund#<knowledge id>, /fund/ic#<member id> and /fund/meetings#<meeting id>:
+  // open whichever tab holds the anchored item (also for a hash on the wrong tab, or a later hash change), then scroll to it.
+  useEffect(() => {
+    const follow = () => {
+      let id = window.location.hash.slice(1);
+      try {
+        id = decodeURIComponent(id);
+      } catch {}
+      if (!id) return;
+      const owner: FundTab | null = memory.members.some((m) => m.id === id) ? "ic" : memory.meetings.some((m) => m.id === id) ? "meetings" : memory.knowledge.some((k) => k.id === id) ? "knowledge" : null;
+      if (!owner) return;
+      setTab(owner);
+      setAnchor(id);
+    };
+    follow();
+    window.addEventListener("hashchange", follow);
+    return () => window.removeEventListener("hashchange", follow);
+    // On mount and on hash changes only: a router.refresh() (new `memory`) must not pull the viewer back to the anchor.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (anchor) document.getElementById(anchor)?.scrollIntoView({ block: "start" });
+  }, [anchor, tab]);
+  const pick = (t: FundTab) => {
+    setTab(t);
+    setAnchor(null);
+    // Keep the URL shareable (and a reload on the same tab) without a navigation.
+    window.history.replaceState(null, "", `/fund?tab=${t}`);
+  };
   const tabs = [
     { id: "profile", label: "Fund profile" },
     { id: "knowledge", label: "Strategy & criteria", n: memory.knowledge.length },
@@ -44,7 +76,7 @@ export function FundWorkspace({ profile, memory, companies, welcome, canWrite }:
       )}
       <nav className="-mb-px flex gap-1 border-b border-line px-8">
         {tabs.map((t) => (
-          <button key={t.id} onClick={() => setTab(t.id)} className={cx("border-b-2 px-2.5 py-2 text-[13px]", tab === t.id ? "border-ink font-medium" : "border-transparent text-ink-3 hover:text-ink")}>
+          <button key={t.id} onClick={() => pick(t.id)} aria-pressed={tab === t.id} className={cx("border-b-2 px-2.5 py-2 text-[13px]", tab === t.id ? "border-ink font-medium" : "border-transparent text-ink-3 hover:text-ink")}>
             {t.label}
             {"n" in t && <span className="num ml-1.5 text-[11px] text-ink-3">{t.n}</span>}
           </button>
@@ -185,8 +217,8 @@ function ProfileForm({ profile, canWrite }: { profile: FundProfile; canWrite: bo
           <div className="space-y-2">
             {p.portfolio.map((pc, i) => (
               <div key={i} className="grid grid-cols-[200px_220px_1fr_auto] items-center gap-2">
-                <input className={input} placeholder="Name" value={pc.name} onChange={(e) => set("portfolio", p.portfolio.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />
-                <select className={input} value={pc.industry[0] ?? ""} onChange={(e) => set("portfolio", p.portfolio.map((x, j) => (j === i ? { ...x, industry: e.target.value ? [e.target.value as never] : [] } : x)))}>
+                <input className={input} placeholder="Name" aria-label={`Portfolio company ${i + 1} name`} value={pc.name} onChange={(e) => set("portfolio", p.portfolio.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />
+                <select className={input} aria-label={`Portfolio company ${i + 1} industry`} value={pc.industry[0] ?? ""} onChange={(e) => set("portfolio", p.portfolio.map((x, j) => (j === i ? { ...x, industry: e.target.value ? [e.target.value as never] : [] } : x)))}>
                   <option value="">Industry…</option>
                   {INDUSTRIES.map((ind) => (
                     <option key={ind} value={ind}>
@@ -194,8 +226,8 @@ function ProfileForm({ profile, canWrite }: { profile: FundProfile; canWrite: bo
                     </option>
                   ))}
                 </select>
-                <input className={input} placeholder="What it does" value={pc.description} onChange={(e) => set("portfolio", p.portfolio.map((x, j) => (j === i ? { ...x, description: e.target.value } : x)))} />
-                <Button size="sm" variant="ghost" onClick={() => set("portfolio", p.portfolio.filter((_, j) => j !== i))}>
+                <input className={input} placeholder="What it does" aria-label={`Portfolio company ${i + 1} description`} value={pc.description} onChange={(e) => set("portfolio", p.portfolio.map((x, j) => (j === i ? { ...x, description: e.target.value } : x)))} />
+                <Button size="sm" variant="ghost" aria-label={`Remove portfolio company ${pc.name || i + 1}`} onClick={() => set("portfolio", p.portfolio.filter((_, j) => j !== i))}>
                   Remove
                 </Button>
               </div>
@@ -241,10 +273,24 @@ function Knowledge({ items, canWrite }: { items: Memory["knowledge"]; canWrite: 
       setErr((e as Error).message);
     }
   }
+  async function remove(id: string) {
+    setErr(null);
+    try {
+      await api("DELETE", undefined, `?type=knowledge&id=${encodeURIComponent(id)}`);
+      router.refresh();
+    } catch (e) {
+      setErr(`Delete failed: ${(e as Error).message}`);
+    }
+  }
   const grouped = KINDS.map((k) => ({ k, list: items.filter((i) => i.kind === k) })).filter((g) => g.list.length);
   return (
     <div className="grid gap-10 lg:grid-cols-[1fr_340px]">
       <div className="space-y-8">
+        {err && (
+          <div role="alert" className="text-[12.5px] text-risk">
+            {err}
+          </div>
+        )}
         {grouped.length === 0 && (
           <Empty title="Nothing documented yet">
             Record the fund&apos;s investment strategy, criteria, verticals, IC preferences and lessons. The Fund Brain cites these as DOCUMENTED.
@@ -254,13 +300,13 @@ function Knowledge({ items, canWrite }: { items: Memory["knowledge"]; canWrite: 
           <Section key={g.k} eyebrow={titleCase(g.k)}>
             <div className="divide-y divide-line border-y border-line">
               {g.list.map((k) => (
-                <div key={k.id} id={k.id} className="py-3">
+                <div key={k.id} id={k.id} className="scroll-mt-6 py-3 target:bg-accent-soft/40">
                   <div className="flex items-start justify-between gap-3">
                     <div className="font-medium">{k.title}</div>
                     <div className="flex shrink-0 items-center gap-2">
                       <Badge tone={provTone(k.provenance)}>{titleCase(k.provenance)}</Badge>
                       {canWrite && (
-                        <button onClick={() => api("DELETE", undefined, `?type=knowledge&id=${k.id}`).then(() => router.refresh())} className="text-[12px] text-ink-3 hover:text-risk">
+                        <button onClick={() => remove(k.id)} aria-label={`Delete “${k.title}”`} className="text-[12px] text-ink-3 hover:text-risk">
                           Delete
                         </button>
                       )}
@@ -280,25 +326,24 @@ function Knowledge({ items, canWrite }: { items: Memory["knowledge"]; canWrite: 
         <div className="space-y-3 lg:sticky lg:top-6 lg:self-start">
           <FundDocumentImport />
           <div className="t-eyebrow pt-4">Add knowledge</div>
-          <select className={input} value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value as never })}>
+          <select className={input} aria-label="Knowledge kind" value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value as never })}>
             {KINDS.map((k) => (
               <option key={k} value={k}>
                 {titleCase(k)}
               </option>
             ))}
           </select>
-          <input className={input} placeholder="Title" value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} />
-          <textarea rows={7} className={area} placeholder="Body — e.g. 'We invest in B2B software where the product replaces labor…'" value={draft.body} onChange={(e) => setDraft({ ...draft, body: e.target.value })} />
-          <select className={input} value={draft.provenance} onChange={(e) => setDraft({ ...draft, provenance: e.target.value })}>
+          <input className={input} placeholder="Title" aria-label="Knowledge title" value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} />
+          <textarea rows={7} className={area} aria-label="Knowledge body" placeholder="Body — e.g. 'We invest in B2B software where the product replaces labor…'" value={draft.body} onChange={(e) => setDraft({ ...draft, body: e.target.value })} />
+          <select className={input} aria-label="Provenance" value={draft.provenance} onChange={(e) => setDraft({ ...draft, provenance: e.target.value })}>
             <option value="DOCUMENTED">Documented (written policy)</option>
             <option value="OBSERVED">Observed (seen in decisions)</option>
             <option value="INFERRED">Inferred (pattern, to confirm)</option>
           </select>
-          <input className={input} placeholder="Source (e.g. LPA §3, IC charter 2026)" value={draft.sourceRef} onChange={(e) => setDraft({ ...draft, sourceRef: e.target.value })} />
+          <input className={input} aria-label="Source reference (optional)" placeholder="Source (e.g. LPA §3, IC charter 2026)" value={draft.sourceRef} onChange={(e) => setDraft({ ...draft, sourceRef: e.target.value })} />
           <Button variant="primary" onClick={add} disabled={!draft.title || !draft.body}>
             Add
           </Button>
-          {err && <div className="text-[12.5px] text-risk">{err}</div>}
         </div>
       )}
     </div>
@@ -354,9 +399,9 @@ function FundDocumentImport() {
       <p className="text-[12.5px] text-ink-3">
         Strategy memo, investment criteria, IC charter, post-mortem. Each statement is recorded as DOCUMENTED only if its verbatim quote is found in the document.
       </p>
-      <label className={cx("flex h-8 cursor-pointer items-center justify-center rounded-md border border-dashed border-line-strong text-[12.5px]", busy && "pointer-events-none opacity-60")}>
+      <label className={cx("relative flex h-8 cursor-pointer items-center justify-center rounded-md border border-dashed border-line-strong text-[12.5px] focus-within:border-accent", busy && "pointer-events-none opacity-60")}>
         {busy === "import" ? "Reading…" : "Choose PDF, PPTX or text"}
-        <input type="file" accept=".pdf,.pptx,.txt,.md" className="hidden" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
+        <input type="file" accept=".pdf,.pptx,.txt,.md" className="sr-only" aria-label="Import a fund document (PDF, PPTX or text)" disabled={busy !== null} onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
       </label>
       {res && (
         <div className="space-y-2 text-[12.5px]">
@@ -417,6 +462,16 @@ function IcMembers({ members, observations, companies, canWrite }: { members: Me
       setErr((e as Error).message);
     }
   }
+  async function removeMember(m: Memory["members"][number]) {
+    if (!confirm(`Delete ${m.name} and their observations?`)) return;
+    setErr(null);
+    try {
+      await api("DELETE", undefined, `?type=member&id=${encodeURIComponent(m.id)}`);
+      router.refresh();
+    } catch (e) {
+      setErr(`Delete failed: ${(e as Error).message}`);
+    }
+  }
   async function addObs() {
     setErr(null);
     try {
@@ -430,6 +485,11 @@ function IcMembers({ members, observations, companies, canWrite }: { members: Me
 
   return (
     <div className="space-y-10">
+      {err && (
+        <div role="alert" className="text-[12.5px] text-risk">
+          {err}
+        </div>
+      )}
       <Callout tone="neutral" title="How IC memory is used">
         DOCUMENTED = preferences the member wrote or approved. OBSERVED = what they actually said in a recorded meeting (with quote). INFERRED = a pattern the Brain derives from observations and labels as such. The Fund Brain never fabricates an opinion — without records it answers “we don&apos;t know yet”.
       </Callout>
@@ -437,7 +497,7 @@ function IcMembers({ members, observations, companies, canWrite }: { members: Me
       {members.map((m) => {
         const mo = observations.filter((o) => o.memberId === m.id);
         return (
-          <section key={m.id} id={m.id} className="scroll-mt-6 border-t border-line pt-5">
+          <section key={m.id} id={m.id} className="scroll-mt-6 border-t border-line pt-5 target:bg-accent-soft/40">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="t-section">{m.name}</div>
@@ -451,7 +511,7 @@ function IcMembers({ members, observations, companies, canWrite }: { members: Me
                   <Button size="sm" variant="ghost" onClick={() => (setDraft({ name: m.name, role: m.role, bio: m.bio ?? "", focus: m.focus.join(", "), documentedPreferences: m.documentedPreferences ?? "" }), setEditing(m.id))}>
                     Edit
                   </Button>
-                  <Button size="sm" variant="ghost" onClick={() => confirm(`Delete ${m.name} and their observations?`) && api("DELETE", undefined, `?type=member&id=${m.id}`).then(() => router.refresh())}>
+                  <Button size="sm" variant="ghost" onClick={() => removeMember(m)}>
                     Delete
                   </Button>
                 </div>
@@ -506,12 +566,12 @@ function IcMembers({ members, observations, companies, canWrite }: { members: Me
         <div className="max-w-[640px] space-y-3 border-t border-line pt-5">
           <div className="t-section">{editing === "new" ? "New IC member" : "Edit IC member"}</div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <input className={input} placeholder="Name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
-            <input className={input} placeholder="Role (e.g. Managing Partner)" value={draft.role} onChange={(e) => setDraft({ ...draft, role: e.target.value })} />
+            <input className={input} placeholder="Name" aria-label="Member name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+            <input className={input} aria-label="Member role" placeholder="Role (e.g. Managing Partner)" value={draft.role} onChange={(e) => setDraft({ ...draft, role: e.target.value })} />
           </div>
-          <input className={input} placeholder="Focus areas, comma-separated" value={draft.focus} onChange={(e) => setDraft({ ...draft, focus: e.target.value })} />
-          <textarea rows={2} className={area} placeholder="Short bio" value={draft.bio} onChange={(e) => setDraft({ ...draft, bio: e.target.value })} />
-          <textarea rows={5} className={area} placeholder="Documented preferences — only what the member wrote or approved" value={draft.documentedPreferences} onChange={(e) => setDraft({ ...draft, documentedPreferences: e.target.value })} />
+          <input className={input} aria-label="Focus areas" placeholder="Focus areas, comma-separated" value={draft.focus} onChange={(e) => setDraft({ ...draft, focus: e.target.value })} />
+          <textarea rows={2} className={area} aria-label="Short bio" placeholder="Short bio" value={draft.bio} onChange={(e) => setDraft({ ...draft, bio: e.target.value })} />
+          <textarea rows={5} className={area} aria-label="Documented preferences" placeholder="Documented preferences — only what the member wrote or approved" value={draft.documentedPreferences} onChange={(e) => setDraft({ ...draft, documentedPreferences: e.target.value })} />
           <div className="flex gap-2">
             <Button variant="primary" onClick={saveMember} disabled={!draft.name || !draft.role}>
               Save
@@ -528,7 +588,7 @@ function IcMembers({ members, observations, companies, canWrite }: { members: Me
           <div className="t-section">Record an observation</div>
           <p className="text-[12.5px] text-ink-3">For something a member actually said or did. Prefer uploading the meeting transcript under Meetings — observations are then extracted with verbatim quotes.</p>
           <div className="grid gap-3 sm:grid-cols-3">
-            <select className={input} value={obs.memberId} onChange={(e) => setObs({ ...obs, memberId: e.target.value })}>
+            <select className={input} aria-label="IC member" value={obs.memberId} onChange={(e) => setObs({ ...obs, memberId: e.target.value })}>
               <option value="">Member…</option>
               {members.map((m) => (
                 <option key={m.id} value={m.id}>
@@ -536,14 +596,14 @@ function IcMembers({ members, observations, companies, canWrite }: { members: Me
                 </option>
               ))}
             </select>
-            <select className={input} value={obs.kind} onChange={(e) => setObs({ ...obs, kind: e.target.value })}>
+            <select className={input} aria-label="Observation kind" value={obs.kind} onChange={(e) => setObs({ ...obs, kind: e.target.value })}>
               {["QUESTION", "CONCERN", "SUPPORT", "VOTE"].map((k) => (
                 <option key={k} value={k}>
                   {titleCase(k)}
                 </option>
               ))}
             </select>
-            <select className={input} value={obs.companyId} onChange={(e) => setObs({ ...obs, companyId: e.target.value })}>
+            <select className={input} aria-label="Company (optional)" value={obs.companyId} onChange={(e) => setObs({ ...obs, companyId: e.target.value })}>
               <option value="">Company (optional)</option>
               {companies.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -552,15 +612,14 @@ function IcMembers({ members, observations, companies, canWrite }: { members: Me
               ))}
             </select>
           </div>
-          <input className={input} placeholder="Topic (e.g. retention, valuation)" value={obs.topic} onChange={(e) => setObs({ ...obs, topic: e.target.value })} />
-          <textarea rows={2} className={area} placeholder="What they said (neutral paraphrase)" value={obs.statement} onChange={(e) => setObs({ ...obs, statement: e.target.value })} />
-          <textarea rows={2} className={area} placeholder="Verbatim quote (optional)" value={obs.quote} onChange={(e) => setObs({ ...obs, quote: e.target.value })} />
+          <input className={input} aria-label="Topic" placeholder="Topic (e.g. retention, valuation)" value={obs.topic} onChange={(e) => setObs({ ...obs, topic: e.target.value })} />
+          <textarea rows={2} className={area} aria-label="What they said" placeholder="What they said (neutral paraphrase)" value={obs.statement} onChange={(e) => setObs({ ...obs, statement: e.target.value })} />
+          <textarea rows={2} className={area} aria-label="Verbatim quote (optional)" placeholder="Verbatim quote (optional)" value={obs.quote} onChange={(e) => setObs({ ...obs, quote: e.target.value })} />
           <Button onClick={addObs} disabled={!obs.memberId || !obs.statement}>
             Record observation
           </Button>
         </div>
       )}
-      {err && <div className="text-[12.5px] text-risk">{err}</div>}
     </div>
   );
 }
@@ -603,7 +662,7 @@ function Meetings({ meetings, companies, hasMembers, canWrite }: { meetings: Mem
             </thead>
             <tbody>
               {meetings.map((m) => (
-                <tr key={m.id} id={m.id} className="border-t border-line">
+                <tr key={m.id} id={m.id} className="scroll-mt-6 border-t border-line target:bg-accent-soft/40">
                   <td className="num py-2 pr-3 text-ink-3">{date(m.heldAt)}</td>
                   <td className="py-2 pr-3">
                     {m.title}
@@ -621,14 +680,14 @@ function Meetings({ meetings, companies, hasMembers, canWrite }: { meetings: Mem
         <div className="space-y-3">
           <div className="t-eyebrow">Record a meeting</div>
           <div className="grid grid-cols-2 gap-2">
-            <select className={input} value={d.kind} onChange={(e) => setD({ ...d, kind: e.target.value })}>
+            <select className={input} aria-label="Meeting type" value={d.kind} onChange={(e) => setD({ ...d, kind: e.target.value })}>
               <option value="IC">IC</option>
               <option value="PARTNER_MEETING">Partner meeting</option>
             </select>
-            <input type="date" className={input} value={d.heldAt} onChange={(e) => setD({ ...d, heldAt: e.target.value })} />
+            <input type="date" className={input} aria-label="Meeting date" value={d.heldAt} onChange={(e) => setD({ ...d, heldAt: e.target.value })} />
           </div>
-          <input className={input} placeholder="Title" value={d.title} onChange={(e) => setD({ ...d, title: e.target.value })} />
-          <select className={input} value={d.companyId} onChange={(e) => setD({ ...d, companyId: e.target.value })}>
+          <input className={input} aria-label="Meeting title" placeholder="Title" value={d.title} onChange={(e) => setD({ ...d, title: e.target.value })} />
+          <select className={input} aria-label="Company discussed (optional)" value={d.companyId} onChange={(e) => setD({ ...d, companyId: e.target.value })}>
             <option value="">Company discussed (optional)</option>
             {companies.map((c) => (
               <option key={c.id} value={c.id}>
@@ -636,12 +695,12 @@ function Meetings({ meetings, companies, hasMembers, canWrite }: { meetings: Mem
               </option>
             ))}
           </select>
-          <textarea rows={8} className={area} placeholder="Transcript (speaker-attributed if possible)" value={d.transcript} onChange={(e) => setD({ ...d, transcript: e.target.value })} />
+          <textarea rows={8} className={area} aria-label="Transcript" placeholder="Transcript (speaker-attributed if possible)" value={d.transcript} onChange={(e) => setD({ ...d, transcript: e.target.value })} />
           <label className="block text-[12px] text-ink-3">
             or load a .txt file{" "}
             <input type="file" accept=".txt,.md,.vtt,.srt" className="text-[12px]" onChange={async (e) => e.target.files?.[0] && setD({ ...d, transcript: await e.target.files[0].text() })} />
           </label>
-          <textarea rows={3} className={area} placeholder="Notes / decision" value={d.notes} onChange={(e) => setD({ ...d, notes: e.target.value })} />
+          <textarea rows={3} className={area} aria-label="Notes or decision" placeholder="Notes / decision" value={d.notes} onChange={(e) => setD({ ...d, notes: e.target.value })} />
           <Button variant="primary" onClick={add} disabled={busy || !d.title}>
             {busy ? "Saving and extracting…" : "Save meeting"}
           </Button>

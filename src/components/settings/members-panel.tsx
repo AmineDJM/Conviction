@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Badge, Button, Callout, Section } from "@/components/ui";
-import { relative, date } from "@/lib/format";
+import { Ago, Badge, Button, Callout, Section } from "@/components/ui";
+import { date } from "@/lib/format";
 
 type Role = "OWNER" | "PARTNER" | "ANALYST" | "VIEWER";
 const ROLES: Role[] = ["OWNER", "PARTNER", "ANALYST", "VIEWER"];
@@ -118,7 +118,7 @@ export function MembersPanel({ members, me, isOwner, roleDescriptions }: { membe
                         )}
                       </td>
                       <td className="num py-2 pr-4 text-ink-3" title={m.lastSessionAt ?? undefined}>
-                        {m.lastSessionAt ? relative(m.lastSessionAt) : <span>Never · invited {date(m.createdAt)}</span>}
+                        {m.lastSessionAt ? <Ago at={m.lastSessionAt} /> : <span>Never · invited {date(m.createdAt)}</span>}
                       </td>
                       {isOwner && (
                         <td className="py-2 text-right whitespace-nowrap">

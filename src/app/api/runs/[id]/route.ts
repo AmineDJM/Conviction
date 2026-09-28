@@ -1,5 +1,6 @@
 import { apiSession } from "@/server/session";
 import { getRun, getCompany } from "@/server/repo";
+import { redactSecrets } from "@/ai/errors";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +18,8 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
     progress: run.progress,
     spentUsd: run.spentUsd,
     budgetUsd: run.budgetUsd,
-    error: run.error,
+    // Provider text never reaches run.error (ai/errors.ts); rows written before that are redacted on the way out.
+    error: run.error && redactSecrets(run.error),
     slug: company?.slug,
     name: company?.name,
     hasVersion: !!company?.currentVersionId,

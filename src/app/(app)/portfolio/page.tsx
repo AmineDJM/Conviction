@@ -138,7 +138,7 @@ export default async function PortfolioPage() {
           </Section>
         </div>
 
-        <Section id="costs" eyebrow="Cost control (§132)" title="What the analysis costs">
+        <Section id="costs" eyebrow="Cost control" title="What the analysis costs">
           <table className="w-full text-[13px]">
             <thead>
               <tr className="text-left text-[11.5px] text-ink-3">

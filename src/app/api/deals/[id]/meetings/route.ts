@@ -15,10 +15,15 @@ import { FounderCallError, MAX_TRANSCRIPT_CHARS, startFounderCall } from "@/orch
 import { AUDIO_EXTENSIONS, MAX_RECORDING_BYTES } from "@/ai/transcribe";
 import { MeetingParticipant } from "@/domain/meetings";
 import { logger } from "@/lib/log";
+import { BodyLimitError, bodyLimitResponse, readFormData, readJson } from "@/server/upload-limits";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 800;
+
+/** A recording (≤ MAX_RECORDING_BYTES) or a transcript file, plus small form fields. */
+const MAX_MULTIPART_BYTES = MAX_RECORDING_BYTES + 2 * 1024 * 1024;
+const MAX_JSON_BYTES = 4 * 1024 * 1024;
 
 const Meta = z.object({
   title: z.string().max(200).nullable().optional(),
@@ -40,7 +45,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     let input: Parameters<typeof startFounderCall>[0];
     const type = req.headers.get("content-type") ?? "";
     if (type.includes("multipart/form-data")) {
-      const form = await req.formData();
+      const form = await readFormData(req, MAX_MULTIPART_BYTES, 1);
       let participants: unknown = [];
       try {
         participants = JSON.parse((form.get("participants") as string | null) || "[]");
@@ -60,9 +65,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           input.transcript = await file.text();
           input.filename = file.name;
         } else return Response.json({ error: "Upload a transcript (.txt, .md, .vtt, .srt) or a recording (wav, mp3, m4a, mp4, webm, ogg, flac)" }, { status: 400 });
-      } else input.transcript = (form.get("transcript") as string | null) ?? "";
+      } else {
+        const t = form.get("transcript");
+        if (t !== null && typeof t !== "string") return Response.json({ error: "transcript must be text; upload a transcript file as `file`" }, { status: 400 });
+        input.transcript = t ?? "";
+      }
     } else {
-      const parsed = Json.safeParse(await req.json().catch(() => null));
+      const parsed = Json.safeParse(await readJson(req, MAX_JSON_BYTES));
       if (!parsed.success) return Response.json({ error: parsed.error.issues[0]?.message ?? "Invalid body" }, { status: 400 });
       input = { workspaceId: s.workspaceId, userId: s.userId, companyIdOrSlug, ...parsed.data };
     }
@@ -71,6 +80,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return Response.json({ meetingId: meeting.id, runId: run.id }, { status: 202 });
   } catch (e) {
     if (e instanceof FounderCallError) return Response.json({ error: e.message }, { status: e.status });
+    if (e instanceof BodyLimitError) return bodyLimitResponse(e);
     if (e instanceof z.ZodError) return Response.json({ error: e.issues[0]?.message ?? "Invalid input" }, { status: 400 });
     return Response.json({ error: `Could not start the meeting workflow: ${(e as Error).message.slice(0, 200)}` }, { status: 500 });
   }

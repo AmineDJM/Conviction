@@ -24,6 +24,9 @@ export default async function DealLayout({ children, params }: { children: React
   // After triage (identity known): does this dossier duplicate an older one? Asked, never merged silently.
   const duplicates = version ? duplicateSuggestions(loaded.session.workspaceId, company.id) : [];
   const aliases = sameCompanySignals(companyAliases(loaded.session.workspaceId, company.id), duplicates, distinctFrom(company.id));
+  const writer = canWrite(loaded.session);
+  // Deleting and merging dossiers are reserved to owners and partners (the API enforces the same rule).
+  const manager = loaded.session.role === "OWNER" || loaded.session.role === "PARTNER";
   return (
     <div>
       <div className="no-print sticky top-0 z-30 border-b border-line bg-bg/90 backdrop-blur-md">
@@ -47,7 +50,8 @@ export default async function DealLayout({ children, params }: { children: React
         versionStage={stage ? { stage: stage.stage, label: stage.label, code: stage.code } : null}
         companyId={company.id}
         deck={deck ? { seq: deck.seq, filename: deck.filename, total: decks.at(-1)?.seq ?? deck.seq } : null}
-        canWrite={canWrite(loaded.session)}
+        canWrite={writer}
+        canDelete={manager}
         running={!!running}
         aliases={aliases}
       />
@@ -55,10 +59,10 @@ export default async function DealLayout({ children, params }: { children: React
       </div>
       {duplicates.length > 0 && (
         <div className="px-4 pt-4 sm:px-8">
-          <DuplicateBanner companyId={company.id} name={company.name} matches={duplicates.map((m) => ({ companyId: m.companyId, name: m.name, slug: m.slug, verdict: m.verdict, reasons: m.reasons }))} canWrite={canWrite(loaded.session)} running={!!running} />
+          <DuplicateBanner companyId={company.id} name={company.name} matches={duplicates.map((m) => ({ companyId: m.companyId, name: m.name, slug: m.slug, verdict: m.verdict, reasons: m.reasons }))} canWrite={writer} canMerge={manager} running={!!running} />
         </div>
       )}
-      {running && <RunProgress runId={run.id} initial={run.progress} hasVersion={!!version} title={run.kind === "RESEARCH" ? "Refreshing stale data — the current version stays in place until the refresh is applied" : undefined} />}
+      {running && <RunProgress runId={run.id} initial={run.progress} hasVersion={!!version} title={run.kind === "RESEARCH" ? "Refreshing stale data — the current version stays in place until the refresh is applied" : undefined} canStop={writer} />}
       {!running && run?.status === "FAILED" && !version && (
         <div className="px-8 py-10">
           <div className="max-w-xl rounded-lg border border-risk/30 bg-risk-soft/50 px-4 py-3">

@@ -77,7 +77,16 @@ export function BrainPanel({ fundName }: { fundName: string }) {
         body: JSON.stringify({ question, threadId, contextSlug: slug }),
         signal: ctrl.signal,
       });
-      if (!res.ok || !res.body) throw new Error((await res.text()) || `HTTP ${res.status}`);
+      if (!res.ok || !res.body) {
+        // Error responses are JSON ({ error }); fall back to the raw text, then the status.
+        const text = await res.text().catch(() => "");
+        let message = text;
+        try {
+          const j = JSON.parse(text) as { error?: unknown; message?: unknown };
+          message = typeof j.error === "string" ? j.error : typeof j.message === "string" ? j.message : text;
+        } catch {}
+        throw new Error(message || `The Fund Brain is unavailable (HTTP ${res.status})`);
+      }
       const reader = res.body.getReader();
       const dec = new TextDecoder();
       let buf = "";

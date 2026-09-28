@@ -31,7 +31,7 @@ export function DealTabs({ slug }: { slug: string }) {
   const base = `/deals/${slug}`;
   const seg = path === base ? "" : path.slice(base.length + 1).split("/")[0];
   // Report pages without their own tab live under Reports.
-  const current = seg === "deep-dd" ? "memo" : seg;
+  const current = seg === "deep-dd" || seg === "brief" ? "memo" : seg;
   return (
     <nav className="no-print border-t border-line px-2 sm:px-6">
       <div className="-mb-px flex gap-0.5 overflow-x-auto">

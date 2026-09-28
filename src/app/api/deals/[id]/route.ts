@@ -15,6 +15,7 @@ import { indexCompanyForBrain } from "@/brain/indexer";
 import { applyOverrides } from "@/engine/overrides";
 import { IcDecision, ExecutionStatus } from "@/domain/enums";
 import { refreshPatterns } from "@/server/fund-brain";
+import { cancelRun } from "@/orchestration/run-control";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -27,6 +28,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (!canWrite(s)) return Response.json({ error: "Read-only role" }, { status: 403 });
   const parsed = Patch.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Invalid body" }, { status: 400 });
+  // IC decisions are a partner call (members.ts ROLE_DESCRIPTION: PARTNER — "Analyses, IC decisions, …").
+  if (parsed.data.icDecision && s.role !== "OWNER" && s.role !== "PARTNER") return Response.json({ error: "Only owners and partners can record IC decisions" }, { status: 403 });
   const company = repo.getCompany(s.workspaceId, (await params).id);
   if (!company) return Response.json({ error: "Not found" }, { status: 404 });
   const current = repo.getCurrentVersion(company);
@@ -62,6 +65,9 @@ export async function DELETE(_: Request, { params }: { params: Promise<{ id: str
   if (s.role !== "OWNER" && s.role !== "PARTNER") return Response.json({ error: "Only owners and partners can delete" }, { status: 403 });
   const company = repo.getCompany(s.workspaceId, (await params).id);
   if (!company) return Response.json({ error: "Not found" }, { status: 404 });
+  // Stop in-flight work first: a live run would otherwise keep spending and write into a deleted company.
+  const live = repo.latestRun(company.id);
+  if (live && (live.status === "RUNNING" || live.status === "QUEUED")) cancelRun(live.id);
   const db = getDb();
   const docs = repo.listDocuments(company.id);
   db.transaction((tx) => {

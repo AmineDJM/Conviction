@@ -421,6 +421,30 @@ describe("duplicate companies", () => {
     expect(duplicateSuggestions(ws.workspaceId, r2.company.id)).toEqual([]);
     await expect(mergeIntoCompany({ workspaceId: ws.workspaceId, userId: ws.userId, sourceId: r1.company.id, targetId: r1.company.id })).rejects.toThrow(/itself/);
   });
+
+  it("merges once: two simultaneous merges of the same duplicate (or of each into the other) start one analysis", async () => {
+    const r1 = await upload([DECK1()], deckV1);
+    const r2 = await upload([DECK2()], deckV2);
+    queue.push(deckV2, deckV2);
+    const both = await Promise.allSettled([
+      mergeIntoCompany({ workspaceId: ws.workspaceId, userId: ws.userId, sourceId: r2.company.id, targetId: r1.company.id }),
+      mergeIntoCompany({ workspaceId: ws.workspaceId, userId: ws.userId, sourceId: r2.company.id, targetId: r1.company.id }),
+      mergeIntoCompany({ workspaceId: ws.workspaceId, userId: ws.userId, sourceId: r1.company.id, targetId: r2.company.id }),
+    ]);
+    const ok = both.filter((x) => x.status === "fulfilled");
+    expect(ok).toHaveLength(1);
+    await (ok[0] as PromiseFulfilledResult<Awaited<ReturnType<typeof mergeIntoCompany>>>).value.promise;
+    for (const x of both.filter((x) => x.status === "rejected")) expect((x as PromiseRejectedResult).reason).toBeInstanceOf(AnalysisRequestError);
+    expect(repo.listCompanies(ws.workspaceId).map((c) => c.id)).toEqual([r1.company.id]);
+    expect(deckLineage(r1.company.id).map((e) => e.seq)).toEqual([1, 2]);
+    expect(repo.listHistory(r1.company.id).filter((h) => h.type === "COMPANY_MERGED")).toHaveLength(1);
+    // A merge that cannot start (target busy) leaves the duplicate live.
+    const r3 = await upload([DECK3()], deckV3);
+    const run = repo.createRun({ workspaceId: ws.workspaceId, companyId: r1.company.id, mode: "FAST_SCREEN", model: "m", promptVersions: {}, registryId: "r", budgetUsd: 0.1, steps: [] });
+    await expect(mergeIntoCompany({ workspaceId: ws.workspaceId, userId: ws.userId, sourceId: r3.company.id, targetId: r1.company.id })).rejects.toThrow(/running/);
+    repo.finishRun(run.id, "COMPLETED", 0, "FULL");
+    expect(repo.getCompany(ws.workspaceId, r3.company.id)).toBeDefined();
+  });
 });
 
 /* ------------------------------------------------------------------ */
