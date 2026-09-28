@@ -38,7 +38,23 @@ NODE_USE_ENV_PROXY=1 npx tsx evals/run.ts [suite ...]
   EVAL_REUSE=1                 measure the stored analyses instead of re-running them (downstream suites only)
   EVAL_MERGE_LATEST=1          with named suites: replace those suites in latest.json (recorded under "merged")
   EVAL_FAST_SCREEN_CAP_USD=…   eval-only FAST_SCREEN cap, used only AFTER the product cap has failed (the failure stays a hard FAIL)
+  EVAL_TIER=quick              extraction-only analyses (T0: triage, extraction, forensics, latent, divergence; no ANALYZE/DECIDE)
+                               and only the extraction, integrity and retrieval suites — for iterating on extraction prompts
 ```
+
+**Where the cost of a run goes.** Every model call writes one `cost_records` row (step, input / cached / output tokens, actual USD); a cache hit is recorded as `<step>:cache` at $0. At the end of each run the runner sums those rows since the run started, prints them by step with cache hits, and stores the table in the result file (`measurements.cost`), so the figure reported for a run is the sum of its calls, never an estimate.
+
+Breakdown of the 2026-09-28 08:54 run (**$1.3841**, reconciled exactly with `cost_records`):
+
+| Part | Cost |
+|---|---|
+| 17 FAST_SCREEN analyses (12 corpus decks, 4 Ledgerline variants, 1 uncacheable pipeline probe), ≈ $0.078 each | $1.3285 |
+| Citation-support judge | $0.0379 |
+| Fund Brain answers (chat suite) | $0.0177 |
+
+By token type: output 724k tokens × $1.20/M = $0.869 (65%); uncached input 2.29M × $0.20/M = $0.457 (34%); cached input 0.53M × $0.02/M = $0.011. By step, the five decision calls (core, thesis, challenge, machine, next proof; ≈ 19k input tokens each) are 41% of the analysis cost ($0.105–0.112 each over 17 analyses); the six ANALYZE parts 30%; T0 extraction, forensics, latent and divergence 29%; embeddings $0.004.
+
+That run hit the reproducibility cache **zero** times: the untrusted-data envelope used a random boundary, so no two prompts were ever identical. The boundary is now an HMAC of the label and content under the server secret (unpredictable to a document author, stable for identical content), so a re-run on unchanged prompts, decks and engine reuses every call. A quick-tier run costs about $0.022 per deck (T0 only) against $0.078 for a full FAST_SCREEN. These two effects are verified on the mock model server (a full analysis after an extraction-only one: 8 cache hits); their effect on a real run has not been measured yet.
 
 ### Corpus (12 fictional decks)
 
@@ -115,4 +131,6 @@ Full run on the 12-deck corpus + 4 Ledgerline variants; engine 3.3; prompts `ext
 - Chat: fact answers without a model call in < 100 ms; single-deal first token median 798 ms (three runs 688 / 798 / 844 ms); FR questions answered in French; no fabricated IC opinion; "We don't know yet" for absent metrics and unknown companies.
 - Citation support: **91.3% of 150 checkable (95% CI 85.7–94.9%) — below the 99.5% target.** Analysis claims → cited deck page **97.8%** (100% in the previous run; evidence excerpts verbatim on the cited page 99.4%, deterministic). Fund Brain answers **81.7%** (n = 60). **0 DOES_NOT_SUPPORT** in either: no fabricated fact; the partials are cited sentences that add a qualifier, a list item or an inference beyond the item. Raising the answer model's reasoning effort to "low" doubles the first-token latency (1.0 s → 1.9 s) and was not adopted; the prompt carries rules and bad/good examples instead.
 
-**After this run:** a final run to confirm the Clausewren and Carbonmoss fixes (Carbonmoss: an undated "$1.1M revenue" twin of "revenue since launch" is now cumulative) stopped when the OpenAI account ran out of credits (the product reported it as "no credits left", not retried). Before stopping it measured all 11 decks it reached at 100% metric accuracy. Re-run `NODE_USE_ENV_PROXY=1 npx tsx evals/run.ts` once credits are added; add `EVAL_UPDATE_BASELINE=1` to refresh the corpus baseline (taken on engine 3.1).
+**After this run:** a final run to confirm the Clausewren and Carbonmoss fixes (Carbonmoss: an undated "$1.1M revenue" twin of "revenue since launch" is now cumulative) stopped when the OpenAI account ran out of credits (the product reported it as "no credits left", not retried). Before stopping it measured all 11 decks it reached at 100% metric accuracy. **Fund Brain citation verification (after this run, not yet measured).** Every Fund Brain answer now goes through a second pass before it is kept (`brain/verify-citations.ts`, `brain_verify_v1`, effort `none`, cached): each cited sentence is checked against the text of the items it cites. The model only returns a verdict per sentence — SUPPORTED, TRIM (the supported part of the sentence) or INFERENCE — and code applies it: a trim is accepted only if it adds no number and is not longer than the original, otherwise the sentence is kept as an inference; an inference loses its citation markers and is labelled "Inference:" / "Lecture :"; citations to items that do not exist are removed. The reader sees the streamed answer replaced by the verified one; the stored answer is the verified one, with the counts (checked, supported, trimmed, inference, refused). A verifier failure keeps the original answer and is recorded. Chat citation support was 81.7%; whether this reaches the 99.5% target will be known only after the next run.
+
+Re-run `NODE_USE_ENV_PROXY=1 npx tsx evals/run.ts` once credits are added; add `EVAL_UPDATE_BASELINE=1` to refresh the corpus baseline (taken on engine 3.1).
