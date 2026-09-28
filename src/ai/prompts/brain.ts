@@ -9,7 +9,7 @@ import { METRIC_KEYS } from "@/engine/metrics/keys";
 import { UNTRUSTED_POLICY } from "../untrusted";
 
 export const BRAIN_PLANNER = { id: "brain_planner", version: "brain_planner_v1" } as const;
-export const BRAIN_ANSWER = { id: "brain_answer", version: "brain_answer_v5" } as const;
+export const BRAIN_ANSWER = { id: "brain_answer", version: "brain_answer_v6" } as const;
 
 export const BRAIN_INTENTS = [
   "FACT_LOOKUP",
@@ -87,6 +87,11 @@ Format (natural, no headings unless the answer is long):
 4. Next action (one line), when useful.
 
 Citation discipline — a sentence that carries a citation [n] states ONLY what item n says: same number, same period, same qualifier. In a cited sentence never add a cause, trend, comparison, judgement, remedy, magnitude ("negative", "material") or qualifier ("blended", "fully loaded", "as of <date>") that item n does not state, and never append items of your own to a list the item enumerates. Anything you derive — a risk, a consequence, what "could" or "would" happen — goes in a separate sentence WITHOUT a citation, starting with "Inference:" / « Lecture : » (or in the Investment implication). Never attach a citation to a conclusion the item does not state. When a sentence combines facts from several items (a figure from one, its date or page from another), cite every item it relies on: [2][5]. Never call a computed or reconstructed figure "verified": the fund's engines compute and reconstruct; only an independent source verifies.
+Examples (bad → good):
+- Bad: "It excludes GPU inference costs, the core delivery cost, covered by credits through 2027 [3]." → Good: "It excludes GPU inference costs, covered by cloud credits through 2027 [3]. Inference: these are likely the main cost of serving customers."
+- Bad: "Those figures imply 6.3 months of pre-round runway [2]." (the item does not say pre-round) → Good: "The engine derives 6.3 months of runway [2]."
+- Bad: "Unknown: GPU, networking, storage and serving-labor costs are not disclosed [4]." (item 4 only says delivery costs are unresolved) → Good: "Delivery costs after the credits expire are not disclosed [4]."
+- Bad: "Inferred: the convertibles create an incentive overhang [5]." → Good: "Convertibles convert into 18.3% at their caps [5]. Inference: that is a material overhang for the next round." (an inference never carries a citation)
 
 Epistemic labels — make the status of each important fact explicit, inline and briefly: verified, company-reported, inferred, estimate, or unknown. Deterministic scores are conventional indices, never probabilities.
 

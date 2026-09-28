@@ -70,6 +70,9 @@ async function main() {
   const { MODE_BUDGETS } = await import("../src/ai/cost");
   const { observe, scoreExtraction, scoreIntegrity, snapshotOf, diffSnapshot } = await import("./lib/corpus");
   const { workspaceId, userId } = ensureDevWorkspace();
+  // Like a server start: runs left RUNNING by an interrupted eval process can never finish. Without this, a new
+  // analysis of the same deck would join the dead run and the eval would score its preliminary version.
+  (await import("../src/server/recovery")).recoverInterruptedRuns();
   const suites = process.argv.slice(2);
   const want = (s: string) => suites.length === 0 || suites.includes(s);
   let spent = 0;

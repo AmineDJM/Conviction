@@ -345,3 +345,13 @@ describe("team ratings above ADEQUATE need evidence beyond the company's own sta
     expect(withFmf("VERIFIED").rating).toBe("STRONG");
   });
 });
+
+describe("SCREEN_OUT is reserved to gates", () => {
+  it("a model 'screen out' without a mandate or quality-floor gate is an analytical pass", () => {
+    const d = makeDeal();
+    d.aiRecommendation = { suggestedStatus: "SCREEN_OUT", rationale: "valuation too high", watch: null };
+    const r = derive(d, reg, DEFAULT_FUND_PROFILE, { now }).recommendation;
+    expect(r.status).toBe("ANALYTICAL_RECOMMEND_PASS");
+    expect(r.trace.some((t) => t.gate === "SCREEN_OUT_RESERVED")).toBe(true);
+  });
+});

@@ -152,8 +152,13 @@ export function decide(inp: DecisionInputs): Recommendation {
     "IC_READY",
     "ANALYTICAL_RECOMMEND_INVEST",
   ];
-  const accepted = aiSuggested !== null && admissible.has(aiSuggested);
-  const status = accepted ? aiSuggested! : (fallbackOrder.find((s) => admissible.has(s)) ?? "NEEDS_FOUNDER_CALL");
+  // SCREEN_OUT is a gate outcome (mandate, quality floor), not an analytical judgment: a model "screen out" with no
+  // screen-out gate is an analytical pass.
+  const screenGate = qualityLow && !exceptional && !hasRatedStrength;
+  const suggestion: DecisionStatus | null = aiSuggested === "SCREEN_OUT" && !screenGate ? "ANALYTICAL_RECOMMEND_PASS" : aiSuggested;
+  if (suggestion !== aiSuggested) trace.push({ gate: "SCREEN_OUT_RESERVED", outcome: "APPLIED", detail: "Model suggested SCREEN_OUT without a mandate or quality-floor gate: recorded as an analytical pass" });
+  const accepted = suggestion !== null && admissible.has(suggestion);
+  const status = accepted ? suggestion! : (fallbackOrder.find((s) => admissible.has(s)) ?? "NEEDS_FOUNDER_CALL");
   const rationale = accepted
     ? (deal.aiRecommendation?.rationale ?? "")
     : aiSuggested === null
