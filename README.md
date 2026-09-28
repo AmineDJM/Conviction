@@ -97,6 +97,17 @@ Set these on the service to keep documents and off-site backups in any S3-compat
 
 Object storage is used only when all three required variables are set. Documents uploaded earlier stay readable from the disk.
 
+**Supabase Storage** (Supabase → Project settings → Storage → S3 connection): create a private bucket, generate an S3 access key, then set
+
+| Variable | Value |
+|---|---|
+| `S3_ENDPOINT` | `https://<project-ref>.supabase.co/storage/v1/s3` |
+| `S3_REGION` | your project's region, e.g. `eu-west-3` |
+| `S3_BUCKET` | the bucket name |
+| `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | the generated S3 key |
+
+Documents and off-site backups are then stored (encrypted by the application, AES-256-GCM) in Supabase; the SQLite database stays on the Render disk. Nothing else from Supabase is required.
+
 ### Integrity checks
 
 `GET /api/admin/consistency` (owners and partners), also shown under **Settings → Data & backups**, verifies that every company's pipeline projection, metric facts, deal memory and retrieval chunks match its current version.
