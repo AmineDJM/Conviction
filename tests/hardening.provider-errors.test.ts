@@ -23,7 +23,7 @@ describe("provider errors are user-safe", () => {
     const err = await structured(call(cost)).catch((e) => e);
     expect(err).toBeInstanceOf(ProviderError);
     expect(err.errorClass).toBe("AUTHENTICATION");
-    expect(err.message).toBe("The model provider returned an error (authentication). Retry, or check the server logs.");
+    expect(err.message).toBe("The model provider rejected the API key (authentication). Check OPENAI_API_KEY, then retry.");
     expect(err.message).not.toMatch(/sk-|Incorrect|platform\.openai/);
     expect(cost.spentUsd).toBe(0);
     expect(cost.remainingUsd).toBe(1); // in-flight hold released
@@ -103,5 +103,23 @@ describe("provider errors are user-safe", () => {
     expect(err).toBeInstanceOf(TranscriptionError);
     expect(err.status).toBe(401);
     expect(err.message).not.toMatch(/sk-|Incorrect/);
+  });
+});
+
+describe("an exhausted OpenAI account is reported as such, never as 'unavailable', and is not retried", () => {
+  it("classifies quota errors from the HTTP status path and from stream events", async () => {
+    const { classifyProviderError, ProviderError: PE } = await import("@/ai/errors");
+    expect(classifyProviderError(429, "insufficient_quota")).toBe("QUOTA");
+    expect(classifyProviderError(null, "credit_balance_exhausted You have no credits remaining.")).toBe("QUOTA");
+    expect(classifyProviderError(429, "rate_limit_exceeded")).toBe("RATE_LIMIT");
+    expect(new PE("QUOTA", 429).message).toContain("no credits left");
+  });
+
+  it("a quota error in the stream fails after one attempt", async () => {
+    const f = vi.fn(async () => sse({ type: "error", error: { message: "You have no credits remaining.", code: "insufficient_quota", type: "insufficient_quota" } }));
+    vi.stubGlobal("fetch", f);
+    const err = await structured(call(new CostController(1, 1))).catch((e) => e);
+    expect(err.errorClass).toBe("QUOTA");
+    expect(f).toHaveBeenCalledTimes(1);
   });
 });

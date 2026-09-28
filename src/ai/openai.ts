@@ -14,7 +14,7 @@ import { eq, sql } from "drizzle-orm";
 import { toStrictJsonSchema } from "./json-schema";
 import type { CostController, Reservation } from "./cost";
 import type { Usage } from "./pricing";
-import { ProviderError, providerError } from "./errors";
+import { NON_RETRYABLE, ProviderError, providerError } from "./errors";
 
 const BASE_URL = process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1";
 export const PRIMARY_MODEL = process.env.CONVICTION_MODEL ?? "gpt-5.6-luna";
@@ -134,6 +134,7 @@ function inputChars(instructions: string, input: InputMessage[]): number {
  * load balancers; the complete response arrives in the `response.completed` event.
  */
 const RETRYABLE = new Set([408, 409, 429, 500, 502, 503, 504]);
+const QUOTA_BODY = /insufficient_quota|credit_balance|billing_hard_limit|billing_not_active/;
 
 /** Transport-level retries: rate limits and transient server errors, honoring retry-after. */
 export async function fetchWithRetry(url: string, init: RequestInit, retries = 4): Promise<Response> {
@@ -146,6 +147,8 @@ export async function fetchWithRetry(url: string, init: RequestInit, retries = 4
       if ((e as Error).name === "AbortError" || attempt >= retries) throw e;
     }
     if (res && (!RETRYABLE.has(res.status) || attempt >= retries)) return res;
+    // "No credits" comes as a 429: retrying cannot help.
+    if (res?.status === 429 && QUOTA_BODY.test(await res.clone().text().catch(() => ""))) return res;
     const retryAfter = res ? Number(res.headers.get("retry-after")) : NaN;
     const wait = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(30_000, retryAfter * 1000) : delay + Math.floor(Math.random() * 400);
     await res?.body?.cancel().catch(() => {});
@@ -256,7 +259,7 @@ export async function structured<T extends z.ZodType>(call: StructuredCall<T>): 
       // Refused requests are not billed; an accepted request that then failed may be: its reported usage, else the worst case.
       const reported = e instanceof ProviderError ? e.usage : null;
       await call.cost.record({ step: call.step, model, promptVersion: call.promptVersion, usage: reported ?? NO_USAGE, estimatedUsd: estimated, ...(reported ? {} : { actualUsd: state.accepted ? estimated : 0 }), latencyMs: Date.now() - t0, toolCalls: 0 });
-      if (isAbort(e, call.signal)) break;
+      if (isAbort(e, call.signal) || (e instanceof ProviderError && NON_RETRYABLE.has(e.errorClass))) break;
       if (attempt < maxAttempts) await new Promise((r) => setTimeout(r, 1500 * attempt));
       continue;
     }
