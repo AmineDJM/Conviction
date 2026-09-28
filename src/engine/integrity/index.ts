@@ -19,6 +19,7 @@
  * fails on malformed partial input is recorded in `diagnostics` and replaced
  * by its empty result.
  */
+import { dedupeSecurityFlags } from "@/engine/security-flags";
 import type { CanonicalDeal } from "@/domain/canonical";
 import type { BenchmarkRegistry } from "../benchmarks/types";
 import type { PeerGroupRef } from "../scoring/peer";
@@ -82,7 +83,7 @@ export function sortFindings(fs: IntegrityFinding[]): IntegrityFinding[] {
 }
 
 function securityFindings(ctx: IntegrityContext): IntegrityFinding[] {
-  const flags = arr(ctx.deal.analysis?.securityFlags);
+  const flags = dedupeSecurityFlags(arr(ctx.deal.analysis?.securityFlags).filter((f) => f && typeof f.excerpt === "string" && typeof f.location === "string"));
   const suspected = arr(ctx.deal.forensics?.suspectedInstructions);
   if (!flags.length && !suspected.length) return [];
   const pages = [...flags.map((f) => pageOf(f?.location)), ...suspected.map((s) => s?.page ?? null)];

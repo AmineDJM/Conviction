@@ -3,6 +3,7 @@
  * Code — not the model — decides ids, verification status, independence
  * and freshness.
  */
+import { dedupeSecurityFlags } from "@/engine/security-flags";
 import type { CanonicalDeal, Claim, InformationGap, Source } from "@/domain/canonical";
 import type { TriageOutput } from "@/ai/prompts/triage";
 import type { ClaimsExtractionOutput, MetricsExtractionOutput } from "@/ai/prompts/extract";
@@ -60,7 +61,7 @@ export function applyDocuments(c: CanonicalDeal, docs: IngestedDoc[], asOf = new
   }
   // Deterministic injection detector over every raw page.
   const flags = docs.flatMap((d) => d.pages.flatMap((p) => detectInjection(p.text, `${d.filename} p. ${p.pageNo}`)));
-  next.analysis.securityFlags = dedupeFlags([...next.analysis.securityFlags, ...flags]);
+  next.analysis.securityFlags = dedupeSecurityFlags([...next.analysis.securityFlags, ...flags]);
   return next;
 }
 
@@ -111,7 +112,7 @@ export function applyClaimsExtraction(c: CanonicalDeal, out: ClaimsExtractionOut
   next.businessModel = out.businessModel;
   next.customers = out.customers;
   const flags = out.suspectedInstructions.map((s) => ({ location: s.page ? `p. ${s.page}` : "document", excerpt: s.excerpt }));
-  next.analysis.securityFlags = dedupeFlags([...next.analysis.securityFlags, ...flags]);
+  next.analysis.securityFlags = dedupeSecurityFlags([...next.analysis.securityFlags, ...flags]);
   return next;
 }
 
@@ -139,7 +140,7 @@ export function applyForensics(c: CanonicalDeal, out: DeckForensics): CanonicalD
   const next = structuredClone(c);
   next.forensics = out;
   const flags = out.suspectedInstructions.map((s) => ({ location: s.page ? `p. ${s.page}` : "document (visual)", excerpt: s.excerpt }));
-  next.analysis.securityFlags = dedupeFlags([...next.analysis.securityFlags, ...flags]);
+  next.analysis.securityFlags = dedupeSecurityFlags([...next.analysis.securityFlags, ...flags]);
   // The model's customer evidence levels from visuals do not upgrade extraction; logos stay logos.
   return next;
 }
@@ -200,16 +201,6 @@ export function linkKeyClaims(keyClaims: { ref: string; statement: string }[], c
     if (best && best.score >= 0.25) map.set(k.ref, best.id);
   }
   return map;
-}
-
-function dedupeFlags(flags: { location: string; excerpt: string }[]) {
-  const seen = new Set<string>();
-  return flags.filter((f) => {
-    const k = f.excerpt.slice(0, 60);
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
 }
 
 /* ---------------------------------------------------------------- */
@@ -401,7 +392,7 @@ export function applyResearchDetailed(c: CanonicalDeal, out: ResearchOutput, ctx
   }
 
   const flags = out.suspectedInstructions.map((s) => ({ location: s.url, excerpt: s.excerpt }));
-  next.analysis.securityFlags = dedupeFlags([...next.analysis.securityFlags, ...flags]);
+  next.analysis.securityFlags = dedupeSecurityFlags([...next.analysis.securityFlags, ...flags]);
   return { deal: next, refMap };
 }
 

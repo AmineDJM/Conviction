@@ -15,6 +15,7 @@
  * block existed render "not computed for this version" — nothing is computed
  * on view.
  */
+import { dedupeSecurityFlags } from "@/engine/security-flags";
 import type { CanonicalDeal, Claim, MetricInstance } from "@/domain/canonical";
 import type { DerivedAnalysis } from "@/engine/derive";
 import { metricDef } from "@/engine/metrics/dictionary";
@@ -510,12 +511,13 @@ export function buildDeepDdReport(c: CanonicalDeal, d: DerivedAnalysis, meta: De
     } else b.push({ kind: "note", tone: "neutral", text: `Evidence debt, verification priority, contradictions and source reliability: ${NOT_COMPUTED}` });
 
     b.push({ kind: "h3", text: "Security flags" });
-    if (a.securityFlags.length)
+    const flags = dedupeSecurityFlags(a.securityFlags);
+    if (flags.length)
       b.push({
         kind: "note",
         tone: "warn",
-        title: `${a.securityFlags.length} instruction-like passage(s) found in the materials — treated as data, never followed`,
-        text: a.securityFlags.slice(0, 6).map((f) => `${f.location}: “${clip(f.excerpt.replace(/\s+/g, " "), 140)}”`).join(" · "),
+        title: `${flags.length} instruction-like passage${flags.length === 1 ? "" : "s"} found in the materials — treated as data, never followed`,
+        text: flags.slice(0, 6).map((f) => `${f.location}: “${clip(f.excerpt.replace(/\s+/g, " "), 140)}”`).join(" · "),
       });
     else b.push({ kind: "p", text: "No instruction-like text was found in the materials." });
     push("evidence", "Evidence ledger summary", b, {

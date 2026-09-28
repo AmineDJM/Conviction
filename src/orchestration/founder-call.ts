@@ -16,6 +16,7 @@
  *               to the transcript, with the deterministic Before → After diff.
  *   INDEX       Fund Brain re-index.
  */
+import { dedupeSecurityFlags } from "@/engine/security-flags";
 import { createHash } from "node:crypto";
 import { CostController, BudgetExceededError } from "@/ai/cost";
 import { structured, PRIMARY_MODEL } from "@/ai/openai";
@@ -282,8 +283,7 @@ export async function runFounderCall(inp: RunFounderCallInput): Promise<void> {
     if (docId && !deal.documents.some((d) => d.id === docId)) deal.documents.push({ id: docId, filename: `${meeting.title}.txt`, kind: "TRANSCRIPT", pages: repo.getDocumentPages(docId).length });
     const flags = detectInjection(transcriptText, meeting.title);
     if (flags.length) {
-      const seen = new Set(deal.analysis.securityFlags.map((f) => f.excerpt.slice(0, 60)));
-      for (const f of flags) if (!seen.has(f.excerpt.slice(0, 60))) deal.analysis.securityFlags.push(f);
+      deal.analysis.securityFlags = dedupeSecurityFlags([...deal.analysis.securityFlags, ...flags]);
     }
     const seq = meetings.nextPostMeetingSeq(inp.companyId);
     const qResolved = out.data.questionUpdates.filter((q) => q.status === "RESOLVED").length;

@@ -1,3 +1,4 @@
+import { dedupeSecurityFlags } from "@/engine/security-flags";
 import { loadDeal } from "@/server/deal";
 import * as repo from "@/server/repo";
 import { canWrite } from "@/server/session";
@@ -73,7 +74,7 @@ export default async function EvidencePage({ params, searchParams }: { params: P
   }
 
   const ev = d.evidence;
-  const flags = c.analysis.securityFlags;
+  const flags = dedupeSecurityFlags(c.analysis.securityFlags);
   const unverifiedCitations = c.sources.filter((s) => !s.citationVerified).length;
 
   return (

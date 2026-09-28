@@ -1,3 +1,4 @@
+import { dedupeSecurityFlags } from "@/engine/security-flags";
 import Link from "next/link";
 import { loadDeal } from "@/server/deal";
 import { Badge, Bullets, Callout, Section } from "@/components/ui";
@@ -19,6 +20,7 @@ export default async function DealOverview({ params }: { params: Promise<{ slug:
   // Pages render alongside the layout; while the first analysis is running there is no version yet.
   if (!version) return null;
   const c = version!.canonical;
+  const securityFlags = dedupeSecurityFlags(c.analysis.securityFlags);
   const d = version!.derived;
   const metrics = coreMetrics(c.metrics, 10);
   const rec = d.recommendation;
@@ -31,7 +33,7 @@ export default async function DealOverview({ params }: { params: Promise<{ slug:
 
   return (
     <main className="mx-auto max-w-[1180px] space-y-10 px-4 py-8 sm:px-8">
-      {(c.analysis.depth === "PARTIAL" || c.analysis.securityFlags.length > 0) && (
+      {(c.analysis.depth === "PARTIAL" || securityFlags.length > 0) && (
         <div className="grid gap-4 md:grid-cols-2">
           {c.analysis.depth === "PARTIAL" && (
             <Callout tone="warn" title="Partial analysis — not full institutional diligence">
@@ -43,9 +45,9 @@ export default async function DealOverview({ params }: { params: Promise<{ slug:
               {c.analysis.researchNotCompleted.length > 0 && <div className="mt-2 text-[12.5px]">Research not completed: {c.analysis.researchNotCompleted.slice(0, 4).join("; ")}</div>}
             </Callout>
           )}
-          {c.analysis.securityFlags.length > 0 && (
-            <Callout tone="risk" title={`${c.analysis.securityFlags.length} instruction-like passage(s) found in materials — ignored`}>
-              {c.analysis.securityFlags.slice(0, 3).map((f, i) => (
+          {securityFlags.length > 0 && (
+            <Callout tone="risk" title={`${securityFlags.length} instruction-like passage${securityFlags.length === 1 ? "" : "s"} found in materials — ignored`}>
+              {securityFlags.slice(0, 3).map((f, i) => (
                 <div key={i} className="mt-1 text-[12.5px]">
                   <span className="text-ink-3">{f.location}:</span> “{f.excerpt.slice(0, 160)}”
                 </div>

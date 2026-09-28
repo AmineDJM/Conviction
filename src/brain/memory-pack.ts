@@ -3,6 +3,7 @@
  * everything the fund knows about a company. Built at ingestion, it is the
  * Fund Brain's first stop for any company question (no deck re-reading).
  */
+import { dedupeSecurityFlags } from "@/engine/security-flags";
 import type { CanonicalDeal } from "@/domain/canonical";
 import type { DerivedAnalysis } from "@/engine/derive";
 import { metricDef } from "@/engine/metrics/dictionary";
@@ -148,7 +149,7 @@ export function buildMemoryPack(
   if (answered.length) L.push(`Answers from founder calls: ${answered.map((q) => `${q.id}: ${q.answer}`).join(" | ")}`);
   if (c.nextBestAction) L.push(`Next best action: ${c.nextBestAction.action}`);
   if (c.redTeam) L.push(`Case against passing: ${c.redTeam.caseAgainstPassing.slice(0, 2).join(" | ")}`);
-  if (c.analysis.securityFlags.length) L.push(`Security: ${c.analysis.securityFlags.length} instruction-like passages detected in materials (ignored).`);
+  if (c.analysis.securityFlags.length) L.push(`Security: ${dedupeSecurityFlags(c.analysis.securityFlags).length} instruction-like passage(s) detected in materials (ignored).`);
   L.push(`Evidence label key: company claims are ${evidenceLabel({ verification: "UNVERIFIED", origin: "COMPANY" }).toLowerCase().replace("_", "-")} unless verified.`);
 
   const text = L.join("\n");
