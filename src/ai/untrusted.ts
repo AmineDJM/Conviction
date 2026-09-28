@@ -3,16 +3,22 @@
  *
  * - Privileged instructions live only in `instructions` (system/developer).
  * - Untrusted content (decks, web pages, transcripts, user-supplied text) is
- *   passed as a separate user message, wrapped in a fenced data envelope with
- *   a per-call random boundary that cannot be predicted by the document.
+ *   passed as a separate user message, wrapped in a fenced data envelope whose
+ *   boundary the document cannot predict: an HMAC of the content under a server
+ *   secret. It is stable for identical content, so identical inputs hit the
+ *   reproducibility cache (a random boundary made every cache key unique); any
+ *   occurrence of the boundary inside the content is removed.
  * - The model has no tools that act on the system; outputs are schema-validated
  *   data and every action is performed by code with code-level permissions.
  * - Instruction-like text is detected and recorded as a security flag.
  */
-import { randomBytes } from "node:crypto";
+import { createHmac } from "node:crypto";
+
+/** Server secret for the boundary (unknown to document authors); a fixed local value only in development. */
+const BOUNDARY_KEY = process.env.SESSION_SECRET || process.env.DATA_ENCRYPTION_KEY || "conviction-local-boundary";
 
 export function wrapUntrusted(label: string, content: string): string {
-  const boundary = `DATA-${randomBytes(6).toString("hex")}`;
+  const boundary = `DATA-${createHmac("sha256", BOUNDARY_KEY).update(label).update("\0").update(content).digest("hex").slice(0, 16)}`;
   const safe = content.replaceAll(boundary, "[boundary removed]");
   return [
     `<<${boundary} kind="${label}" trust="untrusted">>`,
