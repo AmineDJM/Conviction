@@ -333,12 +333,34 @@ export function memoryPacks(workspaceId: string, companyIds: string[], maxChars 
 
 /* ------------------------------ Lexical (FTS5) ------------------------------ */
 
+const STOP = new Set(
+  "how what when where which who why does did do the and for with from that this are was were has have had its their about into than then there they them our your you can could would should will much many long take takes taking quel quelle quels quelles est sont les des une pour avec dans sur par que qui quoi comment combien leur leurs cette ces aux elle ils fait faire ont été être plus moins tres très".split(" "),
+);
+
+/** Deterministic vocabulary bridges (question wording → deck wording), so the lexical-only chat path finds the passage. */
+const EXPANSIONS: [RegExp, string[]][] = [
+  [/\bclos(e|es|ing)\b.{0,12}\bdeals?\b|sales cycle|cycle de vente|signer un (client|contrat)/i, ["sales", "cycle", "days"]],
+  [/\bburn(ing|s)?\b|br[uû]l/i, ["burn", "net", "month"]],
+  [/\bcash\b|tr[ée]sorerie|runway/i, ["cash", "runway", "burn"]],
+  [/retention|retain|churn|r[ée]tention|renouvel/i, ["retention", "nrr", "churn", "logo"]],
+  [/\bmargins?\b|\bmarges?\b/i, ["gross", "margin"]],
+  [/\b(raise|raising|round)\b|l[èe]ve|lev[ée]e|valuation|valorisation/i, ["round", "raising", "money", "valuation"]],
+  [/competit|concurren/i, ["competition", "competitors"]],
+  [/\bteam\b|founders?|fondateurs?|[ée]quipe/i, ["founder", "ceo", "cto", "team"]],
+  [/pricing|\bprice\b|\bprix\b|\bacv\b|contract value/i, ["acv", "pricing"]],
+  [/\bcac\b|acquisition cost|co[uû]t d'acquisition|payback/i, ["cac", "payback"]],
+  [/\b(revenue|arr|sales)\b|chiffre d'affaires/i, ["arr", "revenue"]],
+  [/customers?|clients?|\bhow many\b.{0,40}\b(use|uses|using|buy|pay)\b|combien\b.{0,40}\b(utilisent|ach[eè]tent|paient)\b/i, ["customers", "paying"]],
+];
+
 function ftsQuery(terms: string[]): string | null {
-  const toks = terms
+  const joined = terms.join(" ");
+  const base = terms
     .flatMap((t) => t.split(/\s+/))
     .map((t) => t.replace(/[^\p{L}\p{N}]/gu, ""))
-    .filter((t) => t.length >= 3)
-    .slice(0, 12);
+    .filter((t) => t.length >= 3 && !STOP.has(t.toLowerCase()));
+  const extra = EXPANSIONS.filter(([re]) => re.test(joined)).flatMap(([, add]) => add);
+  const toks = [...new Set([...base, ...extra].map((t) => t.toLowerCase()))].slice(0, 16);
   if (!toks.length) return null;
   return toks.map((t) => `"${t}"`).join(" OR ");
 }

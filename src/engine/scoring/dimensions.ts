@@ -169,6 +169,8 @@ export interface ScoringContext {
   market: MarketReconstruction;
 }
 
+const TEAM_CLAIM_CRITERIA = new Set(["FOUNDER_MARKET_FIT", "TEAM_COMPLETENESS"]);
+
 function scoreComponent(spec: ComponentSpec, ctx: ScoringContext): ComponentResult {
   const { deal, registry, profile, stageBand } = ctx;
 
@@ -200,7 +202,18 @@ function scoreComponent(spec: ComponentSpec, ctx: ScoringContext): ComponentResu
     r.state = "RATED";
     r.rating = a.rating;
     r.rationale = a.rationale;
-    r.score = registry.rubricPoints[a.rating];
+    // Team claims are the easiest to inflate (pedigree, titles). Above ADEQUATE needs at least one cited claim that is
+    // verified or independent of the company; otherwise the rating is capped and the cap is said.
+    if (TEAM_CLAIM_CRITERIA.has(spec.criterion) && (a.rating === "STRONG" || a.rating === "EXCEPTIONAL")) {
+      const cited = a.claimRefs.map((id) => deal.claims.find((c) => c.id === id)).filter((c): c is NonNullable<typeof c> => !!c);
+      const independent = cited.some((c) => c.verification === "VERIFIED" || c.verification === "PARTIALLY_VERIFIED" || c.independence === "INDEPENDENT");
+      if (!independent) {
+        r.rating = "ADEQUATE";
+        r.flags.push(`CAPPED_UNVERIFIED_TEAM_CLAIMS: model rated ${a.rating}; the cited evidence is company-reported only`);
+        r.rationale = `${a.rationale} [Capped at ADEQUATE: ${a.rating} needs evidence beyond the company's own statements.]`;
+      }
+    }
+    r.score = registry.rubricPoints[r.rating!];
     r.credit = 1;
     r.benchmarkType = "MODEL_ASSUMPTION";
     return r;

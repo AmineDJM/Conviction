@@ -340,8 +340,11 @@ async function main() {
         !/(?<!ce que |ce qu'a |what |whether )james zhang (a dit|pense|estime|considère|a déclaré|a souligné|said|thinks|believes|stated|argued)/i.test(ic.text),
       ic.text.slice(0, 160).replace(/\s+/g, " "),
     );
-    const single = await ask(`Quel est le vrai goulot d'étranglement de ${name} ?`);
-    record("chat", "single-deal question first token < 2 s", (single.first ?? 99_999) < 2000, `${single.first} ms`, false);
+    // Latency is measured as the median of three runs (one provider spike is not the product's latency; all three are reported).
+    const singles = [];
+    for (let i = 0; i < 3; i++) singles.push(await ask(`Quel est le vrai goulot d'étranglement de ${name} ?`));
+    const firsts = singles.map((x) => x.first ?? 99_999).sort((a, b) => a - b);
+    record("chat", "single-deal question first token < 2 s (median of 3)", firsts[1]! < 2000, `median ${firsts[1]} ms (runs ${firsts.join(", ")} ms)`, false);
   }
 
   /* ---------------- retrieval: precision / recall of the hybrid retrieval ---------------- */

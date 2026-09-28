@@ -327,3 +327,21 @@ describe("market reconstruction plausibility guards", () => {
     expect(r.rejected.some((x) => x.includes("unit error") || x.includes("implausible"))).toBe(true);
   });
 });
+
+describe("team ratings above ADEQUATE need evidence beyond the company's own statements", () => {
+  const withFmf = (verification: "UNVERIFIED" | "VERIFIED") => {
+    const d = makeDeal();
+    d.claims.push({ ...d.claims[0]!, id: "CLM-900", statement: "CEO ran AP operations for 8 years", verification, origin: verification === "VERIFIED" ? "PRIMARY_EXTERNAL" : "COMPANY", independence: verification === "VERIFIED" ? "INDEPENDENT" : "COMPANY_DERIVED" } as never);
+    d.rubric = d.rubric.filter((r) => r.criterion !== "FOUNDER_MARKET_FIT");
+    d.rubric.push({ criterion: "FOUNDER_MARKET_FIT", rating: "STRONG", rationale: "claimed AP background", claimRefs: ["CLM-900"] });
+    return derive(d, reg, DEFAULT_FUND_PROFILE, { now }).dimensions.find((x) => x.id === "TEAM")!.components.find((c) => c.id === "founder_market_fit")!;
+  };
+  it("a STRONG founder-market fit resting on company claims only is capped at ADEQUATE, and says so", () => {
+    const c = withFmf("UNVERIFIED");
+    expect(c.rating).toBe("ADEQUATE");
+    expect(c.flags.join(" ")).toContain("CAPPED_UNVERIFIED_TEAM_CLAIMS");
+  });
+  it("with a verified claim the STRONG rating stands", () => {
+    expect(withFmf("VERIFIED").rating).toBe("STRONG");
+  });
+});

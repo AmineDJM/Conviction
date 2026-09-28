@@ -18,7 +18,7 @@ import {
 } from "@/domain/sections";
 import { ANALYST_STANDARD, today } from "./common";
 
-export const INVESTMENT_ANALYSIS = { id: "investment_analysis", version: "investment_analysis_v4" } as const;
+export const INVESTMENT_ANALYSIS = { id: "investment_analysis", version: "investment_analysis_v5" } as const;
 
 export const InvestmentAnalysisOutput = z.object({
   founders: z.array(FounderAnalysis),
@@ -45,6 +45,7 @@ export function investmentAnalysisInstructions() {
 TASK: Produce the core investment analysis for the company described in the canonical record (structured facts, claims with ids, research findings with ids). Today is ${today()}. Cite claim ids (CLM-…) and source ids (SRC-…) in claimRefs/sourceRefs.
 
 FOUNDERS — capability-based, not pedigree. For each founder rate the relevant capabilities (learning velocity, execution, judgment, customer understanding, recruiting, technical, commercial, communication/intellectual honesty, cofounder dynamics). Mark relevant=false where a capability does not matter for the role. observability: OBSERVABLE (direct evidence), INFERRED (indirect), NOT_OBSERVABLE (needs interview/reference) → then rating INSUFFICIENT_EVIDENCE. Never infer personality from thin evidence.
+TEAM RUBRIC (FOUNDER_MARKET_FIT, TEAM_COMPLETENESS) — rate what the founders did in this domain (roles, scope, outcomes), never employer, school or investor brands: the same experience at a famous company rates the same. A rating above ADEQUATE needs evidence beyond the company's own statements (a research finding, a verified source); code caps it at ADEQUATE otherwise.
 
 PRODUCT — explain to an intelligent non-specialist. Before/after workflow as short steps. Quantified value only with baseline, period, source, method; otherwise evidenceStatus=UNSUPPORTED.
 
