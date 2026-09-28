@@ -1,8 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Native module used only on the server.
-  serverExternalPackages: ["better-sqlite3"],
+  // Native module and bundled ffmpeg binary, used only on the server (never bundled).
+  serverExternalPackages: ["better-sqlite3", "ffmpeg-static"],
   poweredByHeader: false,
   devIndicators: false,
   // Do not generate AGENTS.md / CLAUDE.md into the repository.

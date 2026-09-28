@@ -22,6 +22,7 @@
  */
 import { extractDocument, type ExtractedDocument } from "@/ingestion/extract";
 import { readStoredFile, storeFile, storageKeyFor } from "./storage";
+import { createHash } from "node:crypto";
 import * as repo from "./repo";
 import { PROMPT_VERSIONS } from "@/ai/prompts";
 import { PRIMARY_MODEL } from "@/ai/openai";
@@ -283,4 +284,28 @@ function provisionalName(given: string | null | undefined, filename: string) {
       .trim() ||
     "New company"
   );
+}
+
+/**
+ * Re-runs the analysis of a company on the documents already on record (after a failed or interrupted run, or to
+ * re-analyse with the current engine and prompts). Stored bytes are verified against their recorded hash; no upload.
+ */
+export async function retryAnalysis(v: { workspaceId: string; userId: string | null; companyIdOrSlug: string; mode?: AnalysisMode }) {
+  const company = repo.getCompany(v.workspaceId, v.companyIdOrSlug);
+  if (!company) throw new AnalysisRequestError("Company not found", 404);
+  const last = repo.latestRun(company.id);
+  if (last && (last.status === "RUNNING" || last.status === "QUEUED")) throw new AnalysisRequestError("An analysis is already running for this company", 409);
+  const current = repo.getCurrentVersion(company);
+  const ids = new Set((current?.canonical.documents ?? []).map((d) => d.id));
+  const stored = repo.listDocuments(company.id).filter((d) => (ids.size ? ids.has(d.id) : ["PDF", "PPTX", "IMAGE", "TEXT"].includes(d.kind)));
+  if (!stored.length) throw new AnalysisRequestError("No stored documents to analyse — upload the deck", 400);
+  const files = await Promise.all(
+    stored.map(async (d) => {
+      const data = await readStoredFile(d.storagePath);
+      if (createHash("sha256").update(data).digest("hex") !== d.sha256) throw new AnalysisRequestError(`Stored file for ${d.filename} does not match its recorded hash`, 409);
+      return { filename: d.filename, mime: d.mime, data };
+    }),
+  );
+  const mode = v.mode ?? current?.canonical.analysis.mode ?? (last?.mode as AnalysisMode | undefined) ?? "STANDARD";
+  return startAnalysis({ workspaceId: v.workspaceId, userId: v.userId, mode, files, target: { companyId: company.id, intent: "ADD_DOCUMENTS" } });
 }

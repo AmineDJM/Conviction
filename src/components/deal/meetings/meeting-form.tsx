@@ -6,7 +6,7 @@ import { Button, cx } from "@/components/ui";
 
 const MIN = 200;
 const MAX = 200_000;
-const AUDIO = /\.(wav|mp3|m4a|mp4|mpeg|mpga|webm|ogg|oga|flac)$/i;
+const AUDIO = /\.(wav|mp3|m4a|mp4|m4v|mov|mkv|avi|mpeg|mpga|webm|ogg|oga|opus|flac|aac|wma|3gp|amr)$/i;
 const TEXT = /\.(txt|md|vtt|srt)$/i;
 
 type Participant = { name: string; role: string; side: "FUND" | "COMPANY" | "OTHER" };
@@ -36,7 +36,7 @@ export function MeetingForm({ companyId, canWrite, busy }: { companyId: string; 
     setError(null);
     setFile(null);
     if (!f) return;
-    if (!AUDIO.test(f.name) && !TEXT.test(f.name) && !f.type.startsWith("audio/") && !f.type.startsWith("video/") && !f.type.startsWith("text/")) return setError("Upload a transcript (.txt, .md, .vtt, .srt) or a recording (wav, mp3, m4a, mp4, webm, ogg, flac).");
+    if (!AUDIO.test(f.name) && !TEXT.test(f.name) && !f.type.startsWith("audio/") && !f.type.startsWith("video/") && !f.type.startsWith("text/")) return setError("Upload a transcript (.txt, .md, .vtt, .srt) or a recording (audio or video: wav, mp3, m4a, mp4, mov, mkv, webm, ogg, flac, aac…).");
     if (TEXT.test(f.name) && f.size > 2 * 1024 * 1024) return setError("Transcript file exceeds 2 MB.");
     if (f.size > 200 * 1024 * 1024) return setError("Recording exceeds 200 MB.");
     setFile(f);
@@ -146,7 +146,7 @@ export function MeetingForm({ companyId, canWrite, busy }: { companyId: string; 
                 {file.name} <span className="num text-ink-3">· {(file.size / 1024 / 1024).toFixed(1)} MB · {isAudio ? "recording — will be transcribed with speakers and timestamps" : "transcript"}</span>
               </span>
             ) : (
-              <span className="text-ink-3">Transcript (.txt .md .vtt .srt) or recording (wav, mp3, m4a, mp4, webm, ogg, flac). WAV and MP3 of any length are split automatically; other formats up to 24 MB / 23 min.</span>
+              <span className="text-ink-3">Transcript (.txt .md .vtt .srt) or recording — audio or video (wav, mp3, m4a, mp4, mov, mkv, webm, ogg, flac, aac…), up to 200 MB. Any length: recordings are converted and split automatically.</span>
             )}
           </label>
         )}

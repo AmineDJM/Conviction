@@ -10,6 +10,7 @@ import { deckLineage } from "@/server/deck-versions";
 import { deckOfDocuments } from "@/engine/deck-lineage";
 import { distinctFrom, duplicateSuggestions, sameCompanySignals } from "@/server/company-merge";
 import { DuplicateBanner } from "@/components/deal/deck/duplicate-banner";
+import { RetryAnalysis } from "@/components/deal/retry-analysis";
 import { companyAliases } from "@/brain/retrieval";
 
 export default async function DealLayout({ children, params }: { children: React.ReactNode; params: Promise<{ slug: string }> }) {
@@ -68,7 +69,17 @@ export default async function DealLayout({ children, params }: { children: React
           <div className="max-w-xl rounded-lg border border-risk/30 bg-risk-soft/50 px-4 py-3">
             <div className="font-medium text-risk">Analysis failed</div>
             <div className="mt-1 text-ink-2">{run.error}</div>
-            <div className="mt-2 text-[12.5px] text-ink-3">No results were fabricated. Spent ${run.spentUsd.toFixed(4)}. Re-upload the deck to retry.</div>
+            <div className="mt-2 text-[12.5px] text-ink-3">No results were fabricated. Spent ${run.spentUsd.toFixed(4)}.{writer ? " The documents are on record: retry without re-uploading." : ""}</div>
+            {writer && <RetryAnalysis companyId={company.id} />}
+          </div>
+        </div>
+      )}
+      {!running && run?.status === "FAILED" && version && (
+        <div className="px-4 pt-4 sm:px-8">
+          <div className="rounded-lg border border-risk/30 bg-risk-soft/40 px-4 py-3 text-[13px]">
+            <span className="font-medium text-risk">The latest analysis failed</span> <span className="text-ink-2">— {run.error}</span>
+            <div className="mt-1 text-[12.5px] text-ink-3">The previous version is shown unchanged. No results were fabricated.</div>
+            {writer && <RetryAnalysis companyId={company.id} />}
           </div>
         </div>
       )}

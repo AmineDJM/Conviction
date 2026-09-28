@@ -124,7 +124,7 @@ export async function startFounderCall(inp: StartFounderCallInput) {
   let transcript: string | null = null;
   if (inp.recording) {
     const r = inp.recording;
-    if (!AUDIO_EXTENSIONS.test(r.filename)) throw new FounderCallError("Upload an audio or video recording (wav, mp3, m4a, mp4, webm, ogg, flac)");
+    if (!AUDIO_EXTENSIONS.test(r.filename)) throw new FounderCallError("Upload an audio or video recording (wav, mp3, m4a, mp4, mov, mkv, webm, ogg, flac, aac…)");
     if (r.data.length > MAX_RECORDING_BYTES) throw new FounderCallError(`Recording exceeds ${MAX_RECORDING_BYTES / 1024 / 1024} MB`);
     if (r.data.length < 1024) throw new FounderCallError("Recording is empty");
   } else {

@@ -108,7 +108,7 @@ function seedZoom(base: string) {
       start_time: "2026-09-23T09:30:00Z",
       timezone: "UTC",
       duration: 95,
-      recording_files: [{ id: "f-m4a-3", meeting_id: "big+audio==", file_type: "M4A", file_extension: "M4A", file_size: 80 * 1024 * 1024, download_url: dl("f-m4a-3"), status: "completed", recording_type: "audio_only" }],
+      recording_files: [{ id: "f-m4a-3", meeting_id: "big+audio==", file_type: "M4A", file_extension: "M4A", file_size: 250 * 1024 * 1024, download_url: dl("f-m4a-3"), status: "completed", recording_type: "audio_only" }],
     },
   ];
   return { meetings, files };

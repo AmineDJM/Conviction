@@ -7,8 +7,10 @@
  * meeting is labelled "not diarized". The API accepts ≤ 25 MB and ≤ 1,400 s per
  * request, so WAV and MP3 recordings are split deterministically (PCM frames /
  * MPEG frame boundaries) into ≤ 20-minute parts; for WAV, speaker reference
- * clips from part 1 keep speaker labels consistent across parts. Other
- * containers (m4a, mp4, webm, ogg) are sent whole and must fit one request.
+ * clips from part 1 keep speaker labels consistent across parts. Any other
+ * audio or video container (m4a, mp4, mov, mkv, webm, ogg, aac…) is first
+ * converted by the bundled ffmpeg to 16 kHz mono WAV (speech quality), so long
+ * recordings and videos are split and diarized like WAV.
  *
  * Every request is authorized by the CostController with a worst-case estimate
  * and recorded with its actual cost (token usage when reported, else minutes).
@@ -18,6 +20,40 @@ import { OPENAI_BASE_URL, authHeaders, fetchWithRetry } from "./openai";
 import { transcriptionCost, worstCaseTranscriptionCost } from "./pricing";
 import { providerError } from "./errors";
 import { segmentRef, type TranscriptSegment } from "@/domain/meetings";
+import { execFile } from "node:child_process";
+import { promises as fsp } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+/**
+ * Converts any audio or video recording to 16 kHz mono 16-bit WAV with the bundled ffmpeg (video is dropped).
+ * Temp files, not pipes: MP4/MOV put their index at the end and cannot be read from a stream. Returns null when
+ * ffmpeg is not available (the caller then keeps the original file and its format limits).
+ */
+export async function toSpeechWav(buf: Buffer, filename: string, signal?: AbortSignal): Promise<Buffer | null> {
+  let bin: string | null = null;
+  try {
+    bin = (await import("ffmpeg-static")).default as unknown as string | null;
+  } catch {
+    return null;
+  }
+  if (!bin) return null;
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), "conviction-rec-"));
+  const ext = (filename.toLowerCase().match(/\.([a-z0-9]{1,5})$/)?.[1] ?? "bin").replace(/[^a-z0-9]/g, "");
+  const input = path.join(dir, `in.${ext}`);
+  const output = path.join(dir, "out.wav");
+  try {
+    await fsp.writeFile(input, buf);
+    await new Promise<void>((resolve, reject) =>
+      execFile(/*turbopackIgnore: true*/ bin!, ["-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-i", input, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", output], { signal, maxBuffer: 1024 * 1024 }, (err, _out, stderr) =>
+        err ? reject(new TranscriptionError(`The recording could not be decoded (${String(stderr || err.message).split("\n")[0]!.slice(0, 160)}). Upload an audio file or paste the transcript.`)) : resolve(),
+      ),
+    );
+    return await fsp.readFile(output);
+  } finally {
+    await fsp.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
 
 export const TRANSCRIBE_MODEL = process.env.CONVICTION_TRANSCRIBE_MODEL ?? "gpt-4o-transcribe-diarize";
 export const FALLBACK_TRANSCRIBE_MODEL = "whisper-1";
@@ -29,7 +65,7 @@ export const MAX_RECORDING_BYTES = 200 * 1024 * 1024;
 /** Assumed minimum bitrate when the duration of a container cannot be read (conservative worst case): 16 kbit/s. */
 const MIN_BYTES_PER_SECOND = 2000;
 
-export const AUDIO_EXTENSIONS = /\.(wav|mp3|m4a|mp4|mpeg|mpga|webm|ogg|oga|flac)$/i;
+export const AUDIO_EXTENSIONS = /\.(wav|mp3|m4a|mp4|m4v|mov|mkv|avi|mpeg|mpga|webm|ogg|oga|opus|flac|aac|wma|3gp|amr)$/i;
 
 export class TranscriptionError extends Error {
   constructor(
@@ -158,7 +194,7 @@ export function mp3Frames(buf: Buffer): { offset: number; seconds: number }[] | 
 
 export function mimeFor(filename: string, fallback: string): string {
   const ext = filename.toLowerCase().split(".").pop() ?? "";
-  const map: Record<string, string> = { wav: "audio/wav", mp3: "audio/mpeg", mpga: "audio/mpeg", mpeg: "audio/mpeg", m4a: "audio/mp4", mp4: "video/mp4", webm: "audio/webm", ogg: "audio/ogg", oga: "audio/ogg", flac: "audio/flac" };
+  const map: Record<string, string> = { wav: "audio/wav", mp3: "audio/mpeg", mpga: "audio/mpeg", mpeg: "audio/mpeg", m4a: "audio/mp4", mp4: "video/mp4", m4v: "video/mp4", mov: "video/quicktime", mkv: "video/x-matroska", avi: "video/x-msvideo", webm: "audio/webm", ogg: "audio/ogg", oga: "audio/ogg", opus: "audio/ogg", flac: "audio/flac", aac: "audio/aac", wma: "audio/x-ms-wma", "3gp": "video/3gpp", amr: "audio/amr" };
   return map[ext] ?? (fallback || "application/octet-stream");
 }
 
@@ -201,7 +237,7 @@ export function splitRecording(buf: Buffer, filename: string, mime: string): { p
     }
     return { parts, durationSec: duration, kind: "mp3" };
   }
-  if (buf.length > MAX_PART_BYTES) throw new TranscriptionError(`Recordings in this format must be ≤ ${Math.floor(MAX_PART_BYTES / 1024 / 1024)} MB and ≤ 23 minutes. Upload WAV or MP3 (split automatically), or paste the transcript.`);
+  if (buf.length > MAX_PART_BYTES) throw new TranscriptionError(`This recording could not be converted for splitting and exceeds ${Math.floor(MAX_PART_BYTES / 1024 / 1024)} MB. Upload WAV or MP3 (split automatically), or paste the transcript.`);
   return { parts: [{ data: buf, filename, mime: mimeFor(filename, mime), offsetSec: 0, durationSec: null }], durationSec: null, kind: "other" };
 }
 
@@ -294,8 +330,13 @@ export interface TranscriptionResult {
  * against the remaining budget); timestamps are offset to the full recording.
  */
 export async function transcribeRecording(v: { data: Buffer; filename: string; mime: string; cost: CostController; signal?: AbortSignal; onPart?: (i: number, n: number) => void }): Promise<TranscriptionResult> {
-  const { parts, durationSec, kind } = splitRecording(v.data, v.filename, v.mime);
-  const wav = kind === "wav" ? parseWav(v.data) : null;
+  // WAV and MP3 split natively; everything else (compressed audio, video) is converted to speech WAV first.
+  const native = !!parseWav(v.data) || /\.(mp3|mpga|mpeg)$/i.test(v.filename) || v.mime === "audio/mpeg";
+  const converted = native ? null : await toSpeechWav(v.data, v.filename, v.signal);
+  const data = converted ?? v.data;
+  const filename = converted ? v.filename.replace(/\.[^.]+$/, "") + ".wav" : v.filename;
+  const { parts, durationSec, kind } = splitRecording(data, filename, converted ? "audio/wav" : v.mime);
+  const wav = kind === "wav" ? parseWav(data) : null;
   let model = TRANSCRIBE_MODEL;
   let costUsd = 0;
   let known: { name: string; ref: string }[] = [];
@@ -321,7 +362,7 @@ export async function transcribeRecording(v: { data: Buffer; filename: string; m
       if (speaker && i > 0 && !wav) speaker = `P${i + 1}·${speaker}`;
       out.push({ speaker, startSec: s.start !== undefined ? part.offsetSec + s.start : null, endSec: s.end !== undefined ? part.offsetSec + s.end : null, text });
     }
-    if (i === 0 && wav && diarized && parts.length > 1) known = speakerReferences(v.data, wav, r.segments);
+    if (i === 0 && wav && diarized && parts.length > 1) known = speakerReferences(data, wav, r.segments);
   }
   // Merge consecutive turns of the same speaker separated by < 1.5 s (the API splits at pauses).
   const merged: typeof out = [];

@@ -54,6 +54,7 @@ import { decrypt, isEncrypted } from "@/server/crypto";
 import * as meetings from "@/server/meetings";
 import * as members from "@/server/members";
 import { IntegrationError } from "@/server/connectors/http";
+import { zoomAudioBlocker } from "@/server/connectors/zoom";
 import { appOrigin, connectorStatuses } from "@/server/connectors/meeting-connectors";
 import { beginAuthorization, completeAuthorization, disconnect, getConnectionRow, safeReturnTo, viewerConnections, withAccessToken } from "@/server/connectors/oauth";
 import { importRemoteMeeting, listRemoteMeetings } from "@/server/connectors/import";
@@ -209,8 +210,10 @@ describe("Zoom recordings and import", () => {
     expect(followUp.items).toMatchObject([{ kind: "AUDIO", id: "f-m4a-2", importable: true }]);
     expect(followUp.localDate).toBe("2026-09-22");
     const big = list.find((m) => m.title === "Long board prep")!;
+    // Long M4A/MP4 are converted to WAV and split: only the 200 MB recording limit applies.
     expect(big.items[0]).toMatchObject({ kind: "AUDIO", importable: false });
-    expect(big.items[0]!.note).toMatch(/cannot be transcribed in one request/);
+    expect(big.items[0]!.note).toMatch(/exceeds the 200 MB recording limit/);
+    expect(zoomAudioBlocker({ file_type: "M4A", file_size: 80 * 1024 * 1024, status: "completed" } as never)).toBeNull();
     // The listing request carried this user's bearer token.
     const t = sealed(getConnectionRow("zoom", ctx.workspaceId, ctx.userId)!);
     expect(mock.requests.filter((r) => r.path === "/zoom/v2/users/me/recordings").at(-1)!.auth).toBe(`Bearer ${t.a}`);
@@ -269,7 +272,7 @@ describe("Zoom recordings and import", () => {
     expect(m.recordingDocumentId).toBeTruthy();
     expect(m.transcription).toMatchObject({ diarized: true });
     expect(meetings.getSegments(m.id).map((s) => s.speaker)).toEqual(["A", "B"]);
-    // An M4A too large for one transcription request is refused before any download.
+    // A recording over the 200 MB limit is refused before any download.
     const before = mock.requests.length;
     expect(await codeOf(importRemoteMeeting("zoom", actor, { companyId: ctx.company.id, externalId: "big+audio==", itemId: "f-m4a-3", startTime: "2026-09-23T09:30:00Z" }))).toBe("TOO_LARGE");
     expect(mock.requests.slice(before).some((q) => q.path.startsWith("/zoom/rec/download"))).toBe(false);

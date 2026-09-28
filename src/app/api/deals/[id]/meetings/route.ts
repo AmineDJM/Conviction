@@ -2,7 +2,7 @@
  * POST /api/deals/:id/meetings — ingest a founder meeting (meetings workflow).
  *
  *  JSON       {transcript, title?, callDate?, participants?}
- *  multipart  file = transcript (.txt .md .vtt .srt) or recording (wav, mp3, m4a, mp4, webm, ogg, flac),
+ *  multipart  file = transcript (.txt .md .vtt .srt) or recording (audio or video: wav, mp3, m4a, mp4, mov, mkv, webm, ogg, flac, aac…),
  *             or transcript = text; title?, callDate?, participants? (JSON array)
  *
  * Freezes the current version as the meeting's PRE_MEETING_ANALYSIS and returns
@@ -64,7 +64,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           if (file.size > 2 * 1024 * 1024) return Response.json({ error: "Transcript file exceeds 2 MB" }, { status: 400 });
           input.transcript = await file.text();
           input.filename = file.name;
-        } else return Response.json({ error: "Upload a transcript (.txt, .md, .vtt, .srt) or a recording (wav, mp3, m4a, mp4, webm, ogg, flac)" }, { status: 400 });
+        } else return Response.json({ error: "Upload a transcript (.txt, .md, .vtt, .srt) or a recording (audio or video: wav, mp3, m4a, mp4, mov, mkv, webm, ogg, flac, aac…)" }, { status: 400 });
       } else {
         const t = form.get("transcript");
         if (t !== null && typeof t !== "string") return Response.json({ error: "transcript must be text; upload a transcript file as `file`" }, { status: 400 });

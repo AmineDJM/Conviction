@@ -61,7 +61,7 @@ import { getDb, schema } from "@/db/client";
 import { createWorkspaceWithOwner } from "@/server/auth";
 import * as repo from "@/server/repo";
 import * as meetings from "@/server/meetings";
-import { AnalysisRequestError, startAnalysis } from "@/server/analyze";
+import { AnalysisRequestError, retryAnalysis, startAnalysis } from "@/server/analyze";
 import { deckAnalysisRow, deckChangeLines, deckComparison, deckComparisonForVersion, deckLineage, deckView } from "@/server/deck-versions";
 import { dismissDuplicate, duplicateSuggestions, mergeIntoCompany, sameCompanySignals, uploadMatches } from "@/server/company-merge";
 import { commitOverride } from "@/server/overrides";
@@ -496,5 +496,26 @@ describe("deal header — one consistent view of same-company signals", () => {
 
   it("keeps a confirmed alias even when a merge is offered for it", () => {
     expect(sameCompanySignals(aliases, [{ companyId: "a" }], new Set()).linked.map((l) => l.companyId)).toEqual(["a", "b", "c"]);
+  });
+});
+
+describe("retry a failed analysis on the documents on record", () => {
+  it("re-runs on the stored deck without a re-upload, keeps it as the same deck, and refuses while a run is live", async () => {
+    const started = await startAnalysis({ workspaceId: ws.workspaceId, userId: ws.userId, mode: "FAST_SCREEN", files: [DECK1()] }); // no fake analysis queued: the run fails
+    await started.promise.catch(() => undefined);
+    // The fake pipeline throws without finishing the run; the real pipeline marks it FAILED.
+    repo.finishRun(started.run.id, "FAILED", 0, "PARTIAL", "The model provider returned an error (unavailable).");
+    const company = started.company;
+    expect(repo.latestRun(company.id)!.status).toBe("FAILED");
+    queue.push(deckV1);
+    const r = await retryAnalysis({ workspaceId: ws.workspaceId, userId: ws.userId, companyIdOrSlug: company.id });
+    await r.promise;
+    expect(repo.latestRun(company.id)!.status).toBe("COMPLETED");
+    expect(repo.getCurrentVersion(repo.getCompany(ws.workspaceId, company.id)!)).toBeTruthy();
+    expect(repo.listDocuments(company.id)).toHaveLength(1);
+    expect(deckLineage(company.id).map((e) => e.seq)).toEqual([1]);
+    const live = repo.createRun({ workspaceId: ws.workspaceId, companyId: company.id, mode: "FAST_SCREEN", model: "m", promptVersions: {}, registryId: "r", budgetUsd: 0.1, steps: [] });
+    await expect(retryAnalysis({ workspaceId: ws.workspaceId, userId: ws.userId, companyIdOrSlug: company.id })).rejects.toThrow(/already running/);
+    repo.finishRun(live.id, "COMPLETED", 0, "FULL");
   });
 });

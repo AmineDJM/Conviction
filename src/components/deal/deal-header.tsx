@@ -131,9 +131,11 @@ export function DealHeader(p: {
             </Button>
           )}
           {p.canWrite && p.companyId && <DeckUpload companyId={p.companyId} slug={p.slug} nextDeck={(p.deck?.total ?? 0) + 1} defaultMode={p.mode ?? "STANDARD"} disabled={p.running} />}
-          <Button size="sm" variant="ghost" onClick={() => ask(`Challenge the investment thesis for ${p.name}.`)}>
-            Challenge thesis
-          </Button>
+          {p.versionNo !== null && (
+            <Button size="sm" variant="ghost" onClick={() => ask(`Challenge the investment thesis for ${p.name}.`)}>
+              Challenge thesis
+            </Button>
+          )}
           {/* The memos render from a stored version: nothing to open while the first analysis is running. */}
           {p.versionNo !== null && (
             <>

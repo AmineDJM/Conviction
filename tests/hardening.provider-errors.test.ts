@@ -99,7 +99,22 @@ describe("provider errors are user-safe", () => {
 
   it("transcription rejections are user-safe and keep the status for the fallback decision", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: { message: KEY_TEXT } }, { status: 401 })));
-    const err = await transcribeRecording({ data: Buffer.alloc(4096, 1), filename: "call.m4a", mime: "audio/mp4", cost: new CostController(3, 3) }).catch((e) => e);
+    // A real (tiny) WAV reaches the provider; an undecodable file would be refused locally before any request.
+    const pcm = Buffer.alloc(3200);
+    const hdr = Buffer.alloc(44);
+    hdr.write("RIFF", 0);
+    hdr.writeUInt32LE(36 + pcm.length, 4);
+    hdr.write("WAVEfmt ", 8);
+    hdr.writeUInt32LE(16, 16);
+    hdr.writeUInt16LE(1, 20);
+    hdr.writeUInt16LE(1, 22);
+    hdr.writeUInt32LE(16000, 24);
+    hdr.writeUInt32LE(32000, 28);
+    hdr.writeUInt16LE(2, 32);
+    hdr.writeUInt16LE(16, 34);
+    hdr.write("data", 36);
+    hdr.writeUInt32LE(pcm.length, 40);
+    const err = await transcribeRecording({ data: Buffer.concat([hdr, pcm]), filename: "call.wav", mime: "audio/wav", cost: new CostController(3, 3) }).catch((e) => e);
     expect(err).toBeInstanceOf(TranscriptionError);
     expect(err.status).toBe(401);
     expect(err.message).not.toMatch(/sk-|Incorrect/);

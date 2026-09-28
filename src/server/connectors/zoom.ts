@@ -14,7 +14,7 @@
  * transcription path. Download URLs are never taken from the browser: the
  * import re-lists the user's recordings and resolves the file server-side.
  */
-import { MAX_PART_BYTES, MAX_RECORDING_BYTES } from "@/ai/transcribe";
+import { MAX_RECORDING_BYTES } from "@/ai/transcribe";
 import { apiJson, download, endpoints, IntegrationError } from "./http";
 
 export const MAX_TRANSCRIPT_FILE_BYTES = 2 * 1024 * 1024;
@@ -82,12 +82,11 @@ export function zoomAudioFile(m: ZoomMeeting): ZoomFile | null {
   return files.filter((f) => f.file_type === "MP4").sort((a, b) => (a.file_size ?? Infinity) - (b.file_size ?? Infinity))[0] ?? null;
 }
 
-/** Why an audio file cannot go through the transcription path, or null. M4A/MP4 cannot be split, so one API request (≤ 24 MB) must hold it. */
+/** Why an audio file cannot go through the transcription path, or null. M4A/MP4 are converted to WAV and split, so only the recording limit applies. */
 export function zoomAudioBlocker(f: ZoomFile): string | null {
   if (f.status && f.status !== "completed") return "Zoom is still processing this file";
   const size = f.file_size ?? null;
   if (size !== null && size > MAX_RECORDING_BYTES) return `${(size / 1024 / 1024).toFixed(0)} MB exceeds the ${MAX_RECORDING_BYTES / 1024 / 1024} MB recording limit`;
-  if (size !== null && size > MAX_PART_BYTES) return `${(f.file_type ?? "").toUpperCase()} files over ${MAX_PART_BYTES / 1024 / 1024} MB cannot be transcribed in one request (≈ 20+ min). Turn on Zoom audio transcripts, or download the audio, convert it to MP3 and upload it`;
   return null;
 }
 
@@ -136,6 +135,6 @@ export async function downloadZoomTranscript(token: string, file: ZoomFile): Pro
 export async function downloadZoomAudio(token: string, file: ZoomFile): Promise<Buffer> {
   const blocker = zoomAudioBlocker(file);
   if (blocker) throw new IntegrationError("TOO_LARGE", `Zoom audio cannot be transcribed: ${blocker}.`);
-  const { data } = await download("Zoom", file.download_url!, { token, max: Math.min(MAX_RECORDING_BYTES, MAX_PART_BYTES), what: "Zoom audio", trusted: zoomTrusted });
+  const { data } = await download("Zoom", file.download_url!, { token, max: MAX_RECORDING_BYTES, what: "Zoom audio", trusted: zoomTrusted });
   return data;
 }
