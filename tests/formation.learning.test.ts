@@ -320,7 +320,7 @@ describe("investor journal", () => {
   const a = attempt(ex, { type: "decision", decision: "PASS", justification: "retention unproven" }, simpleGrade(0.3), { at: "2026-09-05T00:00:00Z" });
   it("records what was believed, with confidence and the analysis at the time", () => {
     const j = journalEntry(a, base);
-    expect(j.belief).toMatch(/^pass — retention unproven/);
+    expect(j.belief).toMatch(/^Pass — retention unproven/);
     expect(j.decision).toBe("PASS");
     expect(j.analysisAtTime).toBe("CONTINUE_DD");
   });
