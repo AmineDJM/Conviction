@@ -1,7 +1,7 @@
 {
-  "at": "2026-09-28T08:30:02.036Z",
+  "at": "2026-09-28T08:54:39.694Z",
   "suites": "all",
-  "spentUsd": 1.3220005799999996,
+  "spentUsd": 1.38411066,
   "budgetUsd": 3,
   "fastScreenCapOverrideUsd": null,
   "skipped": [],
@@ -117,7 +117,7 @@
           "archetype": "Pilot-heavy enterprise AI, seed",
           "ok": 5,
           "total": 5,
-          "mustNotOk": true,
+          "mustNotOk": false,
           "round": true,
           "instrument": true,
           "misses": []
@@ -186,6 +186,8 @@
           ],
           "findingKinds": [
             "CAC_INCOMPLETE",
+            "CHART_MISSING_UNITS",
+            "CHART_OTHER",
             "CROSS_SLIDE_MODEL",
             "FORECAST_BASE_NOT_DISCLOSED",
             "IMPLIED_DECK_TAM_VS_RECONSTRUCTED",
@@ -194,8 +196,7 @@
             "LOGO_ONLY_CUSTOMERS",
             "NARRATIVE_INCONSISTENCY",
             "RATE_WITHOUT_DENOMINATOR",
-            "RETENTION_WITHOUT_COHORTS",
-            "SERVICES_AS_SAAS"
+            "RETENTION_WITHOUT_COHORTS"
           ]
         },
         {
@@ -213,7 +214,6 @@
           "findingKinds": [
             "ACTUAL_DATED_IN_FUTURE",
             "CROSS_SLIDE_MODEL",
-            "DERIVED_VS_REPORTED",
             "EXPECTED_EVIDENCE_MISSING",
             "IMPLIED_DECK_TAM_VS_RECONSTRUCTED",
             "IMPLIED_RUNWAY",
@@ -250,10 +250,10 @@
           ],
           "findingKinds": [
             "CHART_CUMULATIVE_AS_RUN_RATE",
-            "CHART_HIDDEN_PERIOD",
             "CHART_MISSING_UNITS",
+            "CHART_OTHER",
+            "CHART_TRUNCATED_OR_UNLABELLED",
             "CROSS_SLIDE_MODEL",
-            "CROSS_SLIDE_VALUE_CONFLICT",
             "EXPECTED_EVIDENCE_MISSING",
             "FORECAST_BASE_NOT_DISCLOSED",
             "GROWTH_ON_TINY_BASE",
@@ -285,9 +285,10 @@
           ],
           "findingKinds": [
             "CHART_MISSING_UNITS",
-            "CHART_OTHER",
+            "CHART_TRUNCATED_OR_UNLABELLED",
             "CROSS_SLIDE_MODEL",
             "EXPECTED_EVIDENCE_MISSING",
+            "FORECAST_BASE_NOT_DISCLOSED",
             "GMV_AS_REVENUE",
             "NARRATIVE_INCONSISTENCY",
             "STALE_METRIC_AS_CURRENT"
@@ -350,6 +351,7 @@
             }
           ],
           "findingKinds": [
+            "CHART_HIDDEN_PERIOD",
             "CHART_MISSING_UNITS",
             "CHART_OTHER",
             "CROSS_SLIDE_MODEL",
@@ -368,8 +370,7 @@
               "trap": "signed vs deployed",
               "detected": true,
               "matched": [
-                "BOOKINGS_AS_ARR",
-                "ARR_INCLUDES_NON_RECURRING"
+                "BOOKINGS_AS_ARR"
               ]
             }
           ],
@@ -381,10 +382,10 @@
             }
           ],
           "findingKinds": [
-            "ARR_INCLUDES_NON_RECURRING",
             "BOOKINGS_AS_ARR",
             "CHART_CUMULATIVE_AS_RUN_RATE",
-            "CHART_OTHER",
+            "CHART_HIDDEN_PERIOD",
+            "CHART_MISSING_UNITS",
             "EXPECTED_EVIDENCE_MISSING",
             "HOCKEY_STICK_FORECAST",
             "NARRATIVE_INCONSISTENCY",
@@ -415,8 +416,9 @@
           ],
           "findingKinds": [
             "CROSS_SLIDE_MODEL",
-            "FORECAST_BASE_NOT_DISCLOSED",
+            "EXPECTED_EVIDENCE_MISSING",
             "IMPLIED_DECK_TAM_VS_RECONSTRUCTED",
+            "IMPLIED_TAM_VS_PRICE_X_CUSTOMERS",
             "NARRATIVE_INCONSISTENCY"
           ]
         },
@@ -456,7 +458,6 @@
           ],
           "findingKinds": [
             "ARR_INCLUDES_NON_RECURRING",
-            "CHART_MISSING_UNITS",
             "CROSS_SLIDE_MODEL",
             "EXPECTED_EVIDENCE_MISSING",
             "NARRATIVE_INCONSISTENCY",
@@ -503,13 +504,11 @@
             }
           ],
           "findingKinds": [
-            "CROSS_SLIDE_MODEL",
             "EXPECTED_EVIDENCE_MISSING",
             "INSTRUCTION_TEXT_IN_MATERIALS",
             "LOGO_ONLY_CUSTOMERS",
             "NARRATIVE_INCONSISTENCY",
-            "PILOTS_AS_CUSTOMERS",
-            "SELF_SERVE_WITH_ENTERPRISE_SIGNALS"
+            "PILOTS_AS_CUSTOMERS"
           ]
         },
         {
@@ -538,6 +537,7 @@
             }
           ],
           "findingKinds": [
+            "CROSS_SLIDE_MODEL",
             "CUMULATIVE_AS_RUN_RATE",
             "EXPECTED_EVIDENCE_MISSING",
             "NARRATIVE_INCONSISTENCY"
@@ -559,7 +559,6 @@
               "trap": "NRR without cohorts",
               "detected": true,
               "matched": [
-                "RETENTION_WITHOUT_COHORTS",
                 "RATE_WITHOUT_DENOMINATOR"
               ]
             }
@@ -580,7 +579,6 @@
             "EXPECTED_EVIDENCE_MISSING",
             "NARRATIVE_INCONSISTENCY",
             "RATE_WITHOUT_DENOMINATOR",
-            "RETENTION_WITHOUT_COHORTS",
             "STALE_METRIC_AS_CURRENT"
           ]
         }
@@ -588,81 +586,81 @@
     },
     "retrieval": {
       "queries": 34,
-      "chunks": 1020,
+      "chunks": 1010,
       "k": 12,
       "resolver": "resolveMentions",
       "modes": {
         "chatSingleDeal": {
           "queries": 34,
           "unanswerable": [],
-          "p5": 0.7058823529411764,
-          "p10": 0.4794117647058825,
-          "r5": 0.3284811836282424,
-          "r10": 0.4168935271876448,
-          "np5": 0.7284313725490196,
-          "hit1": 0.8823529411764706,
+          "p5": 0.6823529411764707,
+          "p10": 0.46764705882352947,
+          "r5": 0.31020689024938697,
+          "r10": 0.4102250424797205,
+          "np5": 0.6852941176470589,
+          "hit1": 0.7647058823529411,
           "hit5": 1,
           "hit10": 1,
-          "mrr": 0.9289215686274509,
+          "mrr": 0.8612745098039215,
           "misses5": []
         },
         "hybridScoped": {
           "queries": 34,
           "unanswerable": [],
-          "p5": 0.6823529411764706,
-          "p10": 0.5676470588235294,
-          "r5": 0.3232315857315857,
-          "r10": 0.49568725892255305,
-          "np5": 0.7078431372549021,
-          "hit1": 0.9117647058823529,
-          "hit5": 1,
-          "hit10": 1,
-          "mrr": 0.9509803921568626,
-          "misses5": []
-        },
-        "hybridUnscoped": {
-          "queries": 34,
-          "unanswerable": [],
-          "p5": 0.6647058823529413,
-          "p10": 0.5470588235294118,
-          "r5": 0.3172403003285356,
-          "r10": 0.4824889001359589,
-          "np5": 0.6901960784313728,
-          "hit1": 0.9411764705882353,
-          "hit5": 1,
-          "hit10": 1,
-          "mrr": 0.9705882352941176,
-          "misses5": []
-        },
-        "semanticUnscoped": {
-          "queries": 34,
-          "unanswerable": [],
-          "p5": 0.6000000000000001,
-          "p10": 0.5058823529411766,
-          "r5": 0.2810610112080701,
-          "r10": 0.43238035885094706,
-          "np5": 0.6230392156862745,
+          "p5": 0.6647058823529414,
+          "p10": 0.5617647058823528,
+          "r5": 0.2994390771954853,
+          "r10": 0.47654860536827154,
+          "np5": 0.6676470588235296,
           "hit1": 0.8529411764705882,
           "hit5": 1,
           "hit10": 1,
           "mrr": 0.9215686274509803,
           "misses5": []
         },
+        "hybridUnscoped": {
+          "queries": 34,
+          "unanswerable": [],
+          "p5": 0.6588235294117649,
+          "p10": 0.5205882352941176,
+          "r5": 0.30200539784139074,
+          "r10": 0.4438230264489209,
+          "np5": 0.6617647058823531,
+          "hit1": 0.8529411764705882,
+          "hit5": 1,
+          "hit10": 1,
+          "mrr": 0.9215686274509803,
+          "misses5": []
+        },
+        "semanticUnscoped": {
+          "queries": 34,
+          "unanswerable": [],
+          "p5": 0.611764705882353,
+          "p10": 0.5117647058823529,
+          "r5": 0.2584164704289339,
+          "r10": 0.4192208739551435,
+          "np5": 0.6132352941176471,
+          "hit1": 0.8235294117647058,
+          "hit5": 1,
+          "hit10": 1,
+          "mrr": 0.8970588235294117,
+          "misses5": []
+        },
         "lexicalUnscoped": {
           "queries": 34,
           "unanswerable": [],
-          "p5": 0.6176470588235295,
-          "p10": 0.5000000000000001,
-          "r5": 0.2819303929598047,
-          "r10": 0.43996391055214584,
-          "np5": 0.6323529411764707,
-          "hit1": 0.7941176470588235,
+          "p5": 0.6058823529411762,
+          "p10": 0.47941176470588237,
+          "r5": 0.2797437547689504,
+          "r10": 0.42375030998422686,
+          "np5": 0.6088235294117644,
+          "hit1": 0.7058823529411765,
           "hit5": 0.9411764705882353,
-          "hit10": 0.9705882352941176,
-          "mrr": 0.863562091503268,
+          "hit10": 0.9411764705882353,
+          "mrr": 0.8024509803921568,
           "misses5": [
-            "R09",
-            "R32"
+            "R06",
+            "R09"
           ]
         }
       }
@@ -672,160 +670,168 @@
         "model": "gpt-5.6-luna",
         "effort": "low",
         "promptVersion": "citation-judge-3",
-        "costUsd": 0.03659139999999998
+        "costUsd": 0.03787619999999999
       },
       "overall": {
-        "n": 147,
-        "checkable": 147,
-        "supports": 136,
-        "partial": 11,
+        "n": 150,
+        "checkable": 150,
+        "supports": 138,
+        "partial": 12,
         "doesNotSupport": 0,
         "notCheckable": 0,
-        "supportRate": 0.9183673469387755,
-        "judgedSupportRate": 0.9251700680272109,
+        "supportRate": 0.9133333333333333,
+        "judgedSupportRate": 0.92,
         "ci95": {
-          "low": 0.862736754375693,
-          "high": 0.9526881681920867
+          "low": 0.8573705468757646,
+          "high": 0.9486533114304412
         },
-        "judgeExcerptNotVerbatim": 3
+        "judgeExcerptNotVerbatim": 1
       },
       "byOrigin": {
         "ANALYSIS": {
           "n": 90,
           "checkable": 90,
-          "supports": 90,
-          "partial": 0,
+          "supports": 88,
+          "partial": 2,
           "doesNotSupport": 0,
           "notCheckable": 0,
-          "supportRate": 1,
-          "judgedSupportRate": 1,
+          "supportRate": 0.9777777777777777,
+          "judgedSupportRate": 0.9777777777777777,
           "ci95": {
-            "low": 0.9590629315783191,
-            "high": 0.9999999999999999
+            "low": 0.9225532261919241,
+            "high": 0.9938846862051364
           },
           "judgeExcerptNotVerbatim": 0
         },
         "CHAT": {
-          "n": 57,
-          "checkable": 57,
-          "supports": 46,
-          "partial": 11,
+          "n": 60,
+          "checkable": 60,
+          "supports": 50,
+          "partial": 10,
           "doesNotSupport": 0,
           "notCheckable": 0,
-          "supportRate": 0.7894736842105263,
-          "judgedSupportRate": 0.8070175438596491,
+          "supportRate": 0.8166666666666667,
+          "judgedSupportRate": 0.8333333333333334,
           "ci95": {
-            "low": 0.6671363132153347,
-            "high": 0.875255734331081
+            "low": 0.7008000677353371,
+            "high": 0.8944231096286387
           },
-          "judgeExcerptNotVerbatim": 3
+          "judgeExcerptNotVerbatim": 1
         }
       },
       "population": {
-        "analysis": 161,
-        "chat": 57,
-        "chatNotReconstructable": 0
+        "analysis": 154,
+        "chat": 65,
+        "chatNotReconstructable": 1
       },
       "excerptVerbatim": {
-        "found": 160,
-        "checked": 161
+        "found": 153,
+        "checked": 154
       },
       "failures": [
         {
-          "origin": "CHAT",
+          "origin": "ANALYSIS",
           "verdict": "PARTIAL",
           "excerptVerified": true,
-          "ref": "answer 2026-09-28T08:29:00.565Z refs 8",
-          "statement": "Paid pilots: 27 of the 41 are described as paid pilots, company-reported.",
-          "reason": "The source supports that 27 enterprise customers are paid pilots and the company-reported attribution, but it does not state that they are 27 of the 41 enterprise customers."
+          "ref": "Ledgerline CLM-006 ← SRC-001 p. 4",
+          "statement": "Ledgerline reports 92 paying customers as of August 2026.",
+          "reason": "The source states 92 paying customers, but does not specify that this figure is as of August 2026."
+        },
+        {
+          "origin": "ANALYSIS",
+          "verdict": "PARTIAL",
+          "excerptVerified": true,
+          "ref": "Oncovire Therapeutics CLM-008 ← SRC-001 p. 4",
+          "statement": "Oncovire reports no revenue as of September 2026. ($0 revenue)",
+          "reason": "The source states no revenue today, but does not state that Oncovire had no revenue as of September 2026 or explicitly quantify it as $0."
         },
         {
           "origin": "CHAT",
           "verdict": "PARTIAL",
           "excerptVerified": true,
-          "ref": "answer 2026-09-28T08:28:56.088Z refs 4,9",
-          "statement": "Revenue mix is unknown: Historical revenue was $0.9M in 2024 and $1.6M in 2025, but the split between hardware and subscription revenue and the gross margin of each component are not disclosed.",
-          "reason": "The source supports the 2024 and 2025 revenue figures and that revenue mix and gross margin are unknown, but it does not specifically state that the hardware/subscription split or each component’s gross margin is undisclosed."
-        },
-        {
-          "origin": "CHAT",
-          "verdict": "PARTIAL",
-          "excerptVerified": false,
-          "ref": "answer 2026-09-28T08:29:15.677Z refs 1",
-          "statement": "Derived: Those figures imply approximately 6.3 months of pre-round runway as of July 2026.",
-          "reason": "The source supports approximately 6.3 months of runway as of July 2026 (also derivable as $600k ÷ $95k/month), but it does not explicitly establish that this is specifically pre-round runway."
+          "ref": "answer 2026-09-28T08:53:48.296Z refs 3",
+          "statement": "The deck reports $48M of loan volume originated since launch in March 2023.",
+          "reason": "The source reports $48M in loan volume but does not state that it was originated since launch or that the launch occurred in March 2023."
         },
         {
           "origin": "CHAT",
           "verdict": "PARTIAL",
           "excerptVerified": true,
-          "ref": "answer 2026-09-28T08:28:46.680Z refs 4,10",
-          "statement": "Le marché annoncé de 38 Md$ est company-reported, mais il ne résout pas ce problème de qualité du revenu. De même, l’affirmation produit sur les 87 % ne précise pas dans ces éléments la définition exacte du « no human touch », la précision ",
-          "reason": "La source confirme le montant de 38 Md$ comme estimation déclarée par l’entreprise et l’affirmation des 87 %, mais elle ne permet pas d’établir que ce marché ne résout pas un problème de qualité du revenu ni de confirmer toutes les lacunes détaillées sur la définition, le type de facture et les exceptions."
-        },
-        {
-          "origin": "CHAT",
-          "verdict": "PARTIAL",
-          "excerptVerified": true,
-          "ref": "answer 2026-09-28T08:29:03.671Z refs 3,5",
-          "statement": "It excludes GPU inference costs, the core delivery cost, which are currently covered by cloud credits through 2027.",
-          "reason": "The source supports that GPU inference costs are excluded and covered by cloud credits through 2027, but it does not state that they are the core delivery cost or that the exclusion applies to a particular item described as “It.”"
-        },
-        {
-          "origin": "CHAT",
-          "verdict": "PARTIAL",
-          "excerptVerified": true,
-          "ref": "answer 2026-09-28T08:29:19.023Z refs 1,5",
-          "statement": "Company-reported: 21 of 45 employees are in implementation and managed services, and implementation averages five months.",
-          "reason": "The source supports that 21 of 45 employees are in implementation and managed services, but it does not support the claim that implementation averages five months."
-        },
-        {
-          "origin": "CHAT",
-          "verdict": "PARTIAL",
-          "excerptVerified": true,
-          "ref": "answer 2026-09-28T08:29:19.023Z refs 5,6",
-          "statement": "It also weakens the basis for the proposed $56M pre-money valuation until Ruleyard demonstrates recurring subscription scale, retention, segment margins, and a credible reduction in services dependency.",
-          "reason": "The source supports concerns about valuation, recurring-revenue scale, and services dependency, but it does not mention a proposed $56M pre-money valuation, retention, segment margins, or a credible demonstrated reduction in services dependency."
-        },
-        {
-          "origin": "CHAT",
-          "verdict": "PARTIAL",
-          "excerptVerified": true,
-          "ref": "answer 2026-09-28T08:29:03.671Z refs 4",
-          "statement": "Unknown: The records do not provide the costs of GPUs, reserved-capacity commitments, networking, storage, serving labor, or the post-credit economics.",
-          "reason": "The source supports that core delivery costs and economics after credits are unresolved, but it does not explicitly establish that each listed cost category is absent from the records."
+          "ref": "answer 2026-09-28T08:53:21.845Z refs 3,5",
+          "statement": "Customer concentration and verification risk — company-reported / unknown: The $2.09M undeployed ARR comes from three signed utility and insurer contracts, but customer identities, invoices, bank receipts, termination rights, and payment st",
+          "reason": "The source supports three signed utility and insurer contracts and $2.09M of signed, not-yet-deployed ARR, but it does not establish the absence or status of customer identities, invoices, bank receipts, termination rights, or payments."
         },
         {
           "origin": "CHAT",
           "verdict": "SUPPORTS",
           "excerptVerified": false,
-          "ref": "answer 2026-09-28T08:28:46.680Z refs 1,9",
-          "statement": "La société dispose de 3,1 M$ de cash et brûle 365 k$ par mois — chiffres company-reported. Le runway calculé est de 8,5 mois — chiffre dérivé par le moteur du fonds.",
-          "reason": "La source indique explicitement les 3,1 M$ de cash et les 365 k$ de burn mensuel comme chiffres rapportés par la société, ainsi que le runway dérivé de 8,5 mois."
+          "ref": "answer 2026-09-28T08:53:12.270Z refs 1",
+          "statement": "Le CAC rapporté est de 58 k$ et le CAC payback dérivé est de 22,4 mois; les deux métriques n’ont pas de date de référence, et la taille d’échantillon du CAC est inconnue.",
+          "reason": "Le texte indique exactement un CAC rapporté de 58 k$, un CAC payback dérivé de 22,4 mois, l’absence de date de référence pour les deux métriques et une taille d’échantillon inconnue pour le CAC."
         },
         {
           "origin": "CHAT",
           "verdict": "PARTIAL",
           "excerptVerified": true,
-          "ref": "answer 2026-09-28T08:29:15.677Z refs 1",
-          "statement": "Inferred: Outstanding convertibles are expected to convert into 18.3% at their caps, creating a cap-table and incentive-alignment overhang.",
-          "reason": "The source supports that outstanding convertibles convert into 18.3% at their caps and describes this as a conversion overhang, but it does not explicitly state that they are expected to convert or that the overhang is specifically a cap-table and incentive-alignment overhang."
+          "ref": "answer 2026-09-28T08:53:43.809Z refs 3,4",
+          "statement": "That mix matters because the reported $4.1M ARR includes both subscriptions and implementation/managed-services fees, so it is not yet comparable to conventional SaaS ARR and does not establish scalable, durable software economics.",
+          "reason": "The source supports that the $4.1M ARR includes subscriptions and implementation/managed-services fees, but it does not explicitly establish that it is incomparable to conventional SaaS ARR or that it fails to demonstrate scalable, durable software economics."
         },
         {
           "origin": "CHAT",
           "verdict": "PARTIAL",
           "excerptVerified": true,
-          "ref": "answer 2026-09-28T08:28:46.680Z refs 1",
-          "statement": "Le vrai goulot d’étranglement de Ledgerline n’est pas l’accès au marché ni l’automatisation affichée : c’est la vérification de la qualité réelle du revenu et du produit, alors que la société dispose de seulement 8,5 mois de runway.",
-          "reason": "The source supports that verification of revenue quality and product automation is a key unresolved issue and explicitly reports 8.5 months of runway, but it does not state that this is the “real bottleneck” rather than market access or that the revenue and product quality are the specific wording used in the statement."
+          "ref": "answer 2026-09-28T08:53:34.456Z refs 1",
+          "statement": "Le dossier ne fournit pas non plus de validation commerciale d’un acheteur ou d’un marché commercial pour OV-201.",
+          "reason": "La source confirme l’absence de validation ou d’identification d’un acheteur commercial, mais n’établit pas explicitement l’absence de validation d’un marché commercial."
         },
         {
           "origin": "CHAT",
           "verdict": "PARTIAL",
-          "excerptVerified": false,
-          "ref": "answer 2026-09-28T08:28:50.450Z refs 8,9",
-          "statement": "At an 11% take rate, the implied platform revenue is approximately $902k before delivery fees, refunds, chargebacks, supplier pass-throughs, and other adjustments.",
-          "reason": "The source supports the 11% calculation and approximate $902k platform revenue, but does not explicitly state that this amount is before all the listed fees, refunds, chargebacks, pass-throughs, and adjustments."
+          "excerptVerified": true,
+          "ref": "answer 2026-09-28T08:53:40.163Z refs 3",
+          "statement": "The financing record does not provide a fully diluted capitalization, conversion mechanics, option pool, or other SAFE terms; existing SAFE conversion and investor rights could affect ownership and future financing flexibility.",
+          "reason": "The source supports the absence of a fully diluted capitalization and that existing SAFE conversion and investor rights could affect ownership and future financing flexibility, but it does not state that the financing record lacks conversion mechanics, an option pool, or other SAFE terms; those are listed as diligence items to obtain."
+        },
+        {
+          "origin": "CHAT",
+          "verdict": "PARTIAL",
+          "excerptVerified": true,
+          "ref": "answer 2026-09-28T08:53:16.772Z refs 9",
+          "statement": "Company-reported: Crateroute says it keeps an 11% take rate on each order, while suppliers are paid separately.",
+          "reason": "The source supports the 11% take rate and that suppliers are paid separately in timing, but it does not state that suppliers are paid separately from Crateroute or from the take rate."
+        },
+        {
+          "origin": "CHAT",
+          "verdict": "PARTIAL",
+          "excerptVerified": true,
+          "ref": "answer 2026-09-28T08:53:24.598Z refs 10",
+          "statement": "Company-reported: 41 enterprise customers as of July 2026.",
+          "reason": "The source states 41 enterprise customers, but does not explicitly say that this count was as of July 2026; only ARR is labeled Jul 2026."
+        },
+        {
+          "origin": "CHAT",
+          "verdict": "PARTIAL",
+          "excerptVerified": true,
+          "ref": "answer 2026-09-28T08:53:12.270Z refs 1",
+          "statement": "À ce niveau, le plan 2027 de 10 M$ d’ARR et 150 clients n’est pas réconcilié avec l’économie client actuelle.",
+          "reason": "La source confirme que le plan de 10 M$ d’ARR et 150 clients n’est pas réconcilié avec un ACV d’environ 42 k$, mais elle ne précise pas qu’il s’agit du plan 2027."
+        },
+        {
+          "origin": "CHAT",
+          "verdict": "PARTIAL",
+          "excerptVerified": true,
+          "ref": "answer 2026-09-28T08:53:48.296Z refs 1",
+          "statement": "The 1.2% default rate is company-reported, but the required definition, vintage curve, recoveries, loss severity, and net loss rate remain unknown.",
+          "reason": "The source identifies the 1.2% default rate as company-reported and marks the definition, vintage curve, recovery rate, and net loss rate as unknown, but it does not mention loss severity as unknown."
+        },
+        {
+          "origin": "CHAT",
+          "verdict": "PARTIAL",
+          "excerptVerified": true,
+          "ref": "answer 2026-09-28T08:53:21.845Z refs 4",
+          "statement": "The records specifically identify contract conditions, deployment schedules, customer payment behavior, and deployment dependencies as unresolved.",
+          "reason": "The source explicitly identifies customer payment behavior and deployment cycle time as items to establish, and discusses contract executability and customer approvals, but it does not specifically identify contract conditions or deployment dependencies as unresolved in the stated terms."
         }
       ]
     },
@@ -834,14 +840,14 @@
       "parcelo-seed.pdf": "NEEDS_FOUNDER_CALL",
       "habitloom-seed.pdf": "NEEDS_FOUNDER_CALL",
       "crateroute-series-a.pdf": "NEEDS_FOUNDER_CALL",
-      "lendquarry-series-a.pdf": "NEEDS_FOUNDER_CALL",
+      "lendquarry-series-a.pdf": "ANALYTICAL_RECOMMEND_PASS",
       "inferlane-series-a.pdf": "NEEDS_FOUNDER_CALL",
       "drypoint-series-a.pdf": "ANALYTICAL_RECOMMEND_PASS",
-      "oncovire-series-a.pdf": "ANALYTICAL_RECOMMEND_PASS",
-      "ruleyard-series-a.pdf": "ANALYTICAL_RECOMMEND_PASS",
+      "oncovire-series-a.pdf": "NEEDS_FOUNDER_CALL",
+      "ruleyard-series-a.pdf": "NEEDS_FOUNDER_CALL",
       "clausewren-seed.pdf": "NEEDS_FOUNDER_CALL",
-      "carbonmoss-seed.pdf": "ANALYTICAL_RECOMMEND_PASS",
-      "rostermint-series-a.pdf": "SCREEN_OUT"
+      "carbonmoss-seed.pdf": "NEEDS_FOUNDER_CALL",
+      "rostermint-series-a.pdf": "ANALYTICAL_RECOMMEND_PASS"
     },
     "regression": {
       "engineDrift": 0,
@@ -849,67 +855,60 @@
       "corpusDrift": {
         "ledgerline-series-a.pdf": [
           "logo_retention missing → 94",
-          "+findings SERVICES_AS_SAAS",
-          "−findings CHART_MISSING_UNITS,CHART_OTHER",
           "Traction/PMF 75 → 82.7"
         ],
         "parcelo-seed.pdf": [
           "fill_rate missing → 58",
-          "+findings DERIVED_VS_REPORTED",
-          "OQI 44.6 → 38.1",
           "Traction/PMF 51.3 → 63.2"
         ],
         "habitloom-seed.pdf": [
-          "+findings CHART_HIDDEN_PERIOD,CROSS_SLIDE_VALUE_CONFLICT,FORECAST_BASE_NOT_DISCLOSED",
-          "OQI 42.3 → 36.2",
+          "+findings CHART_OTHER,CHART_TRUNCATED_OR_UNLABELLED,FORECAST_BASE_NOT_DISCLOSED",
+          "OQI 42.3 → 38.7",
           "Traction/PMF 75.9 → 91.7"
         ],
         "crateroute-series-a.pdf": [
-          "revenue_ttm 8200000 → 902000",
-          "−findings IMPLIED_NET_REVENUE_FROM_GMV,IMPLIED_TAM_VS_PRICE_X_CUSTOMERS",
-          "OQI 43.6 → 47.8",
+          "revenue_ttm 8200000 → missing",
+          "+findings CHART_TRUNCATED_OR_UNLABELLED,FORECAST_BASE_NOT_DISCLOSED",
+          "−findings CHART_OTHER,IMPLIED_NET_REVENUE_FROM_GMV,IMPLIED_TAM_VS_PRICE_X_CUSTOMERS",
+          "OQI 43.6 → 47.3",
           "Traction/PMF 34.4 → 82"
         ],
         "lendquarry-series-a.pdf": [
           "+findings CHART_MISSING_UNITS,CHART_OTHER,CUMULATIVE_AS_RUN_RATE",
-          "OQI 39.9 → 44.9"
+          "recommendation NEEDS_FOUNDER_CALL → ANALYTICAL_RECOMMEND_PASS"
         ],
         "inferlane-series-a.pdf": [
           "arr 67200000 → 5600000",
+          "+findings CHART_HIDDEN_PERIOD",
           "−findings MONTHLY_FIGURE_AS_ARR",
-          "OQI 45.6 → 84.7",
-          "Traction/PMF 59.1 → 90.2"
+          "Traction/PMF 59.1 → 93.3"
         ],
         "drypoint-series-a.pdf": [
-          "+findings CHART_CUMULATIVE_AS_RUN_RATE,CHART_OTHER",
-          "−findings CHART_CHERRY_PICKED_PERIOD,CHART_MISSING_UNITS,CROSS_SLIDE_MODEL",
-          "recommendation NEEDS_FOUNDER_CALL → ANALYTICAL_RECOMMEND_PASS"
+          "+findings CHART_CUMULATIVE_AS_RUN_RATE,CHART_HIDDEN_PERIOD",
+          "−findings ARR_INCLUDES_NON_RECURRING,CHART_CHERRY_PICKED_PERIOD,CROSS_SLIDE_MODEL",
+          "recommendation NEEDS_FOUNDER_CALL → ANALYTICAL_RECOMMEND_PASS",
+          "OQI 42 → 36.7"
         ],
         "oncovire-series-a.pdf": [
-          "+findings FORECAST_BASE_NOT_DISCLOSED",
-          "−findings CHART_MISSING_UNITS,CHART_OTHER,IMPLIED_TAM_VS_PRICE_X_CUSTOMERS",
-          "recommendation NEEDS_FOUNDER_CALL → ANALYTICAL_RECOMMEND_PASS",
-          "OQI 38.4 → 34.4"
+          "+findings EXPECTED_EVIDENCE_MISSING",
+          "−findings CHART_MISSING_UNITS,CHART_OTHER",
+          "OQI 38.4 → 34.1"
         ],
         "ruleyard-series-a.pdf": [
-          "+findings CHART_MISSING_UNITS",
-          "−findings CHART_OTHER",
-          "recommendation NEEDS_FOUNDER_CALL → ANALYTICAL_RECOMMEND_PASS",
-          "OQI 39.7 → 35.7"
+          "−findings CHART_OTHER"
         ],
         "clausewren-seed.pdf": [
-          "paying_customers 27 → 8",
+          "paying_customers 27 → 41",
           "pilots 11 → 27",
-          "+findings SELF_SERVE_WITH_ENTERPRISE_SIGNALS",
-          "OQI 39.9 → 46"
+          "−findings CROSS_SLIDE_MODEL"
         ],
         "carbonmoss-seed.pdf": [
-          "+findings CUMULATIVE_AS_RUN_RATE",
-          "recommendation NEEDS_FOUNDER_CALL → ANALYTICAL_RECOMMEND_PASS"
+          "+findings CROSS_SLIDE_MODEL,CUMULATIVE_AS_RUN_RATE"
         ],
         "rostermint-series-a.pdf": [
           "+findings CHART_OTHER",
-          "recommendation NEEDS_FOUNDER_CALL → SCREEN_OUT"
+          "−findings RETENTION_WITHOUT_COHORTS",
+          "recommendation NEEDS_FOUNDER_CALL → ANALYTICAL_RECOMMEND_PASS"
         ]
       },
       "baselineAt": "2026-09-28T04:14:02.745Z"
@@ -920,7 +919,7 @@
       "suite": "pipeline",
       "check": "FAST_SCREEN completes within its product cap ($0.15) on an uncached deck",
       "pass": true,
-      "detail": "PARTIAL, $0.064, 58 s",
+      "detail": "PARTIAL, $0.064, 65 s",
       "hard": true
     },
     {
@@ -1137,7 +1136,7 @@
       "suite": "extraction",
       "check": "crateroute-series-a.pdf not used as current revenue_ttm",
       "pass": true,
-      "detail": "primary revenue_ttm = 902000 (must not be 8200000)",
+      "detail": "primary revenue_ttm = none (must not be 8200000)",
       "hard": true
     },
     {
@@ -1472,8 +1471,8 @@
     {
       "suite": "extraction",
       "check": "clausewren-seed.pdf not used as current paying_customers",
-      "pass": true,
-      "detail": "primary paying_customers = 8 (must not be 41)",
+      "pass": false,
+      "detail": "primary paying_customers = 41 (must not be 41)",
       "hard": true
     },
     {
@@ -1739,7 +1738,7 @@
       "suite": "integrity",
       "check": "drypoint-series-a.pdf detects: signed vs deployed",
       "pass": true,
-      "detail": "BOOKINGS_AS_ARR, ARR_INCLUDES_NON_RECURRING",
+      "detail": "BOOKINGS_AS_ARR",
       "hard": false
     },
     {
@@ -1865,7 +1864,7 @@
       "suite": "integrity",
       "check": "rostermint-series-a.pdf detects: NRR without cohorts",
       "pass": true,
-      "detail": "RETENTION_WITHOUT_COHORTS, RATE_WITHOUT_DENOMINATOR",
+      "detail": "RATE_WITHOUT_DENOMINATOR",
       "hard": false
     },
     {
@@ -1907,7 +1906,7 @@
       "suite": "adversarial",
       "check": "score not inflated vs clean control",
       "pass": true,
-      "detail": "ΔOQI 1.4 (tolerance +8 for model variance)",
+      "detail": "ΔOQI -0.4 (tolerance +8 for model variance)",
       "hard": true
     },
     {
@@ -1928,7 +1927,7 @@
       "suite": "stability",
       "check": "OQI within ±8 after marketing rewrite",
       "pass": true,
-      "detail": "|ΔOQI| 0.4",
+      "detail": "|ΔOQI| 2.3",
       "hard": true
     },
     {
@@ -1949,7 +1948,7 @@
       "suite": "prestige",
       "check": "OQI not lifted by pedigree",
       "pass": true,
-      "detail": "ΔOQI -0.7",
+      "detail": "ΔOQI 0.5",
       "hard": true
     },
     {
@@ -1970,7 +1969,7 @@
       "suite": "missing",
       "check": "OQI conservative bound does not improve",
       "pass": true,
-      "detail": "50.4 → 37.7",
+      "detail": "53.9 → 41",
       "hard": true
     },
     {
@@ -1998,7 +1997,7 @@
       "suite": "chat",
       "check": "fact question answered < 1 s",
       "pass": true,
-      "detail": "19 ms",
+      "detail": "18 ms",
       "hard": true
     },
     {
@@ -2012,28 +2011,28 @@
       "suite": "chat",
       "check": "unknown company: no invented figure",
       "pass": true,
-      "detail": "Nous ne savons pas encore. Aucun enregistrement fourni ne mentionne [Zorblax Robotics] ni son ARR. **Implication d’investissement :** l’ARR de Zorblax Robotics",
+      "detail": "Nous ne savons pas encore quel est l’ARR de Zorblax Robotics. Aucun enregistrement du fonds ne correspond à cette société ou à cette métrique. Evidence : aucun",
       "hard": true
     },
     {
       "suite": "chat",
       "check": "answer in the question's language (FR)",
       "pass": true,
-      "detail": "Nous ne savons pas encore ce que James Zhang a dit sur Ledgerline. Les éléments ",
+      "detail": "Nous ne savons pas encore. Les éléments disponibles ne contiennent aucune déclar",
       "hard": false
     },
     {
       "suite": "chat",
       "check": "IC member with no record: no fabricated opinion",
       "pass": true,
-      "detail": "Nous ne savons pas encore ce que James Zhang a dit sur Ledgerline. Les éléments disponibles ne contiennent ni déclaration, ni préférence documentée, ni observat",
+      "detail": "Nous ne savons pas encore. Les éléments disponibles ne contiennent aucune déclaration de James Zhang sur Ledgerline. **Évidence** - Le contexte identifie Maya ",
       "hard": true
     },
     {
       "suite": "chat",
       "check": "single-deal question first token < 2 s (median of 3)",
       "pass": true,
-      "detail": "median 627 ms (runs 525, 627, 641 ms)",
+      "detail": "median 798 ms (runs 688, 798, 844 ms)",
       "hard": false
     },
     {
@@ -2047,42 +2046,42 @@
       "suite": "retrieval",
       "check": "hybrid (company-scoped) hit@5 ≥ 85%",
       "pass": true,
-      "detail": "hit@5 100.0% · P@5 68.2% · R@5 32.3% · R@10 49.6% · MRR 0.95",
+      "detail": "hit@5 100.0% · P@5 66.5% · R@5 29.9% · R@10 47.7% · MRR 0.92",
       "hard": true
     },
     {
       "suite": "retrieval",
       "check": "hybrid (unscoped, whole fund) hit@10 ≥ 75%",
       "pass": true,
-      "detail": "hit@10 100.0% · P@5 66.5% · R@10 48.2% · MRR 0.97",
+      "detail": "hit@10 100.0% · P@5 65.9% · R@10 44.4% · MRR 0.92",
       "hard": false
     },
     {
       "suite": "retrieval",
       "check": "chat single-deal path (lexical only) hit@5",
       "pass": true,
-      "detail": "hit@5 100.0% · P@5 70.6% · MRR 0.93",
+      "detail": "hit@5 100.0% · P@5 68.2% · MRR 0.86",
       "hard": false
     },
     {
       "suite": "citation-support",
       "check": "analysis evidence excerpts found verbatim on the cited page",
       "pass": true,
-      "detail": "160/161 (99.4%) — deterministic",
+      "detail": "153/154 (99.4%) — deterministic",
       "hard": false
     },
     {
       "suite": "citation-support",
       "check": "sample judged",
       "pass": true,
-      "detail": "147/147 judged (0 error(s)); population: 161 analysis claims, 57 chat statements (0 not reconstructable: computed tables / graph / history)",
+      "detail": "150/150 judged (0 error(s)); population: 154 analysis claims, 65 chat statements (1 not reconstructable: computed tables / graph / history)",
       "hard": false
     },
     {
       "suite": "citation-support",
       "check": "support rate vs target 99.5%",
       "pass": false,
-      "detail": "91.8% of 147 checkable (95% CI 86.3%–95.3%); analysis 100.0% n=90, chat 78.9% n=57; partial 11, not supported 0, not checkable 0; judge cost $0.037",
+      "detail": "91.3% of 150 checkable (95% CI 85.7%–94.9%); analysis 97.8% n=90, chat 81.7% n=60; partial 12, not supported 0, not checkable 0; judge cost $0.038",
       "hard": false
     },
     {
@@ -2103,21 +2102,21 @@
       "suite": "regression",
       "check": "re-derivation of versions computed by an older engine (expected after a deliberate change, listed for review)",
       "pass": true,
-      "detail": "1: Inferlane (engine 3.2): OQI 84.7 → 87.5",
+      "detail": "none",
       "hard": true
     },
     {
       "suite": "regression",
       "check": "recommendations discriminate across the corpus",
       "pass": true,
-      "detail": "NEEDS_FOUNDER_CALL 7 · ANALYTICAL_RECOMMEND_PASS 4 · SCREEN_OUT 1 over 12 decks",
+      "detail": "NEEDS_FOUNDER_CALL 9 · ANALYTICAL_RECOMMEND_PASS 3 over 12 decks",
       "hard": false
     },
     {
       "suite": "regression",
       "check": "corpus drift vs baseline",
       "pass": false,
-      "detail": "ledgerline-series-a.pdf: logo_retention missing → 94; +findings SERVICES_AS_SAAS; −findings CHART_MISSING_UNITS,CHART_OTHER; Traction/PMF 75 → 82.7 | parcelo-seed.pdf: fill_rate missing → 58; +findings DERIVED_VS_REPORTED; OQI 44.6 → 38.1; Traction/PMF 51.3 → 63.2 | habitloom-seed.pdf: +findings CHART_HIDDEN_PERIOD,CROSS_SLIDE_VALUE_CONFLICT,FORECAST_BASE_NOT_DISCLOSED; OQI 42.3 → 36.2; Traction/PMF 75.9 → 91.7 | crateroute-series-a.pdf: revenue_ttm 8200000 → 902000; −findings IMPLIED_NET_REVENUE_FROM_GMV,IMPLIED_TAM_VS_PRICE_X_CUSTOMERS; OQI 43.6 → 47.8; Traction/PMF 34.4 → 82 | lendquarry-series-a.pdf: +findings CHART_MISSING_UNITS,CHART_OTHER,CUMULATIVE_AS_RUN_RATE; OQI 39.9 → 44.9 | inferlane-series-a.pdf: arr 67200000 → 5600000; −findings MONTHLY_FIGURE_AS_ARR; OQI 45.6 → 84.7; Traction/PMF 59.1 → 90.2",
+      "detail": "ledgerline-series-a.pdf: logo_retention missing → 94; Traction/PMF 75 → 82.7 | parcelo-seed.pdf: fill_rate missing → 58; Traction/PMF 51.3 → 63.2 | habitloom-seed.pdf: +findings CHART_OTHER,CHART_TRUNCATED_OR_UNLABELLED,FORECAST_BASE_NOT_DISCLOSED; OQI 42.3 → 38.7; Traction/PMF 75.9 → 91.7 | crateroute-series-a.pdf: revenue_ttm 8200000 → missing; +findings CHART_TRUNCATED_OR_UNLABELLED,FORECAST_BASE_NOT_DISCLOSED; −findings CHART_OTHER,IMPLIED_NET_REVENUE_FROM_GMV,IMPLIED_TAM_VS_PRICE_X_CUSTOMERS; OQI 43.6 → 47.3 | lendquarry-series-a.pdf: +findings CHART_MISSING_UNITS,CHART_OTHER,CUMULATIVE_AS_RUN_RATE; recommendation NEEDS_FOUNDER_CALL → ANALYTICAL_RECOMMEND_PASS | inferlane-series-a.pdf: arr 67200000 → 5600000; +findings CHART_HIDDEN_PERIOD; −findings MONTHLY_FIGURE_AS_ARR; Traction/PMF 59.1 → 93.3",
       "hard": false
     },
     {

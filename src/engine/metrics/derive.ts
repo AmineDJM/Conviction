@@ -105,6 +105,30 @@ export function deriveMetrics(input: MetricInstance[], nextId: () => string): Me
     if (changed) metrics = selectPrimary(metrics);
   }
 
+  // A customer total whose own breakdown states the non-paying parts it includes ("41 enterprise customers, incl. 27 paid
+  // pilots and 6 design partners"): paying customers = total − stated non-paying parts, computed by code. The total is kept,
+  // marked CONTRADICTED and explained. Only counts the text states are subtracted; nothing is estimated.
+  if (!metrics.some((m) => m.metricKey === "paying_customers" && m.normalizedValue !== null && m.state !== "CONTRADICTED" && !m.qualityFlags.some((f) => f.startsWith("CUSTOMER_COUNT_MAY_INCLUDE_NON_PAYING")))) {
+    const broad = metrics.find((m) => m.metricKey === "paying_customers" && m.isPrimary && m.calculationMethod === "REPORTED" && m.normalizedValue !== null && m.qualityFlags.some((f) => f.startsWith("CUSTOMER_COUNT_MAY_INCLUDE_NON_PAYING")));
+    if (broad) {
+      const text = [broad.definitionUsed ?? "", ...broad.components].join(" ; ").toLowerCase();
+      const parts: [string, number][] = [];
+      for (const re of [/(\d+)\s+(?:paid\s+|unpaid\s+|active\s+)?pilots?\b/, /(\d+)\s+design\s+partners?\b/, /(\d+)\s+(?:free\s+)?trials?\b/, /(\d+)\s+(?:pocs?|proofs? of concept)\b/, /(\d+)\s+(?:lois?|letters? of intent)\b/]) {
+        const m = re.exec(text);
+        if (m) parts.push([m[0], Number(m[1])]);
+      }
+      const nonPaying = parts.reduce((a, [, n]) => a + n, 0);
+      const paying = broad.normalizedValue! - nonPaying;
+      if (parts.length && paying > 0) {
+        metrics = metrics.map((m) => (m === broad ? { ...m, state: "CONTRADICTED" as const, qualityFlags: [...m.qualityFlags, `BROADER_THAN_NARROW_FIGURE: includes ${parts.map(([t]) => t).join(", ")} (stated breakdown)`] } : m));
+        metrics = selectPrimary(metrics);
+        add("paying_customers", paying, [broad], `${broad.rawValue} − ${parts.map(([t]) => t).join(" − ")} (stated breakdown)`, "COUNT", ["NARROWED_FROM_STATED_BREAKDOWN"]);
+        // The net figure excludes what the total included: the total's inclusion flag does not apply to it.
+        metrics = metrics.map((m) => (m.qualityFlags.includes("NARROWED_FROM_STATED_BREAKDOWN") ? { ...m, qualityFlags: m.qualityFlags.filter((f) => !f.startsWith("CUSTOMER_COUNT_MAY_INCLUDE_NON_PAYING")) } : m));
+      }
+    }
+  }
+
   // Revenue reported at the level of gross volume in a take-rate business: the reported figure is kept but
   // marked CONTRADICTED (it is GMV), and net revenue is estimated by code as GMV × take rate.
   const gmv = primary("gmv");

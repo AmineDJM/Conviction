@@ -424,3 +424,23 @@ describe("corpus regressions (fifth full eval run)", () => {
     expect(N("OTHER", 8, { label: "Team headcount", rawText: "8", unit: "COUNT", currency: null })!.metricKey).toBe("headcount");
   });
 });
+
+describe("corpus regressions (ninth full eval run)", () => {
+  it("Clausewren: a customer total with a stated breakdown yields paying customers = total − stated non-paying parts", () => {
+    const d = pipelineDeal([
+      obs("paying_customers", 41, { label: "Enterprise customers", rawText: "Enterprise customers 41", unit: "COUNT", currency: null, periodEnd: "2026-07-31", definitionAsStated: "Enterprise customers; the deck separately states that this total includes paid pilots and design partners.", components: ["includes 27 paid pilots", "includes 6 design partners", "8 customers are in production on annual contracts"] }),
+    ]);
+    const p = d.metrics.find((x) => x.metricKey === "paying_customers" && x.isPrimary)!;
+    expect(p.normalizedValue).toBe(8);
+    expect(p.qualityFlags).toContain("NARROWED_FROM_STATED_BREAKDOWN");
+    expect(p.qualityFlags.join(" ")).not.toContain("CUSTOMER_COUNT_MAY_INCLUDE_NON_PAYING");
+    expect(kinds(run(d))).toContain("PILOTS_AS_CUSTOMERS");
+    expect(d.metrics.find((x) => x.metricKey === "paying_customers" && x.normalizedValue === 41)!.state).toBe("CONTRADICTED");
+  });
+  it("without a stated breakdown the total is kept (flagged), never guessed", () => {
+    const d = pipelineDeal([obs("paying_customers", 41, { label: "Customers", rawText: "41", unit: "COUNT", currency: null, periodEnd: "2026-07", definitionAsStated: "customers including pilots" })]);
+    const p = d.metrics.find((x) => x.metricKey === "paying_customers" && x.isPrimary)!;
+    expect(p.normalizedValue).toBe(41);
+    expect(p.state).toBe("OBSERVED");
+  });
+});
