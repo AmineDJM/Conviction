@@ -337,6 +337,7 @@ async function main() {
     let cost = 0;
     for await (const ev of askBrain({ workspaceId, userId, question })) {
       if (ev.type === "delta") text += ev.text;
+      if (ev.type === "revision") text = ev.text;
       if (ev.type === "done") {
         first = ev.firstTokenMs;
         cost = ev.costUsd;

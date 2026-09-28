@@ -41,6 +41,7 @@ import {
   type ContextItem,
 } from "./retrieval";
 import { logger } from "@/lib/log";
+import { BRAIN_VERIFY, VerifyOutput, applyVerification, citedUnits, splitAnswer, verifyInput, verifyInstructions, type VerificationStats } from "./verify-citations";
 
 const s = schema;
 
@@ -59,6 +60,8 @@ export type BrainEvent =
       }[];
     }
   | { type: "delta"; text: string }
+  /** The streamed answer after citation verification: replaces the displayed text. */
+  | { type: "revision"; text: string; stats: VerificationStats }
   | {
       type: "done";
       messageId: string;
@@ -492,6 +495,46 @@ export async function* askBrain(inp: AskInput): AsyncGenerator<BrainEvent> {
     if (!answer) return;
   }
 
+  // 5. Citation verification: every cited sentence is checked against exactly the items it cites; code rewrites
+  // unsupported parts (trim or uncited inference). The first token is unaffected; the final text replaces the draft.
+  let verification: (VerificationStats & { error?: string }) | null = null;
+  // A citation to an item that was not in the context supports nothing: removed by code before any check.
+  const dangling = answer.replace(/\[(\d+)\]/g, (m, n: string) => (Number(n) >= 1 && Number(n) <= items.length ? m : ""));
+  if (dangling !== answer) {
+    answer = dangling.replace(/[ \t]+([.,;!?])/g, "$1");
+    yield { type: "revision", text: answer, stats: { checked: 0, supported: 0, trimmed: 0, inference: 0, refused: 0 } };
+  }
+  const units = citedUnits(splitAnswer(answer).pieces);
+  if (answer && units.length) {
+    yield { type: "status", text: "Checking citations" };
+    const seen = items.map((it, i) => ({ n: i + 1, text: `${it.title}${it.label ? ` {${it.label}}` : ""}${it.href ? ` <${it.href}>` : ""}\n${it.text}` }));
+    try {
+      const v = await structured({
+        step: "BRAIN_VERIFY",
+        promptVersion: BRAIN_VERIFY.version,
+        instructions: verifyInstructions(),
+        input: [{ role: "user", content: verifyInput(units, seen) }],
+        schema: VerifyOutput,
+        schemaName: "brain_verify",
+        maxOutputTokens: Math.min(2500, 200 + units.length * 120),
+        effort: "none",
+        cost,
+        signal: inp.signal,
+        cache: true,
+      });
+      const applied = applyVerification(answer, v.data, plan.language === "fr" ? "fr" : "en");
+      verification = applied.stats;
+      if (applied.text !== answer) {
+        answer = applied.text;
+        yield { type: "revision", text: answer, stats: applied.stats };
+      }
+    } catch (e) {
+      // Never block the answer: an unverified answer is stored as such.
+      verification = { checked: units.length, supported: 0, trimmed: 0, inference: 0, refused: 0, error: (e as Error).message.slice(0, 200) };
+      log.error({ err: (e as Error).message }, "citation verification failed");
+    }
+  }
+
   const messageId = newId("msg");
   const latencyMs = Date.now() - t0;
   db.insert(s.chatMessages)
@@ -502,7 +545,7 @@ export async function* askBrain(inp: AskInput): AsyncGenerator<BrainEvent> {
       content: answer,
       contextCompanyId: inp.contextCompanyId ?? null,
       citations,
-      plan,
+      plan: verification ? { ...plan, verification } : plan,
       costUsd: cost.spentUsd,
       latencyMs,
       firstTokenMs,

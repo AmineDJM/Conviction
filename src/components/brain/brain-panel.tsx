@@ -104,6 +104,8 @@ export function BrainPanel({ fundName }: { fundName: string }) {
           else if (ev.type === "status") patch((m) => ({ ...m, status: ev.text }));
           else if (ev.type === "citations") patch((m) => ({ ...m, citations: ev.items }));
           else if (ev.type === "delta") patch((m) => ({ ...m, status: null, content: m.content + ev.text }));
+          // Citation verification replaces the draft with the checked answer (unsupported parts trimmed or marked as inference).
+          else if (ev.type === "revision") patch((m) => ({ ...m, status: null, content: ev.text }));
           else if (ev.type === "done") patch((m) => ({ ...m, status: null, meta: { firstTokenMs: ev.firstTokenMs, latencyMs: ev.latencyMs, costUsd: ev.costUsd } }));
           else if (ev.type === "error") patch((m) => ({ ...m, status: null, error: ev.message }));
         }

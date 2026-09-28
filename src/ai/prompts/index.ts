@@ -10,6 +10,7 @@ import { DECISION_CORE, DECISION_THESIS, DECISION_CHALLENGE, DECISION_ACTIONS } 
 import { FOUNDER_CALL_UPDATE } from "./founder-call";
 import { PRE_MEETING_BRIEF_PROMPT } from "./meeting-brief";
 import { BRAIN_PLANNER, BRAIN_ANSWER } from "./brain";
+import { BRAIN_VERIFY } from "@/brain/verify-citations";
 import { IC_OBSERVATIONS } from "./ic-observations";
 import { FUND_DOCUMENT } from "./fund-document";
 
@@ -32,6 +33,7 @@ export const PROMPT_VERSIONS = {
   [PRE_MEETING_BRIEF_PROMPT.id]: PRE_MEETING_BRIEF_PROMPT.version,
   [BRAIN_PLANNER.id]: BRAIN_PLANNER.version,
   [BRAIN_ANSWER.id]: BRAIN_ANSWER.version,
+  [BRAIN_VERIFY.id]: BRAIN_VERIFY.version,
   [IC_OBSERVATIONS.id]: IC_OBSERVATIONS.version,
   [FUND_DOCUMENT.id]: FUND_DOCUMENT.version,
 };
