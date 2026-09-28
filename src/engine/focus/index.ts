@@ -66,6 +66,20 @@ export interface FocusContext {
   gates?: { id: string; label: string; result: string; detail: string }[];
 }
 
+/** Only metrics that drive asymmetric upside can signal an outlier; hygiene metrics (low concentration, revenue per FTE) cannot. */
+const UPSIDE_METRICS = new Set(["arr_growth_yoy", "revenue_growth_yoy", "mom_growth", "nrr", "grr", "ltv_to_cac", "magic_number", "burn_multiple", "pilot_to_production_rate", "organic_acquisition_share", "d30_retention", "dau_mau", "repeat_rate", "time_to_value_days"]);
+
+/** Human-readable breakpoint values (dictionary units when the metric is known). */
+function num(v: number | string | null, metricKey: string | null): string {
+  if (v === null) return "n/a";
+  if (typeof v === "string") return v;
+  const unit = metricKey ? metricDef(metricKey)?.unit : undefined;
+  if (unit === "USD" || Math.abs(v) >= 10_000) return Math.abs(v) >= 1e6 ? `$${(v / 1e6).toFixed(2)}M` : `$${Math.round(v / 1e3)}k`;
+  if (unit === "PERCENT") return `${v.toFixed(v < 10 ? 1 : 0)}%`;
+  if (unit === "MONTHS") return `${v.toFixed(1)} mo`;
+  return Number.isInteger(v) ? String(v) : v.toFixed(2);
+}
+
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
 const words = (s: string) => new Set(s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9%$ ]/g, " ").split(/\s+/).filter((w) => w.length > 3));
 function overlap(a: string, b: string) {
@@ -105,7 +119,7 @@ export function decisionFocus(deal: CanonicalDeal, registry: BenchmarkRegistry, 
     const status = m ? metricStatus(m.verification, m.calculationMethod, m.state) : r.method === "COMPUTED" ? "COMPUTED" : "UNKNOWN";
     items.push(
       item("SENSITIVITY", r.metricKey ? `metric:${r.metricKey}` : `sens:${r.id}`, r.variable, m ? [m.id] : [], 0.55 + 0.45 * proximity, status, [
-        r.broken ? `Already past its breakpoint (${r.breaksAt})` : r.margin !== null ? `${Math.abs(r.margin).toFixed(0)}% from the breakpoint (${r.current} → breaks at ${r.breaksAt})` : `Breakpoint ${r.breaksAt}`,
+        r.broken ? `Already past its breakpoint (${num(r.breaksAt, r.metricKey)})` : r.margin !== null ? `${Math.abs(r.margin).toFixed(0)}% from the breakpoint (${num(r.current, r.metricKey)} → breaks at ${num(r.breaksAt, r.metricKey)})` : `Breakpoint ${num(r.breaksAt, r.metricKey)}`,
         r.why,
       ]),
     );
@@ -126,9 +140,17 @@ export function decisionFocus(deal: CanonicalDeal, registry: BenchmarkRegistry, 
     items.push(item("CLAIM", `claim:${c.id}`, c.statement, [c.id], 0.3 + 0.1 * Math.min(5, Math.max(1, c.unusualness ?? 1)), status, [`Material claim, unusualness ${c.unusualness ?? 1}/5`, c.verificationMethod]));
   }
 
-  // 4. Open information gaps: importance × stated uncertainty.
+  // 4. Open information gaps. A gap is a question, so its own impact is capped (0.75 × importance);
+  //    it inherits the impact of a computed breakpoint or a thesis killer it is about.
+  const anchors = [
+    ...(ctx.sensitivity ?? []).filter((r) => r.margin !== null || r.broken).map((r) => ({ text: `${r.variable} ${r.metricKey ? (metricDef(r.metricKey)?.shortName ?? "") : ""}`, impact: 0.55 + 0.45 * (r.broken ? 1 : clamp01(1 - Math.abs(r.margin ?? 100) / 100)), label: r.variable })),
+    ...deal.risks.filter((r) => r.weaknessClass === "THESIS_KILLING").map((r) => ({ text: r.title, impact: 0.95, label: r.title })),
+  ];
   for (const g of deal.informationGaps.filter((x) => x.status !== "RESOLVED")) {
-    items.push(item("GAP", `gap:${g.id}`, g.question, [g.id], g.decisionImportance / 5, "UNKNOWN", [g.whyItMatters], g.uncertainty / 5));
+    const own = 0.75 * (g.decisionImportance / 5);
+    const anchor = anchors.map((a) => ({ a, o: overlap(g.question, a.text) })).filter((x) => x.o >= 0.34).sort((x, y) => y.a.impact - x.a.impact)[0];
+    const impact = anchor ? Math.max(own, anchor.a.impact) : own;
+    items.push(item("GAP", `gap:${g.id}`, g.question, [g.id], impact, "UNKNOWN", [g.whyItMatters, ...(anchor ? [`About a decisive variable: ${anchor.a.label}`] : [])], g.uncertainty / 5));
   }
 
   // 5. Risks: thesis killers and high-severity risks.
@@ -163,7 +185,9 @@ export function decisionFocus(deal: CanonicalDeal, registry: BenchmarkRegistry, 
   }
   // Near-duplicate labels (a gap and a risk about the same thing) collapse too.
   const ranked: FocusItem[] = [];
-  for (const it of [...byKey.values()].sort((a, b) => b.leverage - a.leverage || a.key.localeCompare(b.key))) {
+  // Ties: binding gates first, then computed breakpoints, risks, unknowns, metrics, claims.
+  const KIND_ORDER: Record<FocusKind, number> = { GATE: 0, SENSITIVITY: 1, RISK: 2, GAP: 3, METRIC: 4, CLAIM: 5 };
+  for (const it of [...byKey.values()].sort((a, b) => b.leverage - a.leverage || KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || a.key.localeCompare(b.key))) {
     const dup = ranked.find((r) => overlap(r.label, it.label) >= 0.6);
     if (dup) {
       dup.refs = [...new Set([...dup.refs, ...it.refs])];
@@ -174,7 +198,7 @@ export function decisionFocus(deal: CanonicalDeal, registry: BenchmarkRegistry, 
 
   // Outlier candidates: top of a benchmark curve, or an exceptional strength rated on evidence — never manufactured.
   const outliers: (OutlierCandidate & { score: number })[] = [];
-  for (const m of deal.metrics.filter((x) => x.isPrimary && x.state === "OBSERVED" && x.normalizedValue !== null)) {
+  for (const m of deal.metrics.filter((x) => x.isPrimary && x.state === "OBSERVED" && x.normalizedValue !== null && UPSIDE_METRICS.has(x.metricKey) && !x.qualityFlags.some((f) => /INCONSISTENT|CONTRADICT|SIGNED_NOT_DEPLOYED|CUMULATIVE|SMALL_SAMPLE/.test(f)))) {
     const b = findBenchmark(registry, m.metricKey, peer.profile, peer.stageBand);
     if (!b?.curve) continue;
     const score = interpolate(b.curve, m.normalizedValue!);

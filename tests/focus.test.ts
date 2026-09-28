@@ -138,3 +138,37 @@ describe("decision focus — what actually decides the investment", () => {
     expect(f.headline).toContain("Not enough");
   });
 });
+
+describe("decision focus — calibration on real-shaped records", () => {
+  it("unknowns do not saturate: a gap alone cannot outrank a thesis killer", () => {
+    const d = makeDeal();
+    d.informationGaps = [gap("GAP-01", "What is the office layout?", 5, 5)];
+    d.risks = [risk("Enterprise sales depend entirely on the CEO", { weaknessClass: "THESIS_KILLING", severity: "CRITICAL", likelihood: "HIGH" })];
+    const f = focus(d);
+    const g = f.ranked.find((x) => x.key === "gap:GAP-01")!;
+    expect(g.leverage).toBeLessThanOrEqual(75);
+    expect(f.determinants[0]!.kind).toBe("RISK");
+  });
+
+  it("a gap about a decisive variable inherits its impact", () => {
+    const d = makeDeal();
+    d.risks = [risk("Enterprise sales depend entirely on the CEO", { weaknessClass: "THESIS_KILLING", severity: "CRITICAL", likelihood: "HIGH" })];
+    d.informationGaps = [gap("GAP-01", "Do enterprise sales depend entirely on the CEO?", 3, 5), gap("GAP-02", "Which conferences does the team attend?", 3, 5)];
+    const f = focus(d);
+    const g1 = f.ranked.find((x) => x.refs.includes("GAP-01"))!;
+    const g2 = f.ranked.find((x) => x.refs.includes("GAP-02"))!;
+    expect(g1.leverage).toBeGreaterThan(g2.leverage);
+  });
+
+  it("hygiene metrics are never outlier candidates", () => {
+    const d = makeDeal();
+    d.metrics = d.metrics.map((m) => (m.metricKey === "customer_concentration_top1" ? { ...m, normalizedValue: 2, rawValue: "2%" } : m));
+    expect(focus(d).outlierCandidates.some((o) => o.refs.includes(d.metrics.find((m) => m.metricKey === "customer_concentration_top1")!.id))).toBe(false);
+  });
+
+  it("a flagged metric (inconsistent, signed-not-deployed, small sample) is never an outlier candidate", () => {
+    const d = makeDeal();
+    d.metrics = d.metrics.map((m) => (m.metricKey === "nrr" ? { ...m, normalizedValue: 175, rawValue: "175%", qualityFlags: ["SMALL_SAMPLE: n=4 < 10"] } : m));
+    expect(focus(d).outlierCandidates.some((o) => o.label.startsWith("NRR"))).toBe(false);
+  });
+});
